@@ -9,9 +9,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#0a0a0a",
-        bone: "#f5f5f0",
-        amber: "#EF9F27"
+        ink: "#050505",
+        bone: "#EDEDED",
+        amber: "#EF9F27",
+        terminalBorder: "#1A1A1A",
+        signalGreen: "#39FF14",
+        signalAmber: "#FFB100"
       },
       fontFamily: {
         mono: [

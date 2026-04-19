@@ -4,7 +4,7 @@
 
 - Product definition: Spatial Design Orchestrator, not a template website builder.
 - Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, website sections, and spatial objects.
-- Current phase completed: Phase 2 Design System Compiler.
+- Current phase completed: Phase 3 Command Center UI Polish.
 - Active backend route: `/api/interpret`.
 - Interpreter pipeline: Architect agent generates semantic JSON actions, Critic agent validates/fixes contrast, mobile overflow, hierarchy, payload shape, and semantic action quality before returning JSON to the frontend.
 - Provider support: `AI_PROVIDER=anthropic` uses Anthropic Messages API; `AI_PROVIDER=gemini` uses Gemini generateContent.
@@ -48,3 +48,11 @@
 - `ADJUST_DENSITY` clamps scale to `0.5..2.0` and maps to compact/balanced/spacious.
 - `MODIFY_ELEMENT` supports relative `mode` values: `multiply`, `increment`, `replace` fallback.
 - `ADD_SPATIAL_OBJECT` preserves material as `Glass`, `Chrome`, or `Matte` for R3F rendering.
+
+## Phase 3 Implementation Notes
+
+- Editor shell palette: `#050505` background, `#1A1A1A` borders, `#EDEDED` text.
+- Editor UI typography: monospace-first stack with JetBrains Mono / Geist Mono fallbacks.
+- Right panel: AI Log is now a System Operation Feed with timestamped semantic operations instead of raw JSON payloads.
+- Voice bar states: `Listening...` uses fluorescent green `#39FF14`; `Thinking...` uses amber `#FFB100`; idle remains dim.
+- Operation feed language: interpret, compile, theme, density, spatial, modify, publish events are formatted for demo-readable system telemetry.

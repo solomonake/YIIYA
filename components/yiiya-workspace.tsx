@@ -32,17 +32,17 @@ export function YiiyaWorkspace() {
   };
 
   return (
-    <main className="flex h-svh flex-col overflow-hidden bg-ink text-bone">
-      <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-ink/90 px-5 backdrop-blur-xl">
+    <main className="flex h-svh flex-col overflow-hidden bg-ink font-mono text-bone">
+      <header className="z-20 flex h-12 shrink-0 items-center justify-between border-b border-terminalBorder bg-ink px-4">
         <input
           aria-label="Project name"
           value={projectName}
           onChange={(event) => setProjectName(event.target.value)}
-          className="w-[min(42vw,360px)] rounded-none border-none bg-transparent text-base font-semibold tracking-[0] text-bone outline-none transition-colors placeholder:text-white/35 focus:text-amber"
+          className="w-[min(46vw,420px)] rounded-none border-none bg-transparent text-[13px] font-semibold tracking-[0] text-bone outline-none transition-colors placeholder:text-white/35 focus:text-amber"
         />
         <button
           onClick={handlePublish}
-          className="rounded-full bg-amber px-4 py-2 text-sm font-semibold text-ink transition hover:bg-[#ffb84f] focus:outline-none focus:ring-2 focus:ring-amber/60 focus:ring-offset-2 focus:ring-offset-ink"
+          className="h-8 border border-amber/60 bg-amber px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-ink transition hover:bg-signalAmber focus:outline-none focus:ring-1 focus:ring-amber"
         >
           Publish
         </button>

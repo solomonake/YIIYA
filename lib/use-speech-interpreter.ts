@@ -141,6 +141,7 @@ export function useSpeechInterpreter() {
       }
 
       submittedTranscriptRef.current = normalizedTranscript;
+      addLog(`INTERPRET: Intent = '${normalizedTranscript.slice(0, 52)}'.`);
       setInterpreting(true);
 
       try {

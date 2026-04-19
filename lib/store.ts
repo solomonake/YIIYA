@@ -173,7 +173,7 @@ type YiiyaState = {
 const initialLayers: Layer[] = [];
 
 const initialLogs: LogEntry[] = [
-  { id: "log-1", label: "Waiting for input...", timestamp: "--:--" }
+  { id: "log-1", label: "SYSTEM: Waiting for input.", timestamp: "--:--:--" }
 ];
 
 function createLog(label: string): LogEntry {
@@ -183,13 +183,78 @@ function createLog(label: string): LogEntry {
     timestamp: new Intl.DateTimeFormat("en", {
       hour: "2-digit",
       minute: "2-digit",
+      second: "2-digit",
       hour12: false
     }).format(new Date())
   };
 }
 
 function describeAction(action: YiiyaAction) {
-  return `${action.type} ${JSON.stringify(action.payload)}`;
+  if (action.type === "ADD_SECTION") {
+    const sectionType =
+      typeof action.payload.sectionType === "string"
+        ? action.payload.sectionType.toUpperCase()
+        : "HERO";
+
+    return `COMPILE: Injecting ${sectionType}_Section_v2.`;
+  }
+
+  if (action.type === "ADD_SPATIAL_OBJECT" || action.type === "ADD_3D_OBJECT") {
+    const shape =
+      typeof action.payload.shape === "string" ? action.payload.shape : "object";
+    const material =
+      "material" in action.payload && typeof action.payload.material === "string"
+        ? action.payload.material
+        : "Matte";
+
+    return `SPATIAL: Mounting ${material}_${shape}.`;
+  }
+
+  if (action.type === "SET_GLOBAL_THEME") {
+    const density =
+      typeof action.payload.layoutDensity === "string"
+        ? action.payload.layoutDensity
+        : "token";
+
+    return `THEME: Syncing global ${density} system.`;
+  }
+
+  if (action.type === "SYNC_BRAND_TO_IMAGE") {
+    const tone =
+      typeof action.payload.visualTone === "string"
+        ? action.payload.visualTone
+        : "reference";
+
+    return `VISION: Brand image mapped to '${tone}'.`;
+  }
+
+  if (action.type === "ADJUST_DENSITY") {
+    return `DENSITY: Scaling layout to ${String(action.payload.scale)}.`;
+  }
+
+  if (action.type === "MODIFY_ELEMENT") {
+    const elementId =
+      typeof action.payload.elementId === "string"
+        ? action.payload.elementId
+        : "active-element";
+    const property =
+      typeof action.payload.property === "string"
+        ? action.payload.property
+        : "property";
+
+    return `MODIFY: ${elementId} -> ${property}.`;
+  }
+
+  if (action.type === "CHANGE_THEME") {
+    const property =
+      typeof action.payload.property === "string"
+        ? action.payload.property
+        : "theme";
+
+    return `THEME: Applying legacy ${property}.`;
+  }
+
+  return "PUBLISH: Generating public artifact.";
 }
 
 function normalizeSectionType(sectionType: unknown): SectionType {
