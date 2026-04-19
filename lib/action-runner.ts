@@ -2,6 +2,18 @@
 
 import { useYiiyaStore, type YiiyaAction } from "@/lib/store";
 import { publishCurrentProject } from "@/lib/publish-project";
+import {
+  densityFromScale,
+  themeFromVibe,
+  type LayoutDensity,
+  type YiiyaTheme
+} from "@/lib/designSystem";
+
+function numericStyleValue(value: string) {
+  const parsed = Number.parseFloat(value);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 function setElementValue(element: HTMLElement, property: string, value: unknown) {
   const stringValue = String(value);
@@ -41,7 +53,7 @@ function applyModifyElement(action: YiiyaAction) {
     return;
   }
 
-  const { elementId, property, value } = action.payload;
+  const { elementId, property, value, mode } = action.payload;
 
   if (typeof elementId !== "string" || typeof property !== "string") {
     useYiiyaStore.getState().addLog("MODIFY_ELEMENT missing elementId or property");
@@ -69,6 +81,40 @@ function applyModifyElement(action: YiiyaAction) {
     return;
   }
 
+  if (
+    mode === "multiply" &&
+    (property === "fontSize" ||
+      property === "borderRadius" ||
+      property === "padding")
+  ) {
+    const currentValue = window.getComputedStyle(element)[property];
+    const numericValue = numericStyleValue(currentValue);
+    const multiplier =
+      typeof value === "number" ? value : Number.parseFloat(String(value));
+
+    if (numericValue && Number.isFinite(multiplier)) {
+      setElementValue(element, property, `${numericValue * multiplier}px`);
+      return;
+    }
+  }
+
+  if (
+    mode === "increment" &&
+    (property === "fontSize" ||
+      property === "borderRadius" ||
+      property === "padding")
+  ) {
+    const currentValue = window.getComputedStyle(element)[property];
+    const numericValue = numericStyleValue(currentValue);
+    const increment =
+      typeof value === "number" ? value : Number.parseFloat(String(value));
+
+    if (numericValue !== null && Number.isFinite(increment)) {
+      setElementValue(element, property, `${numericValue + increment}px`);
+      return;
+    }
+  }
+
   setElementValue(element, property, value);
 }
 
@@ -85,11 +131,111 @@ function applyAddSection(action: YiiyaAction) {
 }
 
 function applyAdd3DObject(action: YiiyaAction) {
-  if (action.type !== "ADD_3D_OBJECT") {
+  if (action.type !== "ADD_3D_OBJECT" && action.type !== "ADD_SPATIAL_OBJECT") {
     return;
   }
 
   useYiiyaStore.getState().addSceneObject(action.payload);
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+}
+
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function layoutDensityFromValue(value: unknown): LayoutDensity | undefined {
+  if (value === "compact" || value === "balanced" || value === "spacious") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function applySetGlobalTheme(action: YiiyaAction) {
+  if (action.type !== "SET_GLOBAL_THEME") {
+    return;
+  }
+
+  const palette = stringArray(action.payload.palette);
+  const partialTheme: Partial<YiiyaTheme> = {
+    spacingMultiplier: toNumber(action.payload.spacingMultiplier),
+    borderRadius: toNumber(action.payload.borderRadius),
+    primaryAccent:
+      typeof action.payload.primaryAccent === "string"
+        ? action.payload.primaryAccent
+        : palette[2],
+    fontScale: toNumber(action.payload.fontScale),
+    layoutDensity: layoutDensityFromValue(action.payload.layoutDensity),
+    background: palette[0],
+    foreground: palette[1],
+    palette,
+    fontWeight: toNumber(action.payload.fontWeight)
+  };
+
+  useYiiyaStore.getState().setThemeState(partialTheme);
+}
+
+function applySyncBrandToImage(action: YiiyaAction) {
+  if (action.type !== "SYNC_BRAND_TO_IMAGE") {
+    return;
+  }
+
+  const palette = stringArray(action.payload.palette);
+  const visualTone =
+    typeof action.payload.visualTone === "string"
+      ? action.payload.visualTone
+      : "";
+  const fontWeights = Array.isArray(action.payload.fontWeights)
+    ? action.payload.fontWeights
+    : [];
+  const firstWeight = fontWeights.find(
+    (weight): weight is number => typeof weight === "number"
+  );
+
+  useYiiyaStore.getState().setThemeState({
+    ...themeFromVibe(visualTone),
+    background: palette[0],
+    foreground: palette[1],
+    primaryAccent: palette[2],
+    palette,
+    fontWeight: firstWeight
+  });
+}
+
+function applyAdjustDensity(action: YiiyaAction) {
+  if (action.type !== "ADJUST_DENSITY") {
+    return;
+  }
+
+  const scale = toNumber(action.payload.scale);
+
+  if (!scale) {
+    return;
+  }
+
+  useYiiyaStore.getState().setThemeState({
+    spacingMultiplier: Math.min(2, Math.max(0.5, scale)),
+    layoutDensity: densityFromScale(scale)
+  });
 }
 
 function applyChangeTheme(action: YiiyaAction) {
@@ -162,6 +308,22 @@ export function runYiiyaActions(actions: YiiyaAction[]) {
 
     if (action.type === "ADD_3D_OBJECT") {
       applyAdd3DObject(action);
+    }
+
+    if (action.type === "ADD_SPATIAL_OBJECT") {
+      applyAdd3DObject(action);
+    }
+
+    if (action.type === "SET_GLOBAL_THEME") {
+      applySetGlobalTheme(action);
+    }
+
+    if (action.type === "SYNC_BRAND_TO_IMAGE") {
+      applySyncBrandToImage(action);
+    }
+
+    if (action.type === "ADJUST_DENSITY") {
+      applyAdjustDensity(action);
     }
 
     if (action.type === "PUBLISH") {

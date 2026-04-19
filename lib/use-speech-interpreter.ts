@@ -95,6 +95,7 @@ async function interpretTranscript(transcript: string) {
         selectedElementId: state.selectedElementId,
         sections: state.sections,
         sceneObjects: state.sceneObjects,
+        themeState: state.themeState,
         layers: state.layers
       },
       referenceImage: state.referenceImage

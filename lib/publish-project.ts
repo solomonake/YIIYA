@@ -7,11 +7,12 @@ export type PublishedProject = {
   slug: string;
   htmlSnapshot: string;
   htmlCanvasImage: string;
-  sceneState: {
-    projectName: string;
-    sections: unknown[];
-    sceneObjects: unknown[];
-    layers: unknown[];
+    sceneState: {
+      projectName: string;
+      sections: unknown[];
+      sceneObjects: unknown[];
+      themeState: unknown;
+      layers: unknown[];
     selectedElementId: string | null;
     sceneCanvasImage: string | null;
   };
@@ -95,6 +96,7 @@ export async function publishCurrentProject() {
       projectName: store.projectName,
       sections: store.sections,
       sceneObjects: store.sceneObjects,
+      themeState: store.themeState,
       layers: store.layers,
       selectedElementId: store.selectedElementId,
       sceneCanvasImage: getSceneCanvasImage()

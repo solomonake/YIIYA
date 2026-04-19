@@ -19,15 +19,16 @@ function ObjectGeometry({ shape }: { shape: string }) {
 }
 
 function SceneObjectMesh({ object }: { object: SceneObject }) {
+  const material = object.material.toLowerCase();
   const mesh = (
     <mesh position={object.position} rotation={[0.22, 0.7, 0.08]}>
       <ObjectGeometry shape={object.shape} />
       <meshStandardMaterial
         color={object.color}
-        metalness={object.animation.toLowerCase().includes("glass") ? 0.05 : 0.25}
-        roughness={object.animation.toLowerCase().includes("glass") ? 0.08 : 0.34}
-        transparent={object.animation.toLowerCase().includes("glass")}
-        opacity={object.animation.toLowerCase().includes("glass") ? 0.55 : 1}
+        metalness={material === "chrome" ? 1 : material === "glass" ? 0.08 : 0.25}
+        roughness={material === "chrome" ? 0.12 : material === "glass" ? 0.04 : 0.34}
+        transparent={material === "glass"}
+        opacity={material === "glass" ? 0.52 : 1}
       />
     </mesh>
   );

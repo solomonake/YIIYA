@@ -1,6 +1,11 @@
 "use client";
 
 import { create } from "zustand";
+import {
+  defaultYiiyaTheme,
+  mergeYiiyaTheme,
+  type YiiyaTheme
+} from "@/lib/designSystem";
 
 export type Layer = {
   id: string;
@@ -41,6 +46,7 @@ export type YiiyaSection = {
 export type SceneObject = {
   id: string;
   shape: string;
+  material: "Glass" | "Chrome" | "Matte";
   color: string;
   animation: string;
   position: [number, number, number];
@@ -71,12 +77,52 @@ export type YiiyaAction =
       };
     }
   | {
+      type: "ADD_SPATIAL_OBJECT";
+      payload: {
+        shape: unknown;
+        material: unknown;
+        color: unknown;
+        animation: unknown;
+        position: unknown;
+      };
+    }
+  | {
       type: "MODIFY_ELEMENT";
-      payload: { elementId: unknown; property: unknown; value: unknown };
+      payload: {
+        elementId: unknown;
+        property: unknown;
+        value: unknown;
+        mode?: unknown;
+      };
     }
   | {
       type: "CHANGE_THEME";
       payload: { property: unknown; value: unknown };
+    }
+  | {
+      type: "SET_GLOBAL_THEME";
+      payload: {
+        spacingMultiplier?: unknown;
+        borderRadius?: unknown;
+        primaryAccent?: unknown;
+        fontScale?: unknown;
+        layoutDensity?: unknown;
+        palette?: unknown;
+        fontWeight?: unknown;
+      };
+    }
+  | {
+      type: "SYNC_BRAND_TO_IMAGE";
+      payload: {
+        palette?: unknown;
+        fontWeights?: unknown;
+        layoutStructure?: unknown;
+        visualTone?: unknown;
+      };
+    }
+  | {
+      type: "ADJUST_DENSITY";
+      payload: { scale: unknown };
     }
   | {
       type: "PUBLISH";
@@ -92,6 +138,7 @@ type YiiyaState = {
   hoveredElementId: string | null;
   referenceImage: ReferenceImage | null;
   toastMessage: string | null;
+  themeState: YiiyaTheme;
   sidebarCollapsed: boolean;
   sections: YiiyaSection[];
   sceneObjects: SceneObject[];
@@ -105,6 +152,7 @@ type YiiyaState = {
   setHoveredElementId: (hoveredElementId: string | null) => void;
   setReferenceImage: (referenceImage: ReferenceImage | null) => void;
   setToastMessage: (toastMessage: string | null) => void;
+  setThemeState: (themeState: Partial<YiiyaTheme>) => void;
   addSection: (section: {
     sectionType: unknown;
     theme?: unknown;
@@ -112,6 +160,7 @@ type YiiyaState = {
   }) => YiiyaSection;
   addSceneObject: (object: {
     shape?: unknown;
+    material?: unknown;
     color?: unknown;
     animation?: unknown;
     position?: unknown;
@@ -182,6 +231,24 @@ function normalizePosition(position: unknown): [number, number, number] {
   ];
 }
 
+function normalizeMaterial(material: unknown): SceneObject["material"] {
+  if (typeof material !== "string") {
+    return "Matte";
+  }
+
+  const normalized = material.toLowerCase();
+
+  if (normalized === "glass") {
+    return "Glass";
+  }
+
+  if (normalized === "chrome") {
+    return "Chrome";
+  }
+
+  return "Matte";
+}
+
 export const useYiiyaStore = create<YiiyaState>((set) => ({
   projectName: "yiiya.app — new project",
   isListening: false,
@@ -191,6 +258,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   hoveredElementId: null,
   referenceImage: null,
   toastMessage: null,
+  themeState: defaultYiiyaTheme,
   sidebarCollapsed: false,
   sections: [],
   sceneObjects: [],
@@ -204,6 +272,10 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   setHoveredElementId: (hoveredElementId) => set({ hoveredElementId }),
   setReferenceImage: (referenceImage) => set({ referenceImage }),
   setToastMessage: (toastMessage) => set({ toastMessage }),
+  setThemeState: (themeState) =>
+    set((state) => ({
+      themeState: mergeYiiyaTheme(state.themeState, themeState)
+    })),
   addSection: (section) => {
     const id = `section-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextSection: YiiyaSection = {
@@ -232,6 +304,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     const nextObject: SceneObject = {
       id,
       shape: typeof object.shape === "string" ? object.shape : "sphere",
+      material: normalizeMaterial(object.material),
       color: typeof object.color === "string" ? object.color : "#EF9F27",
       animation: typeof object.animation === "string" ? object.animation : "float",
       position: normalizePosition(object.position)
