@@ -191,6 +191,7 @@ export function ProjectDrawer({
                 </button>
               )}
               <p className="mt-1 text-[10px] text-white/35">
+                {project.canvas_json.sections.length} sections ·{" "}
                 {relativeTime(project.updated_at)}
               </p>
               <div className="mt-2 flex gap-2">

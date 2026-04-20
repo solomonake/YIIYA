@@ -6,6 +6,8 @@ import {
   mergeYiiyaTheme,
   type YiiyaTheme
 } from "@/lib/designSystem";
+import { normalizeSpatialMaterial, type SpatialMaterial } from "@/lib/materials";
+import type { PublishedProject } from "@/lib/published-project-types";
 import { createProjectSlug } from "@/lib/project-slug";
 
 export type Layer = {
@@ -60,11 +62,20 @@ export type YiiyaSection = {
 export type SceneObject = {
   id: string;
   shape: string;
-  material: "Glass" | "Chrome" | "Matte";
+  material: SpatialMaterial;
   color: string;
   animation: string;
   position: [number, number, number];
+  scale: [number, number, number];
+  intensity: number;
+  materialOverrides?: Record<string, unknown>;
   anchorSection?: string;
+};
+
+export type BlobState = {
+  targetShape: "sphere" | "bottle" | "cube" | "organic" | "crystal";
+  distort: number;
+  speed: number;
 };
 
 export type ReferenceImage = {
@@ -74,6 +85,7 @@ export type ReferenceImage = {
   dominantColor?: string;
   accentCandidate?: string;
   extractedMode?: "dark" | "light";
+  imageMode?: "web" | "3d" | "hybrid";
 };
 
 export type YiiyaMessage = {
@@ -96,9 +108,11 @@ export type YiiyaAction =
       payload: {
         shape: unknown;
         material?: unknown;
-        color: unknown;
-        animation: unknown;
-        position: unknown;
+        color?: unknown;
+        animation?: unknown;
+        position?: unknown;
+        scale?: unknown;
+        intensity?: unknown;
         anchorSection?: unknown;
       };
     }
@@ -111,6 +125,48 @@ export type YiiyaAction =
         animation: unknown;
         position: unknown;
         anchorSection?: unknown;
+      };
+    }
+  | {
+      type: "MORPH_BLOB";
+      payload: {
+        targetShape: unknown;
+        distort: unknown;
+        speed: unknown;
+      };
+    }
+  | {
+      type: "SET_MATERIAL";
+      payload: {
+        objectId: unknown;
+        material: unknown;
+        metalness?: unknown;
+        roughness?: unknown;
+        color?: unknown;
+        transmission?: unknown;
+        emissive?: unknown;
+      };
+    }
+  | {
+      type: "RESHAPE_OBJECT";
+      payload: {
+        objectId: unknown;
+        scaleX?: unknown;
+        scaleY?: unknown;
+        scaleZ?: unknown;
+      };
+    }
+  | {
+      type: "REMOVE_OBJECT";
+      payload: { objectId: unknown };
+    }
+  | {
+      type: "ADD_LIGHT";
+      payload: {
+        lightType?: unknown;
+        position?: unknown;
+        color?: unknown;
+        intensity?: unknown;
       };
     }
   | {
@@ -154,6 +210,18 @@ export type YiiyaAction =
   | {
       type: "PUBLISH";
       payload: Record<string, never>;
+    }
+  | {
+      type: "RESET_PROJECT";
+      payload: Record<string, never>;
+    }
+  | {
+      type: "SET_MODE";
+      payload: { mode: unknown };
+    }
+  | {
+      type: "UNDO";
+      payload: Record<string, never>;
     };
 
 export type CanvasMode = "WEB" | "3D" | "HYBRID";
@@ -175,30 +243,45 @@ export type SavedProjectState = {
   themeState?: Partial<YiiyaTheme>;
 };
 
+type UndoSnapshot = {
+  sections: YiiyaSection[];
+  sceneObjects: SceneObject[];
+  layers: Layer[];
+  themeState: YiiyaTheme;
+};
+
 type YiiyaState = {
   currentProjectId: string;
   currentProjectSlug: string;
   projectName: string;
   isGuest: boolean;
+  isPro: boolean;
   canvasMode: CanvasMode;
   isListening: boolean;
   isInterpreting: boolean;
   transcript: string;
   interimTranscript: string;
   selectedElementId: string | null;
+  selectedElements: string[];
   hoveredElementId: string | null;
   referenceImage: ReferenceImage | null;
   toastMessage: string | null;
+  publishResult: PublishedProject | null;
+  saveStatus: "idle" | "saving" | "saved";
+  lastSavedAt: string | null;
   themeState: YiiyaTheme;
   sidebarCollapsed: boolean;
   sections: YiiyaSection[];
   sceneObjects: SceneObject[];
+  blobState: BlobState;
   layers: Layer[];
   logs: LogEntry[];
   conversationHistory: YiiyaMessage[];
+  undoStack: UndoSnapshot[];
   setCurrentProjectId: (currentProjectId: string) => void;
   setProjectName: (projectName: string) => void;
   setGuest: (isGuest: boolean) => void;
+  setPro: (isPro: boolean) => void;
   setCanvasMode: (canvasMode: CanvasMode) => void;
   setCurrentProjectSlug: (currentProjectSlug: string) => void;
   setListening: (isListening: boolean) => void;
@@ -206,9 +289,12 @@ type YiiyaState = {
   setTranscript: (transcript: string) => void;
   setInterimTranscript: (interimTranscript: string) => void;
   setSelectedElementId: (selectedElementId: string | null) => void;
+  setSelectedElements: (selectedElements: string[]) => void;
   setHoveredElementId: (hoveredElementId: string | null) => void;
   setReferenceImage: (referenceImage: ReferenceImage | null) => void;
   setToastMessage: (toastMessage: string | null) => void;
+  setPublishResult: (publishResult: PublishedProject | null) => void;
+  setSaveStatus: (status: "idle" | "saving" | "saved", savedAt?: string) => void;
   setThemeState: (themeState: Partial<YiiyaTheme>) => void;
   addSection: (section: {
     sectionType: unknown;
@@ -222,8 +308,17 @@ type YiiyaState = {
     color?: unknown;
     animation?: unknown;
     position?: unknown;
+    scale?: unknown;
+    intensity?: unknown;
     anchorSection?: unknown;
   }) => SceneObject;
+  morphBlob: (blobState: Partial<BlobState>) => void;
+  updateSceneObject: (
+    objectId: string,
+    updates: Partial<Omit<SceneObject, "material">> & { material?: unknown }
+  ) => void;
+  removeSceneObject: (objectId: string) => void;
+  popUndo: () => void;
   addLog: (label: string) => void;
   addActionLogs: (actions: YiiyaAction[]) => void;
   addMessage: (message: YiiyaMessage) => void;
@@ -239,6 +334,18 @@ const defaultProjectName = "untitled project";
 const initialLogs: LogEntry[] = [
   { id: "log-1", label: "SYSTEM: Waiting for input.", timestamp: "--:--:--" }
 ];
+
+function pushUndoSnapshot(state: YiiyaState) {
+  return [
+    ...state.undoStack,
+    {
+      sections: state.sections,
+      sceneObjects: state.sceneObjects,
+      layers: state.layers,
+      themeState: state.themeState
+    }
+  ].slice(-20);
+}
 
 function createProjectId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -290,9 +397,29 @@ function describeAction(action: YiiyaAction) {
     const material =
       "material" in action.payload && typeof action.payload.material === "string"
         ? action.payload.material
-        : "Matte";
+        : "matte";
 
     return `[EXECUTE]: Mounting ${material}_${shape}.`;
+  }
+
+  if (action.type === "MORPH_BLOB") {
+    return `[EXECUTE]: Morphing blob to ${String(action.payload.targetShape)}.`;
+  }
+
+  if (action.type === "SET_MATERIAL") {
+    return `[EXECUTE]: Applying ${String(action.payload.material)} material.`;
+  }
+
+  if (action.type === "RESHAPE_OBJECT") {
+    return "[EXECUTE]: Reshaping spatial object.";
+  }
+
+  if (action.type === "REMOVE_OBJECT") {
+    return "[EXECUTE]: Removing spatial object.";
+  }
+
+  if (action.type === "ADD_LIGHT") {
+    return "[EXECUTE]: Lighting spatial scene.";
   }
 
   if (action.type === "SET_GLOBAL_THEME") {
@@ -337,6 +464,18 @@ function describeAction(action: YiiyaAction) {
         : "theme";
 
     return `[EXECUTE]: Applying legacy ${property}.`;
+  }
+
+  if (action.type === "RESET_PROJECT") {
+    return "[EXECUTE]: Resetting project.";
+  }
+
+  if (action.type === "SET_MODE") {
+    return `[EXECUTE]: Switching canvas mode to ${String(action.payload.mode)}.`;
+  }
+
+  if (action.type === "UNDO") {
+    return "[EXECUTE]: Reverting last change.";
   }
 
   return "[EXECUTE]: Generating public artifact.";
@@ -415,22 +554,38 @@ function normalizePosition(position: unknown): [number, number, number] {
   ];
 }
 
-function normalizeMaterial(material: unknown): SceneObject["material"] {
-  if (typeof material !== "string") {
-    return "Matte";
+function normalizeVector(value: unknown, fallback: [number, number, number]) {
+  if (!Array.isArray(value)) {
+    return fallback;
   }
 
-  const normalized = material.toLowerCase();
+  return [
+    typeof value[0] === "number" ? value[0] : fallback[0],
+    typeof value[1] === "number" ? value[1] : fallback[1],
+    typeof value[2] === "number" ? value[2] : fallback[2]
+  ] satisfies [number, number, number];
+}
 
-  if (normalized === "glass") {
-    return "Glass";
+function normalizeNumber(value: unknown, fallback: number) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
   }
 
-  if (normalized === "chrome") {
-    return "Chrome";
+  return fallback;
+}
+
+function normalizeBlobTarget(value: unknown): BlobState["targetShape"] {
+  if (
+    value === "sphere" ||
+    value === "bottle" ||
+    value === "cube" ||
+    value === "organic" ||
+    value === "crystal"
+  ) {
+    return value;
   }
 
-  return "Matte";
+  return "sphere";
 }
 
 export const useYiiyaStore = create<YiiyaState>((set) => ({
@@ -438,25 +593,37 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   currentProjectSlug: createProjectSlug(),
   projectName: defaultProjectName,
   isGuest: false,
+  isPro: false,
   canvasMode: "HYBRID",
   isListening: false,
   isInterpreting: false,
   transcript: "",
   interimTranscript: "",
   selectedElementId: null,
+  selectedElements: [],
   hoveredElementId: null,
   referenceImage: null,
   toastMessage: null,
+  publishResult: null,
+  saveStatus: "idle",
+  lastSavedAt: null,
   themeState: defaultYiiyaTheme,
   sidebarCollapsed: false,
   sections: [],
   sceneObjects: [],
+  blobState: {
+    targetShape: "sphere",
+    distort: 0.5,
+    speed: 1.8
+  },
   layers: initialLayers,
   logs: initialLogs,
   conversationHistory: [],
+  undoStack: [],
   setCurrentProjectId: (currentProjectId) => set({ currentProjectId }),
   setProjectName: (projectName) => set({ projectName }),
   setGuest: (isGuest) => set({ isGuest }),
+  setPro: (isPro) => set({ isPro }),
   setCanvasMode: (canvasMode) => set({ canvasMode }),
   setCurrentProjectSlug: (currentProjectSlug) => set({ currentProjectSlug }),
   setListening: (isListening) => set({ isListening }),
@@ -464,9 +631,16 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   setTranscript: (transcript) => set({ transcript }),
   setInterimTranscript: (interimTranscript) => set({ interimTranscript }),
   setSelectedElementId: (selectedElementId) => set({ selectedElementId }),
+  setSelectedElements: (selectedElements) => set({ selectedElements }),
   setHoveredElementId: (hoveredElementId) => set({ hoveredElementId }),
   setReferenceImage: (referenceImage) => set({ referenceImage }),
   setToastMessage: (toastMessage) => set({ toastMessage }),
+  setPublishResult: (publishResult) => set({ publishResult }),
+  setSaveStatus: (saveStatus, savedAt) =>
+    set({
+      saveStatus,
+      lastSavedAt: savedAt ?? (saveStatus === "saving" ? null : undefined)
+    }),
   setThemeState: (themeState) =>
     set((state) => ({
       themeState: mergeYiiyaTheme(state.themeState, themeState)
@@ -483,6 +657,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     };
 
     set((state) => ({
+      undoStack: pushUndoSnapshot(state),
       sections: [...state.sections, nextSection],
       layers: [
         ...state.layers,
@@ -501,15 +676,18 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     const nextObject: SceneObject = {
       id,
       shape: typeof object.shape === "string" ? object.shape : "sphere",
-      material: normalizeMaterial(object.material),
+      material: normalizeSpatialMaterial(object.material),
       color: typeof object.color === "string" ? object.color : "#EF9F27",
       animation: typeof object.animation === "string" ? object.animation : "float",
       position: normalizePosition(object.position),
+      scale: normalizeVector(object.scale, [1, 1, 1]),
+      intensity: normalizeNumber(object.intensity, 1),
       anchorSection:
         typeof object.anchorSection === "string" ? object.anchorSection : undefined
     };
 
     set((state) => ({
+      undoStack: pushUndoSnapshot(state),
       sceneObjects: [...state.sceneObjects, nextObject],
       layers: [
         ...state.layers,
@@ -523,6 +701,86 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
 
     return nextObject;
   },
+  morphBlob: (blobState) =>
+    set((state) => ({
+      blobState: {
+        targetShape: normalizeBlobTarget(blobState.targetShape ?? state.blobState.targetShape),
+        distort: normalizeNumber(blobState.distort, state.blobState.distort),
+        speed: normalizeNumber(blobState.speed, state.blobState.speed)
+      }
+    })),
+  updateSceneObject: (objectId, updates) =>
+    set((state) => {
+      const targetId =
+        objectId === "latest"
+          ? state.sceneObjects[state.sceneObjects.length - 1]?.id
+          : objectId;
+
+      if (!targetId) {
+        return state;
+      }
+
+      return {
+        undoStack: pushUndoSnapshot(state),
+        sceneObjects: state.sceneObjects.map((object) =>
+          object.id === targetId
+            ? {
+                ...object,
+                ...updates,
+                material: updates.material
+                  ? normalizeSpatialMaterial(updates.material)
+                  : object.material,
+                scale: updates.scale ?? object.scale,
+                materialOverrides: {
+                  ...object.materialOverrides,
+                  ...updates.materialOverrides
+                }
+              }
+            : object
+        )
+      };
+    }),
+  removeSceneObject: (objectId) =>
+    set((state) => {
+      const targetId =
+        objectId === "latest"
+          ? state.sceneObjects[state.sceneObjects.length - 1]?.id
+          : objectId;
+      const sceneObjects =
+        objectId === "*"
+          ? []
+          : state.sceneObjects.filter((object) => object.id !== targetId);
+
+      return {
+        undoStack: pushUndoSnapshot(state),
+        sceneObjects,
+        layers: state.layers.filter((layer) =>
+          objectId === "*" ? layer.type !== "mesh" : layer.id !== targetId
+        )
+      };
+    }),
+  popUndo: () =>
+    set((state) => {
+      const snapshot = state.undoStack[state.undoStack.length - 1];
+
+      if (!snapshot) {
+        return {
+          logs: [...state.logs, createLog("[SYSTEM]: Nothing to undo.")].slice(-40)
+        };
+      }
+
+      return {
+        sections: snapshot.sections,
+        sceneObjects: snapshot.sceneObjects,
+        layers: snapshot.layers,
+        themeState: snapshot.themeState,
+        selectedElementId: null,
+        selectedElements: [],
+        hoveredElementId: null,
+        undoStack: state.undoStack.slice(0, -1),
+        logs: [...state.logs, createLog("[SYSTEM]: Undo restored previous state.")].slice(-40)
+      };
+    }),
   addLog: (label) =>
     set((state) => ({
       logs: [...state.logs, createLog(label)].slice(-40)
@@ -567,7 +825,13 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         sections,
         sceneObjects,
         layers,
+        blobState: {
+          targetShape: "sphere",
+          distort: 0.5,
+          speed: 1.8
+        },
         selectedElementId: null,
+        selectedElements: [],
         hoveredElementId: null,
         referenceImage: null,
         themeState: mergeYiiyaTheme(defaultYiiyaTheme, theme ?? {}),
@@ -586,15 +850,25 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       transcript: "",
       interimTranscript: "",
       selectedElementId: null,
+      selectedElements: [],
       hoveredElementId: null,
       referenceImage: null,
       toastMessage: null,
+      publishResult: null,
+      saveStatus: "idle",
+      lastSavedAt: null,
       themeState: defaultYiiyaTheme,
       sections: [],
       sceneObjects: [],
+      blobState: {
+        targetShape: "sphere",
+        distort: 0.5,
+        speed: 1.8
+      },
       layers: [],
       logs: [...state.logs, createLog("SYSTEM: New project initialized.")].slice(-40),
-      conversationHistory: []
+      conversationHistory: [],
+      undoStack: []
     })),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed }))

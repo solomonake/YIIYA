@@ -42,13 +42,22 @@ export function PublishedProjectView({
 
   return (
     <main className="min-h-svh bg-ink text-bone">
+      {project.sceneState.sceneCanvasImage ? (
+        <img
+          src={project.sceneState.sceneCanvasImage}
+          alt=""
+          className="pointer-events-none fixed inset-0 h-full w-full object-cover opacity-55"
+        />
+      ) : null}
       <div
-        className="min-h-svh"
+        className="relative z-10 min-h-svh"
         dangerouslySetInnerHTML={{ __html: project.htmlSnapshot }}
       />
-      <div className="fixed bottom-4 right-4 z-50 rounded-full border border-white/12 bg-[#11110f]/92 px-3 py-2 text-xs font-semibold text-bone shadow-[0_14px_45px_rgba(0,0,0,0.4)] backdrop-blur-xl">
-        Built with <span className="text-amber">Yiiya</span>
-      </div>
+      {project.sceneState.showWatermark ?? !project.isPro ? (
+        <div className="fixed bottom-4 right-4 z-50 rounded-full border border-white/12 bg-[#11110f]/92 px-3 py-2 text-xs font-semibold text-bone backdrop-blur-xl">
+          Built with <span className="text-amber">Yiiya</span>
+        </div>
+      ) : null}
     </main>
   );
 }

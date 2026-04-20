@@ -87,3 +87,31 @@ create policy "Owners can delete projects"
   for delete
   to authenticated
   using (owner_id = auth.uid());
+
+create table if not exists public.published_projects (
+  slug text primary key,
+  user_id uuid references auth.users(id) on delete set null,
+  html_snapshot text not null,
+  scene_json jsonb not null default '{}'::jsonb,
+  theme_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists published_projects_user_id_created_at_idx
+  on public.published_projects (user_id, created_at desc);
+
+alter table public.published_projects enable row level security;
+
+drop policy if exists "Public published projects are readable" on public.published_projects;
+create policy "Public published projects are readable"
+  on public.published_projects
+  for select
+  using (true);
+
+drop policy if exists "users own published" on public.published_projects;
+create policy "users own published"
+  on public.published_projects
+  for all
+  to authenticated
+  using (auth.uid() = user_id or user_id is null)
+  with check (auth.uid() = user_id or user_id is null);

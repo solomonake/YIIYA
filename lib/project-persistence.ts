@@ -163,9 +163,16 @@ export async function listSupabaseProjects(limit = 8) {
     return [];
   }
 
+  const userId = await getCurrentSupabaseUserId();
+
+  if (!userId) {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("projects")
     .select("id,user_id,project_name,canvas_json,theme_json,updated_at")
+    .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(limit);
 
@@ -183,10 +190,17 @@ export async function updateSupabaseProjectName(projectId: string, projectName: 
     return;
   }
 
+  const userId = await getCurrentSupabaseUserId();
+
+  if (!userId) {
+    return;
+  }
+
   await supabase
     .from("projects")
     .update({ project_name: projectName, updated_at: new Date().toISOString() })
-    .eq("id", projectId);
+    .eq("id", projectId)
+    .eq("user_id", userId);
 }
 
 export async function deleteSupabaseProject(projectId: string) {
@@ -196,5 +210,11 @@ export async function deleteSupabaseProject(projectId: string) {
     return;
   }
 
-  await supabase.from("projects").delete().eq("id", projectId);
+  const userId = await getCurrentSupabaseUserId();
+
+  if (!userId) {
+    return;
+  }
+
+  await supabase.from("projects").delete().eq("id", projectId).eq("user_id", userId);
 }

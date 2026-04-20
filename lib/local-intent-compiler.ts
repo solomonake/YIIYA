@@ -12,7 +12,9 @@ type LocalCompilerInput = {
     base64: string;
     mediaType: string;
     name: string;
+    imageMode?: "web" | "3d" | "hybrid";
   } | null;
+  image_mode?: "web" | "3d" | "hybrid";
 };
 
 type LocalAction = {
@@ -300,14 +302,26 @@ function addSection(actions: LocalAction[], sectionType: string, subject: string
 
 function inferMaterial(text: string) {
   if (text.includes("glass")) {
-    return "Glass";
+    return "glass";
   }
 
   if (text.includes("chrome") || text.includes("metal")) {
-    return "Chrome";
+    return "chrome";
   }
 
-  return "Matte";
+  if (text.includes("gold")) {
+    return "gold";
+  }
+
+  if (text.includes("carbon")) {
+    return "carbon";
+  }
+
+  if (text.includes("holographic") || text.includes("hologram")) {
+    return "holographic";
+  }
+
+  return "matte";
 }
 
 function inferShape(text: string) {
@@ -325,6 +339,14 @@ function inferShape(text: string) {
 
   if (text.includes("cylinder")) {
     return "cylinder";
+  }
+
+  if (text.includes("cone")) {
+    return "cone";
+  }
+
+  if (text.includes("capsule")) {
+    return "capsule";
   }
 
   return "sphere";
@@ -442,6 +464,29 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   }
 
   if (input.referenceImage && hasAny(text, ["reference", "image", "screenshot", "palette"])) {
+    if (input.image_mode === "3d" || input.referenceImage.imageMode === "3d") {
+      actions.push(
+        {
+          type: "MORPH_BLOB",
+          payload: {
+            targetShape: "organic",
+            distort: 0.42,
+            speed: 1.2
+          }
+        },
+        {
+          type: "SET_MATERIAL",
+          payload: {
+            objectId: "latest",
+            material: "matte",
+            color: "#1a1a1a"
+          }
+        }
+      );
+
+      return actions;
+    }
+
     actions.push({
       type: "SYNC_BRAND_TO_IMAGE",
       payload: {
@@ -473,11 +518,56 @@ export function compileLocalIntent(input: LocalCompilerInput) {
       "object",
       "glass",
       "chrome",
+      "gold",
+      "carbon",
+      "holographic",
       "plane",
       "panel",
+      "cone",
+      "capsule",
+      "blob",
       "floating"
     ])
   ) {
+    if (hasAny(text, ["make it gold", "make this gold", "turn it gold", "make it glass", "make this glass", "turn it glass", "make it chrome", "make this chrome"])) {
+      actions.push({
+        type: "SET_MATERIAL",
+        payload: {
+          objectId: "latest",
+          material: inferMaterial(text)
+        }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["remove everything", "clear objects", "delete objects"])) {
+      actions.push({
+        type: "REMOVE_OBJECT",
+        payload: { objectId: "*" }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["blob", "morph", "look like a bottle", "like a bottle"])) {
+      actions.push({
+        type: "MORPH_BLOB",
+        payload: {
+          targetShape: text.includes("bottle")
+            ? "bottle"
+            : text.includes("cube")
+              ? "cube"
+              : text.includes("crystal")
+                ? "crystal"
+                : text.includes("organic")
+                  ? "organic"
+                  : "sphere",
+          distort: text.includes("bottle") ? 0.3 : 0.5,
+          speed: text.includes("bottle") ? 1 : 1.8
+        }
+      });
+      return actions;
+    }
+
     actions.push({
       type: "ADD_3D_OBJECT",
       payload: {
@@ -485,7 +575,9 @@ export function compileLocalIntent(input: LocalCompilerInput) {
         material: inferMaterial(text),
         color: inferColor(text),
         animation: hasAny(text, ["spin", "rotate", "rotating"]) ? "rotate" : "float",
-        position: text.includes("behind") ? [0, 1.2, -1.4] : [0, 1.2, 0]
+        position: text.includes("behind") ? [0, 1.2, -1.4] : [0, 1.2, 0],
+        scale: [1, 1, 1],
+        intensity: text.includes("slow") ? 0.45 : 1
       }
     });
   }

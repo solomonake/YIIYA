@@ -1,11 +1,10 @@
-import type {
-  PublishedProject,
-  PublishedProjectContent
-} from "@/lib/published-project-types";
+import type { PublishedProject } from "@/lib/published-project-types";
 
 type SupabaseProjectRow = {
   slug: string;
-  content_json: PublishedProjectContent;
+  user_id?: string | null;
+  html_snapshot: string;
+  scene_json: PublishedProject["sceneState"];
   theme_json: unknown;
   created_at: string;
 };
@@ -29,10 +28,11 @@ function getSupabaseConfig(role: "anon" | "service") {
 function rowToPublishedProject(row: SupabaseProjectRow): PublishedProject {
   return {
     slug: row.slug,
-    htmlSnapshot: row.content_json.htmlSnapshot,
-    htmlCanvasImage: row.content_json.htmlCanvasImage,
-    sceneState: row.content_json.sceneState,
-    createdAt: row.content_json.createdAt ?? row.created_at
+    userId: row.user_id ?? null,
+    htmlSnapshot: row.html_snapshot,
+    htmlCanvasImage: "",
+    sceneState: row.scene_json,
+    createdAt: row.created_at
   };
 }
 
@@ -47,7 +47,7 @@ async function upsertProject(project: PublishedProject, draft: boolean) {
     throw new Error("Supabase service role is not configured");
   }
 
-  const response = await fetch(`${config.url}/rest/v1/projects?on_conflict=slug`, {
+  const response = await fetch(`${config.url}/rest/v1/published_projects?on_conflict=slug`, {
     method: "POST",
     headers: {
       apikey: config.key,
@@ -57,15 +57,11 @@ async function upsertProject(project: PublishedProject, draft: boolean) {
     },
     body: JSON.stringify({
       slug: project.slug,
-      owner_id: null,
-      content_json: {
-        draft,
-        htmlSnapshot: project.htmlSnapshot,
-        htmlCanvasImage: project.htmlCanvasImage,
-        sceneState: project.sceneState,
-        createdAt: project.createdAt
-      } satisfies PublishedProjectContent,
-      theme_json: project.sceneState.themeState ?? {}
+      user_id: project.userId ?? null,
+      html_snapshot: project.htmlSnapshot,
+      scene_json: project.sceneState,
+      theme_json: project.sceneState.themeState ?? {},
+      created_at: project.createdAt
     })
   });
 
@@ -100,11 +96,11 @@ export async function readPublishedProjectFromSupabase(slug: string) {
   }
 
   const params = new URLSearchParams({
-    select: "slug,content_json,theme_json,created_at",
+    select: "slug,user_id,html_snapshot,scene_json,theme_json,created_at",
     slug: `eq.${slug}`,
     limit: "1"
   });
-  const response = await fetch(`${config.url}/rest/v1/projects?${params}`, {
+  const response = await fetch(`${config.url}/rest/v1/published_projects?${params}`, {
     headers: {
       apikey: config.key,
       Authorization: `Bearer ${config.key}`

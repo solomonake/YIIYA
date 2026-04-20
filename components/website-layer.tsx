@@ -3,7 +3,9 @@
 import {
   type CSSProperties,
   type MouseEvent,
-  type PropsWithChildren
+  type PropsWithChildren,
+  useRef,
+  useState
 } from "react";
 import {
   compileYiiyaTheme,
@@ -155,41 +157,33 @@ function Selectable({
   children
 }: SelectableProps) {
   const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
+  const selectedElements = useYiiyaStore((state) => state.selectedElements);
   const hoveredElementId = useYiiyaStore((state) => state.hoveredElementId);
   const setSelectedElementId = useYiiyaStore((state) => state.setSelectedElementId);
-  const setHoveredElementId = useYiiyaStore((state) => state.setHoveredElementId);
+  const setSelectedElements = useYiiyaStore((state) => state.setSelectedElements);
   const isHovered = hoveredElementId === id;
-  const isSelected = selectedElementId === id;
+  const isSelected = selectedElementId === id || selectedElements.includes(id);
   const Component = as;
 
   const handleClick = (event: MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     setSelectedElementId(id);
+    setSelectedElements([id]);
   };
 
   return (
     <Component
       data-yiiya-id={id}
       data-yiiya-active={isHovered || isSelected ? "true" : "false"}
+      data-yiiya-selected={isSelected ? "true" : "false"}
       className={`yiiya-element relative ${className ?? ""}`}
       style={style}
       type={type}
-      onMouseEnter={() => setHoveredElementId(id)}
-      onMouseLeave={() => {
-        if (useYiiyaStore.getState().hoveredElementId === id) {
-          setHoveredElementId(null);
-        }
-      }}
       onClick={handleClick}
     >
       {children}
-      {isHovered || isSelected ? (
-        <span
-          data-yiiya-id={`${id}-label`}
-          className="pointer-events-none absolute right-1 top-1 z-30 bg-amber px-1.5 py-0.5 font-mono text-[10px] leading-none text-ink shadow-[0_8px_20px_rgba(0,0,0,0.24)]"
-        >
-          {id}
-        </span>
+      {isSelected ? (
+        <span className="pointer-events-none absolute left-0 top-0 h-1.5 w-1.5 rounded-full bg-amber" />
       ) : null}
     </Component>
   );
@@ -228,9 +222,34 @@ function sectionTheme(section: YiiyaSection, themeState: YiiyaTheme) {
 
 function sectionShellStyle(theme: CompiledYiiyaTheme): CSSProperties {
   return {
-    backgroundColor: theme.background,
-    color: theme.foreground,
-    padding: `${theme.spacing.sectionY}px ${theme.spacing.sectionX}px`
+    "--yiiya-bg": theme.background,
+    "--yiiya-fg": theme.foreground,
+    "--yiiya-muted": theme.mutedForeground,
+    "--yiiya-surface": theme.surface,
+    "--yiiya-border": theme.border,
+    "--yiiya-accent": theme.primaryAccent,
+    "--yiiya-section-x": `${theme.spacing.sectionX}px`,
+    "--yiiya-section-y": `${theme.spacing.sectionY}px`,
+    "--yiiya-radius": `${theme.borderRadius}px`,
+    backgroundColor: "var(--yiiya-bg)",
+    color: "var(--yiiya-fg)",
+    padding: "var(--yiiya-section-y) var(--yiiya-section-x)"
+  } as CSSProperties;
+}
+
+function fluid(min: number, preferredVw: number, max: number) {
+  return `clamp(${min}px, ${preferredVw}vw, ${max}px)`;
+}
+
+function editorialCtaStyle(theme: CompiledYiiyaTheme): CSSProperties {
+  return {
+    borderRadius: Math.min(2, theme.borderRadius),
+    border: "none",
+    backgroundColor: "var(--yiiya-accent)",
+    color: "var(--yiiya-bg)",
+    fontFamily: "inherit",
+    fontSize: fluid(13, 1.1, 15),
+    padding: `${theme.spacing.sm}px ${theme.spacing.md}px`
   };
 }
 
@@ -255,7 +274,7 @@ function ButtonLike({
         border: `1px solid ${theme.primaryAccent}`,
         backgroundColor: variant === "filled" ? theme.primaryAccent : "transparent",
         color: variant === "filled" ? theme.background : theme.primaryAccent,
-        fontSize: theme.type.body,
+        fontSize: fluid(16, 1.3, 18),
         padding: `${theme.spacing.sm}px ${theme.spacing.md}px`
       }}
     >
@@ -294,7 +313,7 @@ function NavbarSection({
       <Selectable
         id={`navbar-brand-${index}`}
         className="shrink-0 font-bold"
-        style={{ color: theme.foreground, fontSize: theme.type.body }}
+        style={{ color: theme.foreground, fontSize: fluid(16, 1.3, 18) }}
       >
         {brand}
       </Selectable>
@@ -307,7 +326,7 @@ function NavbarSection({
           <Selectable
             key={`${link}-${linkIndex}`}
             id={`navbar-link-${index}-${linkIndex + 1}`}
-            style={{ color: theme.mutedForeground, fontSize: theme.type.body }}
+            style={{ color: theme.mutedForeground, fontSize: fluid(16, 1.3, 18) }}
           >
             {link}
           </Selectable>
@@ -343,15 +362,25 @@ function HeroSection({
       <Selectable
         as="section"
         id={`hero-section-${index}`}
-        className="grid min-h-[80svh] items-center md:grid-cols-[minmax(0,0.6fr)_minmax(280px,0.4fr)]"
-        style={{ ...sectionShellStyle(theme), gap: theme.spacing.xl }}
+        className="yiiya-section grid items-center md:grid-cols-[58%_42%]"
+        style={{
+          ...sectionShellStyle(theme),
+          gap: 80,
+          paddingTop: 120,
+          paddingBottom: 80
+        }}
       >
         <Selectable id={`hero-copy-${index}`} className="self-center">
           <Selectable
             as="h1"
             id={`hero-title-${index}`}
-            className="leading-[0.98] tracking-[0]"
-            style={{ fontSize: theme.type.hero, fontWeight: theme.fontWeight }}
+            className="tracking-[0]"
+            style={{
+              fontSize: fluid(60, 7, 80),
+              fontWeight: 800,
+              lineHeight: 0.9,
+              letterSpacing: "-0.03em"
+            }}
           >
             {heading}
           </Selectable>
@@ -360,30 +389,36 @@ function HeroSection({
             id={`hero-subtext-${index}`}
             className="max-w-2xl leading-8"
             style={{
-              marginTop: theme.spacing.md,
-              color: theme.mutedForeground,
-              fontSize: theme.type.body
+              marginTop: 24,
+              color: "var(--yiiya-muted)",
+              fontSize: fluid(16, 1.6, 18),
+              fontWeight: 300,
+              maxWidth: 480
             }}
           >
             {subtext}
           </Selectable>
-          <Selectable id={`hero-cta-wrap-${index}`} style={{ marginTop: theme.spacing.lg }}>
-            <ButtonLike id={`hero-cta-${index}`} theme={theme}>
+          <Selectable id={`hero-cta-wrap-${index}`} style={{ marginTop: 40 }}>
+            <Selectable
+              as="button"
+              id={`hero-cta-${index}`}
+              type="button"
+              style={editorialCtaStyle(theme)}
+            >
               {cta}
-            </ButtonLike>
+            </Selectable>
           </Selectable>
         </Selectable>
         <Selectable
           id={`hero-visual-${index}`}
-          className="grid min-h-[520px] place-items-center border"
+          className="grid min-h-[480px] place-items-center border"
           style={{
-            borderColor: theme.border,
-            borderRadius: theme.borderRadius,
-            color: theme.mutedForeground,
-            fontSize: theme.type.body
+            borderColor: "var(--yiiya-border)",
+            color: "var(--yiiya-muted)",
+            fontSize: fluid(13, 1.2, 15)
           }}
         >
-          Visual
+          [ VISUAL ]
         </Selectable>
       </Selectable>
     );
@@ -394,82 +429,97 @@ function HeroSection({
       <Selectable
         as="section"
         id={`hero-section-${index}`}
-        className="grid min-h-[86svh] grid-cols-1 md:grid-cols-3"
-        style={{ ...sectionShellStyle(theme), gap: theme.spacing.md }}
+        className="yiiya-section grid min-h-[86svh]"
+        style={{
+          ...sectionShellStyle(theme),
+          display: "grid",
+          gridTemplateAreas:
+            '"headline headline visual" "stat1 stat2 visual" "cta cta visual"',
+          gridTemplateColumns: "1.1fr 0.9fr 1fr",
+          gridTemplateRows: "auto minmax(130px, 0.6fr) auto",
+          gap: 16
+        }}
       >
         <Selectable
           id={`hero-title-cell-${index}`}
-          className="border md:col-span-2"
+          className="border"
           style={{
-            borderColor: theme.border,
-            borderRadius: theme.borderRadius,
+            gridArea: "headline",
+            borderColor: "var(--yiiya-border)",
             padding: theme.spacing.lg
           }}
         >
           <Selectable
             as="h1"
             id={`hero-title-${index}`}
-            className="leading-[0.96] tracking-[0]"
-            style={{ fontSize: theme.type.hero, fontWeight: theme.fontWeight }}
+            style={{
+              fontSize: fluid(56, 8, 104),
+              fontWeight: 800,
+              lineHeight: 0.9,
+              letterSpacing: "-0.03em"
+            }}
           >
             {heading}
           </Selectable>
         </Selectable>
-        <Selectable
-          id={`hero-stats-${index}`}
-          className="grid border"
-          style={{
-            borderColor: theme.border,
-            borderRadius: theme.borderRadius,
-            gap: theme.spacing.sm,
-            padding: theme.spacing.lg
-          }}
-        >
-          {[
-            ["4x", "faster drafts"],
-            ["11", "section types"],
-            ["3D", "spatial layer"]
-          ].map(([value, label], statIndex) => (
-            <Selectable key={value} id={`hero-stat-${index}-${statIndex + 1}`}>
-              <Selectable
-                as="h2"
-                id={`hero-stat-value-${index}-${statIndex + 1}`}
-                style={{
-                  color: theme.primaryAccent,
-                  fontSize: theme.type.title,
-                  fontWeight: theme.fontWeight
-                }}
-              >
-                {value}
-              </Selectable>
-              <Selectable
-                as="p"
-                id={`hero-stat-label-${index}-${statIndex + 1}`}
-                style={{ color: theme.mutedForeground, fontSize: theme.type.body }}
-              >
-                {label}
-              </Selectable>
+        {[
+          ["4x", "faster drafts", "stat1"],
+          ["11", "section types", "stat2"]
+        ].map(([value, label, area], statIndex) => (
+          <Selectable
+            key={value}
+            id={`hero-stat-${index}-${statIndex + 1}`}
+            className="border"
+            style={{
+              gridArea: area,
+              borderColor: "var(--yiiya-border)",
+              padding: theme.spacing.md
+            }}
+          >
+            <Selectable
+              as="h2"
+              id={`hero-stat-value-${index}-${statIndex + 1}`}
+              style={{
+                color: "var(--yiiya-accent)",
+                fontSize: fluid(36, 4, 56),
+                fontWeight: 800,
+                lineHeight: 1
+              }}
+            >
+              {value}
             </Selectable>
-          ))}
-        </Selectable>
+            <Selectable
+              as="p"
+              id={`hero-stat-label-${index}-${statIndex + 1}`}
+              style={{
+                color: "var(--yiiya-muted)",
+                fontSize: fluid(13, 1.2, 16),
+                marginTop: theme.spacing.xs
+              }}
+            >
+              {label}
+            </Selectable>
+          </Selectable>
+        ))}
         <Selectable
           id={`hero-visual-${index}`}
-          className="grid min-h-[340px] place-items-center border md:col-span-2"
+          className="grid place-items-center border"
           style={{
-            borderColor: theme.border,
-            borderRadius: theme.borderRadius,
-            color: theme.mutedForeground,
-            fontSize: theme.type.body
+            gridArea: "visual",
+            minHeight: 520,
+            borderColor: "var(--yiiya-border)",
+            color: "var(--yiiya-muted)",
+            fontSize: fluid(13, 1.2, 15)
           }}
         >
-          Visual
+          [ VISUAL ]
         </Selectable>
         <Selectable
           id={`hero-cta-cell-${index}`}
           className="border"
           style={{
-            borderColor: theme.border,
-            borderRadius: theme.borderRadius,
+            gridArea: "cta",
+            borderColor: "var(--yiiya-border)",
             padding: theme.spacing.lg
           }}
         >
@@ -477,14 +527,19 @@ function HeroSection({
             as="p"
             id={`hero-subtext-${index}`}
             className="leading-7"
-            style={{ color: theme.mutedForeground, fontSize: theme.type.body }}
+            style={{ color: "var(--yiiya-muted)", fontSize: fluid(16, 1.4, 18) }}
           >
             {subtext}
           </Selectable>
           <Selectable id={`hero-cta-wrap-${index}`} style={{ marginTop: theme.spacing.md }}>
-            <ButtonLike id={`hero-cta-${index}`} theme={theme}>
+            <Selectable
+              as="button"
+              id={`hero-cta-${index}`}
+              type="button"
+              style={editorialCtaStyle(theme)}
+            >
               {cta}
-            </ButtonLike>
+            </Selectable>
           </Selectable>
         </Selectable>
       </Selectable>
@@ -495,17 +550,18 @@ function HeroSection({
     <Selectable
       as="section"
       id={`hero-section-${index}`}
-      className="grid min-h-svh place-items-center text-center"
-      style={sectionShellStyle(theme)}
+      className="yiiya-section flex min-h-screen flex-col items-center justify-center text-center"
+      style={{ ...sectionShellStyle(theme), background: "var(--yiiya-bg)" }}
     >
       <Selectable id={`hero-copy-${index}`} className="mx-auto max-w-4xl">
         <Selectable
           as="h1"
           id={`hero-title-${index}`}
-          className="leading-[0.94] tracking-[0]"
           style={{
-            fontSize: theme.type.hero * 1.08,
-            fontWeight: theme.fontWeight
+            fontSize: "clamp(72px, 10vw, 140px)",
+            fontWeight: 800,
+            lineHeight: 0.9,
+            letterSpacing: "-0.03em"
           }}
         >
           {heading}
@@ -515,17 +571,24 @@ function HeroSection({
           id={`hero-subtext-${index}`}
           className="mx-auto max-w-2xl leading-8"
           style={{
-            marginTop: theme.spacing.md,
-            color: theme.mutedForeground,
-            fontSize: theme.type.body
+            marginTop: 24,
+            color: "var(--yiiya-muted)",
+            fontSize: 18,
+            fontWeight: 300,
+            maxWidth: 480
           }}
         >
           {subtext}
         </Selectable>
-        <Selectable id={`hero-cta-wrap-${index}`} style={{ marginTop: theme.spacing.lg }}>
-          <ButtonLike id={`hero-cta-${index}`} theme={theme}>
+        <Selectable id={`hero-cta-wrap-${index}`} style={{ marginTop: 40 }}>
+          <Selectable
+            as="button"
+            id={`hero-cta-${index}`}
+            type="button"
+            style={editorialCtaStyle(theme)}
+          >
             {cta}
-          </ButtonLike>
+          </Selectable>
         </Selectable>
       </Selectable>
     </Selectable>
@@ -559,7 +622,7 @@ function AboutSection({
         <Selectable
           as="h2"
           id={`about-title-${index}`}
-          style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+          style={{ fontSize: fluid(32, 4, 56), fontWeight: theme.fontWeight }}
         >
           {heading}
         </Selectable>
@@ -570,7 +633,7 @@ function AboutSection({
           style={{
             marginTop: theme.spacing.md,
             color: theme.mutedForeground,
-            fontSize: theme.type.body
+            fontSize: fluid(16, 1.3, 18)
           }}
         >
           {subtext}
@@ -615,7 +678,7 @@ function FeaturesSection({
       <Selectable
         as="h2"
         id={`features-title-${index}`}
-        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+        style={{ fontSize: fluid(32, 4, 56), fontWeight: theme.fontWeight }}
       >
         {heading}
       </Selectable>
@@ -658,7 +721,7 @@ function FeaturesSection({
               style={{
                 marginTop: theme.spacing.sm,
                 color: theme.mutedForeground,
-                fontSize: theme.type.body
+                fontSize: fluid(16, 1.3, 18)
               }}
             >
               {feature.subtext}
@@ -695,7 +758,7 @@ function ServicesSection({
       <Selectable
         as="h2"
         id={`services-title-${index}`}
-        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+        style={{ fontSize: fluid(32, 4, 56), fontWeight: theme.fontWeight }}
       >
         {heading}
       </Selectable>
@@ -744,7 +807,7 @@ function ServicesSection({
               style={{
                 marginTop: theme.spacing.sm,
                 color: theme.mutedForeground,
-                fontSize: theme.type.body
+                fontSize: fluid(16, 1.3, 18)
               }}
             >
               {service.subtext}
@@ -807,7 +870,7 @@ function MetricsSection({
               style={{
                 marginTop: theme.spacing.xs,
                 color: theme.mutedForeground,
-                fontSize: theme.type.body
+                fontSize: fluid(16, 1.3, 18)
               }}
             >
               {textFrom(metric, ["label", "caption"], "Projects created")}
@@ -856,7 +919,7 @@ function LogoStripSection({
             style={{
               borderColor: theme.border,
               color: theme.mutedForeground,
-              fontSize: theme.type.body,
+              fontSize: fluid(16, 1.3, 18),
               padding: `${theme.spacing.md}px ${theme.spacing.sm}px`
             }}
           >
@@ -908,7 +971,7 @@ function TestimonialsSection({
       <Selectable
         as="h2"
         id={`testimonials-title-${index}`}
-        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+        style={{ fontSize: fluid(32, 4, 56), fontWeight: theme.fontWeight }}
       >
         {heading}
       </Selectable>
@@ -946,7 +1009,7 @@ function TestimonialsSection({
                   height: theme.spacing.xl,
                   backgroundColor: theme.primaryAccent,
                   color: theme.background,
-                  fontSize: theme.type.body,
+                  fontSize: fluid(16, 1.3, 18),
                   fontWeight: theme.fontWeight
                 }}
               >
@@ -959,7 +1022,7 @@ function TestimonialsSection({
                 style={{
                   marginTop: theme.spacing.md,
                   color: theme.foreground,
-                  fontSize: theme.type.body
+                  fontSize: fluid(16, 1.3, 18)
                 }}
               >
                 {textFrom(testimonial, ["quote", "text"], "Strong signal from the market.")}
@@ -969,7 +1032,7 @@ function TestimonialsSection({
                 id={`testimonial-name-${index}-${testimonialIndex + 1}`}
                 style={{
                   marginTop: theme.spacing.md,
-                  fontSize: theme.type.body,
+                  fontSize: fluid(16, 1.3, 18),
                   fontWeight: theme.fontWeight
                 }}
               >
@@ -978,7 +1041,7 @@ function TestimonialsSection({
               <Selectable
                 as="p"
                 id={`testimonial-role-${index}-${testimonialIndex + 1}`}
-                style={{ color: theme.mutedForeground, fontSize: theme.type.body }}
+                style={{ color: theme.mutedForeground, fontSize: fluid(16, 1.3, 18) }}
               >
                 {textFrom(testimonial, ["role", "title"], "Customer")}
               </Selectable>
@@ -1027,7 +1090,7 @@ function PricingSection({
       <Selectable
         as="h2"
         id={`pricing-title-${index}`}
-        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+        style={{ fontSize: fluid(32, 4, 56), fontWeight: theme.fontWeight }}
       >
         {heading}
       </Selectable>
@@ -1069,7 +1132,7 @@ function PricingSection({
                     borderRadius: theme.borderRadius,
                     backgroundColor: theme.primaryAccent,
                     color: theme.background,
-                    fontSize: theme.type.body,
+                    fontSize: fluid(16, 1.3, 18),
                     padding: `${theme.spacing.xs / 2}px ${theme.spacing.sm}px`
                   }}
                 >
@@ -1093,7 +1156,7 @@ function PricingSection({
                 style={{
                   marginTop: theme.spacing.sm,
                   color: theme.primaryAccent,
-                  fontSize: theme.type.title,
+                  fontSize: fluid(32, 4, 56),
                   fontWeight: theme.fontWeight
                 }}
               >
@@ -1112,7 +1175,7 @@ function PricingSection({
                     id={`pricing-feature-${index}-${planIndex + 1}-${featureIndex + 1}`}
                     style={{
                       color: theme.mutedForeground,
-                      fontSize: theme.type.body
+                      fontSize: fluid(16, 1.3, 18)
                     }}
                   >
                     <span style={{ color: theme.primaryAccent }}>✓</span> {feature}
@@ -1181,7 +1244,7 @@ function FAQSection({
       <Selectable
         as="h2"
         id={`faq-title-${index}`}
-        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+        style={{ fontSize: fluid(32, 4, 56), fontWeight: theme.fontWeight }}
       >
         {heading}
       </Selectable>
@@ -1199,7 +1262,7 @@ function FAQSection({
             <Selectable
               as="h2"
               id={`faq-question-${index}-${faqIndex + 1}`}
-              style={{ fontSize: theme.type.body, fontWeight: 400 }}
+              style={{ fontSize: fluid(16, 1.3, 18), fontWeight: 400 }}
             >
               {textFrom(faq, ["question", "heading"], "Question")}
             </Selectable>
@@ -1210,7 +1273,7 @@ function FAQSection({
               style={{
                 marginTop: theme.spacing.xs,
                 color: theme.mutedForeground,
-                fontSize: theme.type.body
+                fontSize: fluid(16, 1.3, 18)
               }}
             >
               {textFrom(faq, ["answer", "subtext", "body"], "Answer")}
@@ -1249,7 +1312,7 @@ function ContactSection({
         <Selectable
           as="h2"
           id={`contact-title-${index}`}
-          style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+          style={{ fontSize: fluid(32, 4, 56), fontWeight: theme.fontWeight }}
         >
           {heading}
         </Selectable>
@@ -1260,7 +1323,7 @@ function ContactSection({
           style={{
             marginTop: theme.spacing.md,
             color: theme.mutedForeground,
-            fontSize: theme.type.body
+            fontSize: fluid(16, 1.3, 18)
           }}
         >
           {subtext}
@@ -1282,7 +1345,7 @@ function ContactSection({
               backgroundColor: theme.surface,
               color: theme.mutedForeground,
               padding: `0 ${theme.spacing.md}px`,
-              fontSize: theme.type.body
+              fontSize: fluid(16, 1.3, 18)
             }}
           >
             {label}
@@ -1297,7 +1360,7 @@ function ContactSection({
             backgroundColor: theme.surface,
             color: theme.mutedForeground,
             padding: `${theme.spacing.sm}px ${theme.spacing.md}px`,
-            fontSize: theme.type.body
+            fontSize: fluid(16, 1.3, 18)
           }}
         >
           Message
@@ -1351,7 +1414,7 @@ function FooterSection({
           <Selectable
             id={`footer-brand-${index}`}
             className="font-bold"
-            style={{ fontSize: theme.type.body }}
+            style={{ fontSize: fluid(16, 1.3, 18) }}
           >
             {brand}
           </Selectable>
@@ -1362,7 +1425,7 @@ function FooterSection({
             style={{
               marginTop: theme.spacing.sm,
               color: theme.mutedForeground,
-              fontSize: theme.type.body
+              fontSize: fluid(16, 1.3, 18)
             }}
           >
             {subtext}
@@ -1372,7 +1435,7 @@ function FooterSection({
           <Selectable
             as="h2"
             id={`footer-links-title-${index}`}
-            style={{ fontSize: theme.type.body, fontWeight: theme.fontWeight }}
+            style={{ fontSize: fluid(16, 1.3, 18), fontWeight: theme.fontWeight }}
           >
             Links
           </Selectable>
@@ -1385,7 +1448,7 @@ function FooterSection({
               <Selectable
                 key={`${link}-${linkIndex}`}
                 id={`footer-link-${index}-${linkIndex + 1}`}
-                style={{ color: theme.mutedForeground, fontSize: theme.type.body }}
+                style={{ color: theme.mutedForeground, fontSize: fluid(16, 1.3, 18) }}
               >
                 {link}
               </Selectable>
@@ -1396,7 +1459,7 @@ function FooterSection({
           <Selectable
             as="h2"
             id={`footer-contact-title-${index}`}
-            style={{ fontSize: theme.type.body, fontWeight: theme.fontWeight }}
+            style={{ fontSize: fluid(16, 1.3, 18), fontWeight: theme.fontWeight }}
           >
             Contact
           </Selectable>
@@ -1406,7 +1469,7 @@ function FooterSection({
             style={{
               marginTop: theme.spacing.sm,
               color: theme.mutedForeground,
-              fontSize: theme.type.body
+              fontSize: fluid(16, 1.3, 18)
             }}
           >
             hello@example.com
@@ -1420,7 +1483,7 @@ function FooterSection({
               <Selectable
                 key={social}
                 id={`footer-social-${index}-${social.toLowerCase()}`}
-                style={{ color: theme.primaryAccent, fontSize: theme.type.body }}
+                style={{ color: theme.primaryAccent, fontSize: fluid(16, 1.3, 18) }}
               >
                 {social}
               </Selectable>
@@ -1437,7 +1500,7 @@ function FooterSection({
           paddingTop: theme.spacing.sm,
           borderColor: theme.border,
           color: theme.mutedForeground,
-          fontSize: theme.type.body
+          fontSize: fluid(16, 1.3, 18)
         }}
       >
         Copyright 2026 {brand}. All rights reserved.
@@ -1502,13 +1565,105 @@ function RenderSection({
   return <HeroSection section={section} index={index} theme={theme} />;
 }
 
+function closestYiiyaElement(element: Element | null) {
+  return element?.closest<HTMLElement>("[data-yiiya-id]") ?? null;
+}
+
+function closestBlockYiiyaElement(element: HTMLElement | null) {
+  return (
+    element?.closest<HTMLElement>(
+      "section[data-yiiya-id], nav[data-yiiya-id], footer[data-yiiya-id], form[data-yiiya-id], div[data-yiiya-id]"
+    ) ?? null
+  );
+}
+
+function rectsIntersect(a: DOMRect, b: DOMRect) {
+  return !(
+    b.left > a.right ||
+    b.right < a.left ||
+    b.top > a.bottom ||
+    b.bottom < a.top
+  );
+}
+
 export function WebsiteLayer() {
   const sections = useYiiyaStore((state) => state.sections);
   const themeState = useYiiyaStore((state) => state.themeState);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const setSelectedElementId = useYiiyaStore((state) => state.setSelectedElementId);
+  const setSelectedElements = useYiiyaStore((state) => state.setSelectedElements);
   const setHoveredElementId = useYiiyaStore((state) => state.setHoveredElementId);
+  const addLog = useYiiyaStore((state) => state.addLog);
   const baseTheme = compileYiiyaTheme(themeState);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [dragRect, setDragRect] = useState<CSSProperties | null>(null);
+
+  const clearBlockActive = () => {
+    document
+      .querySelectorAll("[data-yiiya-block-active='true']")
+      .forEach((element) => element.removeAttribute("data-yiiya-block-active"));
+  };
+
+  const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    const target = closestYiiyaElement(
+      document.elementFromPoint(event.clientX, event.clientY)
+    );
+    const block = closestBlockYiiyaElement(target);
+
+    setHoveredElementId(target?.dataset.yiiyaId ?? null);
+    clearBlockActive();
+
+    if (block) {
+      block.setAttribute("data-yiiya-block-active", "true");
+    }
+
+    if (dragStartRef.current) {
+      const left = Math.min(dragStartRef.current.x, event.clientX);
+      const top = Math.min(dragStartRef.current.y, event.clientY);
+      const width = Math.abs(event.clientX - dragStartRef.current.x);
+      const height = Math.abs(event.clientY - dragStartRef.current.y);
+
+      setDragRect({ left, top, width, height });
+    }
+  };
+
+  const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    dragStartRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const handleMouseUp = (event: MouseEvent<HTMLDivElement>) => {
+    const start = dragStartRef.current;
+    dragStartRef.current = null;
+
+    if (!start) {
+      return;
+    }
+
+    const width = Math.abs(event.clientX - start.x);
+    const height = Math.abs(event.clientY - start.y);
+    setDragRect(null);
+
+    if (width < 8 && height < 8) {
+      return;
+    }
+
+    const dragBox = new DOMRect(
+      Math.min(start.x, event.clientX),
+      Math.min(start.y, event.clientY),
+      width,
+      height
+    );
+    const selected = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-yiiya-id]")
+    )
+      .filter((element) => rectsIntersect(dragBox, element.getBoundingClientRect()))
+      .map((element) => element.dataset.yiiyaId)
+      .filter((id): id is string => Boolean(id));
+
+    setSelectedElements(selected);
+    setSelectedElementId(selected[0] ?? null);
+    addLog(`[CONTEXT]: ${selected.length} elements selected`);
+  };
 
   return (
     <div
@@ -1516,6 +1671,15 @@ export function WebsiteLayer() {
       style={{
         opacity: canvasMode === "3D" ? 0 : 1,
         pointerEvents: canvasMode === "3D" ? "none" : "auto"
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={() => {
+        setHoveredElementId(null);
+        clearBlockActive();
+        dragStartRef.current = null;
+        setDragRect(null);
       }}
     >
       {sections.length === 0 ? (
@@ -1527,11 +1691,24 @@ export function WebsiteLayer() {
       ) : (
         <div
           data-yiiya-publish-root
-          className="pointer-events-auto mx-auto min-h-full w-full max-w-5xl overflow-hidden rounded-[18px] border border-white/10 bg-white/5 shadow-[0_30px_120px_rgba(0,0,0,0.45)]"
+          className="pointer-events-auto mx-auto min-h-full w-full max-w-5xl overflow-hidden rounded-[18px] border border-white/10 bg-white/5"
           onClick={() => setSelectedElementId(null)}
+          onMouseDown={(event) => {
+            if (!closestYiiyaElement(event.target as Element)) {
+              setSelectedElementId(null);
+              setSelectedElements([]);
+            }
+          }}
           onMouseLeave={() => setHoveredElementId(null)}
         >
-          <div className="flex h-9 items-center gap-2 border-b border-black/10 bg-[#f5f5f0] px-4 text-xs text-black/45">
+          <div
+            className="flex h-9 items-center gap-2 border-b px-4 text-xs"
+            style={{
+              backgroundColor: baseTheme.background,
+              borderColor: baseTheme.border,
+              color: baseTheme.mutedForeground
+            }}
+          >
             <span className="h-2 w-2 rounded-full bg-black/18" />
             <span className="h-2 w-2 rounded-full bg-black/18" />
             <span className="h-2 w-2 rounded-full bg-black/18" />
@@ -1547,6 +1724,12 @@ export function WebsiteLayer() {
           ))}
         </div>
       )}
+      {dragRect ? (
+        <div
+          className="pointer-events-none fixed z-[70] border border-amber/70 bg-amber/10"
+          style={dragRect}
+        />
+      ) : null}
     </div>
   );
 }

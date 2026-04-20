@@ -203,6 +203,99 @@ function applyAdd3DObject(action: YiiyaAction) {
   });
 }
 
+function objectIdFromValue(value: unknown) {
+  return typeof value === "string" && value.length > 0 ? value : "latest";
+}
+
+function numericOverride(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function blobTargetFromValue(value: unknown) {
+  if (
+    value === "sphere" ||
+    value === "bottle" ||
+    value === "cube" ||
+    value === "organic" ||
+    value === "crystal"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function applyMorphBlob(action: YiiyaAction) {
+  if (action.type !== "MORPH_BLOB") {
+    return;
+  }
+
+  useYiiyaStore.getState().morphBlob({
+    targetShape: blobTargetFromValue(action.payload.targetShape),
+    distort: numericOverride(action.payload.distort),
+    speed: numericOverride(action.payload.speed)
+  });
+}
+
+function applySetMaterial(action: YiiyaAction) {
+  if (action.type !== "SET_MATERIAL") {
+    return;
+  }
+
+  const materialOverrides: Record<string, unknown> = {};
+
+  for (const key of ["metalness", "roughness", "transmission", "emissive"] as const) {
+    const value = action.payload[key];
+
+    if (value !== undefined) {
+      materialOverrides[key] = value;
+    }
+  }
+
+  useYiiyaStore.getState().updateSceneObject(objectIdFromValue(action.payload.objectId), {
+    material:
+      typeof action.payload.material === "string"
+        ? action.payload.material.toLowerCase()
+        : undefined,
+    color: typeof action.payload.color === "string" ? action.payload.color : undefined,
+    materialOverrides
+  });
+}
+
+function applyReshapeObject(action: YiiyaAction) {
+  if (action.type !== "RESHAPE_OBJECT") {
+    return;
+  }
+
+  const objectId = objectIdFromValue(action.payload.objectId);
+  const currentObject =
+    objectId === "latest"
+      ? useYiiyaStore.getState().sceneObjects.at(-1)
+      : useYiiyaStore
+          .getState()
+          .sceneObjects.find((object) => object.id === objectId);
+
+  if (!currentObject) {
+    return;
+  }
+
+  useYiiyaStore.getState().updateSceneObject(objectId, {
+    scale: [
+      numericOverride(action.payload.scaleX) ?? currentObject.scale[0],
+      numericOverride(action.payload.scaleY) ?? currentObject.scale[1],
+      numericOverride(action.payload.scaleZ) ?? currentObject.scale[2]
+    ]
+  });
+}
+
+function applyRemoveObject(action: YiiyaAction) {
+  if (action.type !== "REMOVE_OBJECT") {
+    return;
+  }
+
+  useYiiyaStore.getState().removeSceneObject(objectIdFromValue(action.payload.objectId));
+}
+
 function toNumber(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -365,8 +458,32 @@ function applyChangeTheme(action: YiiyaAction) {
   });
 }
 
+function canvasModeFromValue(value: unknown) {
+  if (value === "WEB" || value === "3D" || value === "HYBRID") {
+    return value;
+  }
+
+  return undefined;
+}
+
 export function runYiiyaActions(actions: YiiyaAction[]) {
   for (const action of actions) {
+    if (action.type === "RESET_PROJECT") {
+      useYiiyaStore.getState().resetProject();
+    }
+
+    if (action.type === "SET_MODE") {
+      const mode = canvasModeFromValue(action.payload.mode);
+
+      if (mode) {
+        useYiiyaStore.getState().setCanvasMode(mode);
+      }
+    }
+
+    if (action.type === "UNDO") {
+      useYiiyaStore.getState().popUndo();
+    }
+
     if (action.type === "ADD_SECTION") {
       applyAddSection(action);
     }
@@ -377,6 +494,22 @@ export function runYiiyaActions(actions: YiiyaAction[]) {
 
     if (action.type === "ADD_SPATIAL_OBJECT") {
       applyAdd3DObject(action);
+    }
+
+    if (action.type === "MORPH_BLOB") {
+      applyMorphBlob(action);
+    }
+
+    if (action.type === "SET_MATERIAL") {
+      applySetMaterial(action);
+    }
+
+    if (action.type === "RESHAPE_OBJECT") {
+      applyReshapeObject(action);
+    }
+
+    if (action.type === "REMOVE_OBJECT") {
+      applyRemoveObject(action);
     }
 
     if (action.type === "SET_GLOBAL_THEME") {

@@ -401,6 +401,10 @@ export function useSpeechInterpreter() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code !== "Space" || event.repeat || isTextInputTarget(event.target)) {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+          event.preventDefault();
+          useYiiyaStore.getState().popUndo();
+        }
         return;
       }
 

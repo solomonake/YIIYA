@@ -15,6 +15,9 @@ function isPublishedProject(value: unknown): value is PublishedProject {
   return (
     typeof project.slug === "string" &&
     /^[a-z0-9]{8}$/.test(project.slug) &&
+    (project.userId === undefined ||
+      typeof project.userId === "string" ||
+      project.userId === null) &&
     typeof project.htmlSnapshot === "string" &&
     typeof project.htmlCanvasImage === "string" &&
     Boolean(project.sceneState) &&

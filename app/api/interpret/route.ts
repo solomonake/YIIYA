@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { compileLocalIntent } from "@/lib/local-intent-compiler";
+import { ALCHEMIST_PROMPT } from "@/lib/prompts/alchemist";
+import { classifyIntent, type IntentType } from "@/lib/router";
 
 const ARCHITECT_PROMPT =
   "You are the Architect agent for Yiiya, a Stateful Design Compiler and Spatial Design Orchestrator. Yiiya is not a website builder. It compiles vague human intent into design tokens, live website sections, selected-element edits, and 3D objects. Aesthetic target: Institutional Professional, Bloomberg Terminal meets high-end creative studio. Dark, dense, precise, fast. Return valid JSON only: an array of actions. Supported actions: ADD_SECTION payload { sectionType, layoutVariant?, theme, content }; MODIFY_ELEMENT payload { elementId, property, value, mode? }; SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }; SYNC_BRAND_TO_IMAGE payload { palette, fontWeights, layoutStructure, visualTone }; ADJUST_DENSITY payload { scale }; ADD_3D_OBJECT payload { shape, material, color, animation, position, anchorSection? }; ADD_SPATIAL_OBJECT payload { shape, material, color, animation, position, anchorSection? }; PUBLISH payload {}. Supported sectionType values: NAVBAR, HERO, ABOUT, SERVICES, FEATURES, METRICS, LOGO_STRIP, TESTIMONIALS, PRICING, FAQ, CONTACT, FOOTER. Context is authoritative: use history for follow-up commands and current_canvas_json for current state. If selectedElementId is present, prioritize modifying that exact ID for relative phrases like 'this', 'it', 'move this', 'make it bigger', 'more', 'less', or 'center it'. Use MODIFY_ELEMENT with math-aware mode values: multiply, increment, replace. For 3D commands, map 'glass sphere', 'chrome cube', 'floating plane' directly to ADD_3D_OBJECT with material Glass/Chrome/Matte, shape sphere/box/plane/cylinder/torus, animation float/rotate/static, and position [x,y,z]. When adding a HERO section, you must include a layoutVariant field. Choose CENTERED_IMPACT for bold, minimal, or editorial vibes. Choose EDITORIAL_SPLIT for agency, portfolio, or professional service vibes. Choose BENTO_GRID for product, startup, or data-forward vibes. When adding a FEATURES section, include layoutVariant: FEATURES_GRID for most cases, FEATURES_HORIZONTAL if the user mentions scroll, showcase, or gallery. If an image is provided, extract dominant hex palette, layout structure, visual tone, and font weight cues, then include SYNC_BRAND_TO_IMAGE and appropriate token actions.";
 
 const CRITIC_PROMPT =
-  "You are the Critic agent for Yiiya. You receive a design action JSON from the Architect agent. Your job is to silently correct quality issues before the frontend receives it. Perform these checks in order:\n\n1. CONTRAST: For every section action, check that the text colour has sufficient contrast against the background colour. If contrast is below 4.5:1, swap the text colour to either pure white (#FFFFFF) or pure black (#000000), whichever is farther from the background. Never leave low-contrast text.\n\n2. FONT SIZES: Body text must never be smaller than 16px equivalent. Headings must never be smaller than 32px equivalent. If font scale tokens are too small, increase them to the minimum.\n\n3. SPACING: Section padding must be at least 64px vertical. If a spacing token would produce less than this, override it.\n\n4. CTA PRESENCE: Every page-level generation should contain at least one CTA button. If the Architect generated only text sections with no button, add a simple CTA section at the end.\n\n5. LAYOUT COMPLETENESS: If only a HERO was requested, append a FEATURES and CONTACT section automatically so the user always gets a credible starting page, not a single section.\n\nAfter making corrections, return only the corrected JSON array. Do not explain corrections. Do not add commentary. Return raw JSON only.\n\nFor each check, also return a qa_log array of strings to append to the operations feed. Format each string as: [QA]: [check name] — PASS or [QA]: [check name] — corrected.";
+  "You are the Critic agent for Yiiya. You receive design action JSON. Silently correct these issues and return only the corrected JSON array plus a qa_log string array.\n\nCHECK 1 CONTRAST: For every section, if text colour and background colour would produce contrast below 4.5:1, swap text to #FFFFFF or #000000 whichever is farther from the background.\nCHECK 2 TYPOGRAPHY: Body text fontSize minimum 16. Headings minimum 32. Correct silently if violated.\nCHECK 3 SPACING: Section vertical padding minimum 64px. Correct if lower.\nCHECK 4 COMPLETENESS: If only one section was generated and no CTA exists, append a minimal CONTACT section.\nCHECK 5 3D LIGHTING: If any ADD_3D_OBJECT action exists with material glass or holographic, ensure the scene has at least one pointLight action. Add one if missing.\n\nReturn format: { actions: [...corrected actions], qa_log: ['[QA]: check — PASS/corrected'] }\nReturn raw JSON only. No explanation.";
+
+const STYLE_PROMPT =
+  "You are the Style agent for Yiiya. Return raw JSON array only. Handle only colour, font, spacing, density, and theme requests. Supported actions: SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }; CHANGE_THEME payload { property, value }; ADJUST_DENSITY payload { scale }; MODIFY_ELEMENT payload { elementId, property, value, mode? }. If selectedElementId is present and the user says this, it, or that, target that exact elementId.";
 
 type ReferenceImage = {
   base64: string;
@@ -14,6 +19,7 @@ type ReferenceImage = {
   dominantColor?: string;
   accentCandidate?: string;
   extractedMode?: "dark" | "light";
+  imageMode?: "web" | "3d" | "hybrid";
 };
 
 type InterpretRequest = {
@@ -26,6 +32,7 @@ type InterpretRequest = {
     content: string;
   }>;
   referenceImage?: ReferenceImage | null;
+  image_mode?: "web" | "3d" | "hybrid";
 };
 
 type AnthropicContentBlock =
@@ -68,6 +75,15 @@ type ModelInput = {
   text: string;
   image?: ReferenceImage | null;
   maxTokens?: number;
+  provider?: "anthropic" | "gemini";
+  model?: string;
+};
+
+type GroundingContext = {
+  industry: string;
+  city: string;
+  promptBlock: string;
+  log: string;
 };
 
 function isReferenceImage(value: unknown): value is ReferenceImage {
@@ -122,7 +138,11 @@ function isInterpretRequest(value: unknown): value is InterpretRequest {
         }))) &&
     (candidate.referenceImage === undefined ||
       candidate.referenceImage === null ||
-      isReferenceImage(candidate.referenceImage))
+      isReferenceImage(candidate.referenceImage)) &&
+    (candidate.image_mode === undefined ||
+      candidate.image_mode === "web" ||
+      candidate.image_mode === "3d" ||
+      candidate.image_mode === "hybrid")
   );
 }
 
@@ -167,6 +187,146 @@ function headerSafeMessage(error: unknown) {
   return message.replace(/[\r\n]/g, " ").slice(0, 180);
 }
 
+function modelForIntent(intent: IntentType) {
+  if (intent === "LAYOUT" || intent === "SPATIAL") {
+    return "claude-sonnet-4-6";
+  }
+
+  if (intent === "STYLE") {
+    return "claude-haiku-4-5-20251001";
+  }
+
+  return "deterministic";
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_resolve, reject) => {
+      setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]);
+}
+
+function commandActions(transcript: string) {
+  const text = transcript.toLowerCase();
+
+  if (text.includes("reset") || text.includes("new")) {
+    return [{ type: "RESET_PROJECT", payload: {} }];
+  }
+
+  if (text.includes("publish")) {
+    return [{ type: "PUBLISH", payload: {} }];
+  }
+
+  if (text.includes("undo")) {
+    return [{ type: "UNDO", payload: {} }];
+  }
+
+  if (text.includes("web mode")) {
+    return [{ type: "SET_MODE", payload: { mode: "WEB" } }];
+  }
+
+  if (text.includes("3d mode") || text.includes("three d mode")) {
+    return [{ type: "SET_MODE", payload: { mode: "3D" } }];
+  }
+
+  if (text.includes("hybrid")) {
+    return [{ type: "SET_MODE", payload: { mode: "HYBRID" } }];
+  }
+
+  return [];
+}
+
+function detectIndustry(transcript: string) {
+  const industries = [
+    "plumbing",
+    "restaurant",
+    "photography",
+    "gym",
+    "law",
+    "dental",
+    "real estate",
+    "fashion",
+    "cafe",
+    "salon",
+    "agency",
+    "studio",
+    "startup",
+    "portfolio",
+    "tech",
+    "music",
+    "architecture",
+    "wedding"
+  ];
+  const text = transcript.toLowerCase();
+
+  return industries.find((industry) => text.includes(industry)) ?? null;
+}
+
+function detectCity(transcript: string) {
+  const match = transcript.match(/\bin\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/);
+
+  return match?.[1] ?? "a major city";
+}
+
+async function fetchUnsplashImages(industry: string) {
+  const accessKey = process.env.UNSPLASH_ACCESS_KEY;
+
+  if (!accessKey) {
+    return [];
+  }
+
+  const params = new URLSearchParams({
+    query: `${industry} professional photography`,
+    per_page: "3",
+    orientation: "landscape"
+  });
+  const response = await fetch(`https://api.unsplash.com/search/photos?${params}`, {
+    headers: {
+      Authorization: `Client-ID ${accessKey}`
+    },
+    next: { revalidate: 3600 }
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = (await response.json()) as {
+    results?: Array<{ urls?: { regular?: string } }>;
+  };
+
+  return (
+    data.results
+      ?.map((result) => result.urls?.regular)
+      .filter((url): url is string => Boolean(url))
+      .slice(0, 3) ?? []
+  );
+}
+
+async function buildGroundingContext(transcript: string): Promise<GroundingContext | null> {
+  const industry = detectIndustry(transcript);
+
+  if (!industry) {
+    return null;
+  }
+
+  const city = detectCity(transcript);
+  const imageUrls = await fetchUnsplashImages(industry);
+  const imageInstruction =
+    imageUrls.length > 0
+      ? `\nUse these real image URLs in the generated sections where images are needed: ${imageUrls.join(", ")}.`
+      : "\nNo real image URLs are available. Generate descriptive alt text and set a background colour instead. Never use placeholder image services.";
+
+  return {
+    industry,
+    city,
+    log: `[GROUNDING]: Industry detected: ${industry} — enriching with real content`,
+    promptBlock: `\nThe user is building a site for: ${industry}. Generate content that is realistic and specific to this industry. Use real-sounding business names, actual service descriptions, realistic pricing if applicable, and industry-appropriate copy. Do not use placeholder text like 'Lorem ipsum' or 'Company Name'. Generate content as if this is a real business in ${city}.${imageInstruction}`
+  };
+}
+
 function buildHistoryContext(history: InterpretRequest["history"]) {
   return (history ?? [])
     .slice(-3)
@@ -195,6 +355,7 @@ Selected element: ${body.activeElementId ?? "none"}
 
 current_canvas_json:
 ${JSON.stringify(body.current_canvas_json ?? body.currentScene)}
+image_mode: ${body.image_mode ?? body.referenceImage?.imageMode ?? "none"}
 ${buildReferenceExtractionContext(body.referenceImage)}`;
 }
 
@@ -242,7 +403,7 @@ async function callAnthropic(input: ModelInput) {
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+      model: input.model ?? process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
       max_tokens: input.maxTokens ?? 1000,
       temperature: 0,
       system: input.systemPrompt,
@@ -277,7 +438,7 @@ async function callGemini(input: ModelInput) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
 
-  const model = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
+  const model = input.model ?? process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
   const parts: GeminiPart[] = [{ text: input.text }];
 
   if (input.image) {
@@ -330,6 +491,14 @@ async function callGemini(input: ModelInput) {
 }
 
 async function callModel(input: ModelInput) {
+  if (input.provider === "anthropic") {
+    return callAnthropic(input);
+  }
+
+  if (input.provider === "gemini") {
+    return callGemini(input);
+  }
+
   if (process.env.AI_PROVIDER !== "anthropic") {
     return callGemini(input);
   }
@@ -337,12 +506,13 @@ async function callModel(input: ModelInput) {
   return callAnthropic(input);
 }
 
-async function runArchitect(body: InterpretRequest) {
-  const text = await callModel({
-    systemPrompt: ARCHITECT_PROMPT,
+async function runArchitect(body: InterpretRequest, extraPrompt = "") {
+  const text = await callAnthropic({
+    systemPrompt: `${ARCHITECT_PROMPT}${extraPrompt}`,
     text: buildArchitectContext(body),
     image: body.referenceImage,
-    maxTokens: 1100
+    maxTokens: 1600,
+    model: "claude-sonnet-4-6"
   });
 
   if (!text) {
@@ -352,14 +522,50 @@ async function runArchitect(body: InterpretRequest) {
   return extractJsonArray(text);
 }
 
+async function runSpatial(body: InterpretRequest) {
+  const imageInstruction =
+    body.image_mode === "3d" || body.referenceImage?.imageMode === "3d"
+      ? "\nAn image has been uploaded. Analyze its primary subject. Determine the closest 3D primitive (sphere for round objects, box for rectangular objects, cylinder for tall/bottle objects, torus for ring-shaped objects). Return a MORPH_BLOB action to reshape the blob toward that primitive, plus a SET_MATERIAL action matching the object's apparent material. The user will then refine by voice."
+      : "";
+  const text = await callAnthropic({
+    systemPrompt: `${ALCHEMIST_PROMPT}${imageInstruction}`,
+    text: buildArchitectContext(body),
+    image: body.referenceImage,
+    maxTokens: 1000,
+    model: "claude-sonnet-4-6"
+  });
+
+  if (!text) {
+    throw new Error("Alchemist response did not include text content");
+  }
+
+  return extractJsonArray(text);
+}
+
+async function runStyle(body: InterpretRequest) {
+  const text = await callAnthropic({
+    systemPrompt: STYLE_PROMPT,
+    text: buildArchitectContext(body),
+    maxTokens: 800,
+    model: "claude-haiku-4-5-20251001"
+  });
+
+  if (!text) {
+    throw new Error("Style response did not include text content");
+  }
+
+  return extractJsonArray(text);
+}
+
 async function runCritic(
   body: InterpretRequest,
   architectActions: unknown[]
 ) {
-  const text = await callModel({
+  const text = await callAnthropic({
     systemPrompt: CRITIC_PROMPT,
     text: buildCriticContext(body, architectActions),
-    maxTokens: 1100
+    maxTokens: 1100,
+    model: "claude-haiku-4-5-20251001"
   });
 
   if (!text) {
@@ -367,6 +573,59 @@ async function runCritic(
   }
 
   return extractModelOutput(text);
+}
+
+async function runCriticOrDirect(body: InterpretRequest, actions: unknown[]) {
+  try {
+    return await withTimeout(
+      runCritic(body, actions),
+      1500,
+      "Critic timed out"
+    );
+  } catch {
+    return {
+      actions,
+      qaLog: ["[QA]: Critic skipped — using direct output."]
+    };
+  }
+}
+
+async function runSingleModelFallback(body: InterpretRequest) {
+  const architectActions = await runArchitect(body);
+
+  try {
+    const criticOutput = await runCritic(body, architectActions);
+
+    return {
+      actions: criticOutput.actions,
+      qaLog: criticOutput.qaLog
+    };
+  } catch {
+    return {
+      actions: architectActions,
+      qaLog: ["[QA]: Critic skipped — using direct output."]
+    };
+  }
+}
+
+async function runRoutedModel(
+  body: InterpretRequest,
+  intent: IntentType,
+  groundingContext?: GroundingContext | null
+) {
+  if (intent === "COMMAND") {
+    return commandActions(body.transcript);
+  }
+
+  if (intent === "SPATIAL") {
+    return runSpatial(body);
+  }
+
+  if (intent === "STYLE") {
+    return runStyle(body);
+  }
+
+  return runArchitect(body, groundingContext?.promptBlock ?? "");
 }
 
 export async function POST(request: Request) {
@@ -389,18 +648,43 @@ export async function POST(request: Request) {
   }
 
   try {
-    const architectActions = await runArchitect(body);
     try {
-      const criticOutput = await runCritic(body, architectActions);
+      const forcedIntent =
+        body.image_mode === "web"
+          ? "LAYOUT"
+          : body.image_mode === "3d"
+            ? "SPATIAL"
+            : undefined;
+      const intent =
+        forcedIntent ??
+        (await withTimeout(
+          classifyIntent(body.transcript),
+          800,
+          "Intent router timed out"
+        ));
+      const model = modelForIntent(intent);
+      const routerLog = `[ROUTER]: Intent classified as ${intent} → routing to ${model}`;
+      const groundingContext =
+        intent === "LAYOUT" ? await buildGroundingContext(body.transcript) : null;
+      const directActions = await runRoutedModel(body, intent, groundingContext);
+      const criticOutput =
+        intent === "COMMAND"
+          ? { actions: directActions, qaLog: [] }
+          : await runCriticOrDirect(body, directActions);
 
       return NextResponse.json({
         actions: criticOutput.actions,
-        qa_log: criticOutput.qaLog
+        qa_log: (groundingContext
+          ? [routerLog, groundingContext.log]
+          : [routerLog]
+        ).concat(criticOutput.qaLog)
       });
     } catch {
+      const fallbackOutput = await runSingleModelFallback(body);
+
       return NextResponse.json({
-        actions: architectActions,
-        qa_log: ["SYSTEM: QA pass skipped — using Architect output."]
+        actions: fallbackOutput.actions,
+        qa_log: fallbackOutput.qaLog
       });
     }
   } catch (error) {
@@ -410,7 +694,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           actions: fallbackActions,
-          qa_log: ["SYSTEM: QA pass skipped — using Architect output."]
+          qa_log: ["[QA]: Critic skipped — using direct output."]
         },
         {
         headers: {

@@ -1,7 +1,11 @@
 "use client";
 
-import { Environment, Float, Grid, OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { Environment, Float, Grid, MeshDistortMaterial, OrbitControls } from "@react-three/drei";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { useEffect, useRef } from "react";
+import type { ElementRef } from "react";
+import type { Mesh } from "three";
+import { materialPresets } from "@/lib/materials";
 import { useYiiyaStore, type SceneObject } from "@/lib/store";
 
 function ObjectGeometry({ shape }: { shape: string }) {
@@ -19,6 +23,14 @@ function ObjectGeometry({ shape }: { shape: string }) {
     return <cylinderGeometry args={[0.58, 0.58, 1.5, 48]} />;
   }
 
+  if (normalizedShape.includes("cone")) {
+    return <coneGeometry args={[0.72, 1.6, 48]} />;
+  }
+
+  if (normalizedShape.includes("capsule")) {
+    return <capsuleGeometry args={[0.46, 1.15, 12, 32]} />;
+  }
+
   if (normalizedShape.includes("torus") || normalizedShape.includes("ring")) {
     return <torusKnotGeometry args={[0.55, 0.14, 96, 12]} />;
   }
@@ -27,17 +39,43 @@ function ObjectGeometry({ shape }: { shape: string }) {
 }
 
 function SceneObjectMesh({ object }: { object: SceneObject }) {
-  const material = object.material.toLowerCase();
+  const meshRef = useRef<Mesh>(null);
+  const materialPreset = {
+    ...materialPresets[object.material],
+    ...object.materialOverrides
+  };
+
+  useFrame((state) => {
+    if (!meshRef.current) {
+      return;
+    }
+
+    if (
+      object.animation.toLowerCase().includes("rotate") ||
+      object.animation.toLowerCase().includes("spin")
+    ) {
+      meshRef.current.rotation.y += 0.01 * object.intensity;
+    }
+
+    if (object.animation.toLowerCase().includes("pulse")) {
+      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.08;
+      meshRef.current.scale.set(
+        object.scale[0] * pulse,
+        object.scale[1] * pulse,
+        object.scale[2] * pulse
+      );
+    }
+  });
+
   const mesh = (
-    <mesh position={object.position} rotation={[0.22, 0.7, 0.08]}>
+    <mesh
+      ref={meshRef}
+      position={object.position}
+      rotation={[0.22, 0.7, 0.08]}
+      scale={object.scale}
+    >
       <ObjectGeometry shape={object.shape} />
-      <meshStandardMaterial
-        color={object.color}
-        metalness={material === "chrome" ? 1 : material === "glass" ? 0.08 : 0.25}
-        roughness={material === "chrome" ? 0.12 : material === "glass" ? 0.04 : 0.34}
-        transparent={material === "glass"}
-        opacity={material === "glass" ? 0.52 : 1}
-      />
+      <meshPhysicalMaterial color={object.color} {...materialPreset} />
     </mesh>
   );
 
@@ -56,16 +94,62 @@ function SceneObjectMesh({ object }: { object: SceneObject }) {
   return mesh;
 }
 
+function DefaultBlob() {
+  const meshRef = useRef<Mesh>(null);
+  const materialRef = useRef<ElementRef<typeof MeshDistortMaterial>>(null);
+  const blobState = useYiiyaStore((state) => state.blobState);
+  const currentDistortRef = useRef(0.5);
+  const currentSpeedRef = useRef(1.8);
+
+  useFrame((_state, delta) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += 0.003;
+    }
+
+    currentDistortRef.current +=
+      (blobState.distort - currentDistortRef.current) * 0.12;
+    currentSpeedRef.current += (blobState.speed - currentSpeedRef.current) * 0.12;
+
+    if (materialRef.current) {
+      materialRef.current.distort = currentDistortRef.current;
+      materialRef.current.time += delta * currentSpeedRef.current;
+    }
+  });
+
+  const scale =
+    blobState.targetShape === "bottle"
+      ? [0.72, 1.45, 0.72]
+      : blobState.targetShape === "cube"
+        ? [1.05, 1.05, 1.05]
+        : blobState.targetShape === "crystal"
+          ? [0.86, 1.35, 0.86]
+          : blobState.targetShape === "organic"
+            ? [1.15, 0.92, 1.05]
+            : [1, 1, 1];
+
+  return (
+    <mesh ref={meshRef} scale={scale as [number, number, number]}>
+      <sphereGeometry args={[1.2, 64, 64]} />
+      <MeshDistortMaterial
+        ref={materialRef}
+        color="#1a1a1a"
+        distort={currentDistortRef.current}
+        speed={0}
+        roughness={0.1}
+        metalness={0.4}
+      />
+    </mesh>
+  );
+}
+
 function StarterScene({ objects }: { objects: SceneObject[] }) {
   return (
     <>
-      <ambientLight intensity={0.65} />
-      <directionalLight position={[5, 6, 4]} intensity={2.2} color="#fff6df" />
-      <pointLight position={[-4, 1.6, -3]} intensity={1.1} color="#EF9F27" />
-
-      {objects.map((object) => (
-        <SceneObjectMesh key={object.id} object={object} />
-      ))}
+      {objects.length > 0 ? (
+        objects.map((object) => <SceneObjectMesh key={object.id} object={object} />)
+      ) : (
+        <DefaultBlob />
+      )}
 
       <Grid
         position={[0, -0.02, 0]}
@@ -87,31 +171,40 @@ function StarterScene({ objects }: { objects: SceneObject[] }) {
 export function SceneCanvas() {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
-  const hasBuildContent = sceneObjects.length > 0;
+
+  useEffect(() => {
+    window.dispatchEvent(new Event("resize"));
+  }, []);
 
   return (
     <div
       className="absolute inset-0 z-20 transition-opacity"
       style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
         opacity: canvasMode === "WEB" ? 0 : 1,
-        pointerEvents:
-          canvasMode === "3D" ? "auto" : "none"
+        pointerEvents: "none"
       }}
     >
       <Canvas
         data-yiiya-scene-canvas="true"
-        camera={{ position: [3.9, 3.2, 5.2], fov: 42 }}
-        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
+        gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
+        camera={{ position: [0, 0, 5], fov: 60 }}
+        style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
         dpr={[1, 2]}
         className="h-full w-full"
       >
         {canvasMode === "3D" ? <color attach="background" args={["#050505"]} /> : null}
         <fog attach="fog" args={["#050505", 6, 16]} />
-        {hasBuildContent ? <StarterScene objects={sceneObjects} /> : null}
+        <ambientLight intensity={0.9} />
+        <directionalLight position={[3, 4, 5]} intensity={2.2} color="#fff6df" />
+        <pointLight position={[-3, 2.4, 3]} intensity={1.4} color="#EF9F27" />
+        <StarterScene objects={sceneObjects} />
         <OrbitControls
           enablePan={false}
-          minDistance={3.2}
-          maxDistance={8}
+          maxDistance={12}
           maxPolarAngle={Math.PI * 0.48}
         />
       </Canvas>

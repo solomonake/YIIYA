@@ -1,0 +1,37 @@
+.yiiya-element {
+  outline: none;
+  box-shadow: none;
+  transition:
+    filter 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease;
+}
+
+.yiiya-element[data-yiiya-active="true"] {
+  outline: none;
+  box-shadow: none;
+}
+
+.yiiya-element[data-yiiya-active="true"] {
+  filter: brightness(1.1);
+}
+
+.yiiya-element[data-yiiya-block-active="true"] {
+  border-left: 2px solid var(--yiiya-accent);
+  transition: border-color 200ms ease;
+}
+
+.yiiya-element[data-yiiya-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: min(100%, 10rem);
+  height: 1px;
+  background: var(--yiiya-accent);
+}
+
+.yiiya-section {
+  border: none;
+  box-shadow: none;
+}

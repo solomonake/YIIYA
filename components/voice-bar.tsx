@@ -11,18 +11,21 @@ export function VoiceBar() {
   const isInterpreting = useYiiyaStore((state) => state.isInterpreting);
   const interimTranscript = useYiiyaStore((state) => state.interimTranscript);
   const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
+  const publishResult = useYiiyaStore((state) => state.publishResult);
+  const setPublishResult = useYiiyaStore((state) => state.setPublishResult);
+  const setToastMessage = useYiiyaStore((state) => state.setToastMessage);
   const { toggleListening, submitManualTranscript } = useSpeechInterpreter();
   const [manualCommand, setManualCommand] = useState("");
 
   const status = isInterpreting
-    ? "Thinking..."
+    ? "processing..."
     : isListening
       ? "Listening..."
       : "Idle";
   const promptText =
     interimTranscript ||
     (selectedElementId
-      ? `Pointing at: ${selectedElementId} — speak to modify.`
+      ? `// ${selectedElementId} selected — speak to modify`
       : "Hold Space or click mic to speak");
   const shellStateClass = isInterpreting
     ? "border-signalAmber/70 shadow-[0_0_34px_rgba(255,177,0,0.26),0_20px_70px_rgba(0,0,0,0.6)]"
@@ -48,6 +51,55 @@ export function VoiceBar() {
     setManualCommand("");
     void submitManualTranscript(command);
   };
+
+  const liveUrl =
+    typeof window !== "undefined" && publishResult
+      ? `${window.location.origin}/p/${publishResult.slug}`
+      : "";
+
+  if (publishResult) {
+    return (
+      <div className="pointer-events-none absolute inset-x-0 bottom-7 z-10 flex justify-center px-3 sm:px-6">
+        <div className="pointer-events-auto flex min-h-16 w-[min(760px,calc(100vw-24px))] flex-wrap items-center justify-center gap-3 rounded-full border border-terminalBorder bg-[#070707]/94 px-4 py-2 text-xs text-bone backdrop-blur-xl">
+          <span className="font-bold text-amber">{"// Published"}</span>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(liveUrl);
+              setToastMessage("Copied live URL");
+            }}
+            className="max-w-[220px] truncate text-white/62 underline decoration-white/20 underline-offset-4 transition hover:text-amber"
+          >
+            {liveUrl}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(publishResult.reactCode ?? "");
+              setToastMessage("Copied React code");
+            }}
+            className="h-8 rounded-full border border-terminalBorder px-3 text-[11px] uppercase tracking-[0.12em] text-white/62 transition hover:border-amber/70 hover:text-amber"
+          >
+            Copy React code
+          </button>
+          <a
+            href={publishResult.zipUrl}
+            download={`yiiya-${publishResult.slug}.zip`}
+            className="grid h-8 place-items-center rounded-full border border-terminalBorder px-3 text-[11px] uppercase tracking-[0.12em] text-white/62 transition hover:border-amber/70 hover:text-amber"
+          >
+            Download ZIP
+          </a>
+          <button
+            type="button"
+            onClick={() => setPublishResult(null)}
+            className="text-[11px] text-white/42 transition hover:text-bone"
+          >
+            Continue editing
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-7 z-10 flex justify-center px-3 sm:px-6">
@@ -118,7 +170,7 @@ export function VoiceBar() {
             onChange={(event) => setManualCommand(event.target.value)}
             placeholder={
               selectedElementId
-                ? `Pointing at ${selectedElementId} - type to modify`
+                ? `// ${selectedElementId} selected - type to modify`
                 : "Type a command for demo safety"
             }
             className="min-w-0 flex-1 border-none bg-transparent text-[11px] text-bone outline-none placeholder:text-white/32 disabled:cursor-not-allowed disabled:text-white/35 sm:text-xs"

@@ -32,36 +32,8 @@ export function getSupabaseBrowserClient() {
 }
 
 /*
-Supabase RLS for V2 project ownership:
-
-alter table public.projects enable row level security;
-
-drop policy if exists "Users can read their own projects" on public.projects;
-create policy "Users can read their own projects"
-  on public.projects
-  for select
-  to authenticated
-  using (user_id = auth.uid());
-
-drop policy if exists "Users can insert their own projects" on public.projects;
-create policy "Users can insert their own projects"
-  on public.projects
-  for insert
-  to authenticated
-  with check (user_id = auth.uid());
-
-drop policy if exists "Users can update their own projects" on public.projects;
-create policy "Users can update their own projects"
-  on public.projects
-  for update
-  to authenticated
-  using (user_id = auth.uid())
-  with check (user_id = auth.uid());
-
-drop policy if exists "Users can delete their own projects" on public.projects;
-create policy "Users can delete their own projects"
-  on public.projects
-  for delete
-  to authenticated
-  using (user_id = auth.uid());
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users own projects" ON projects FOR ALL USING (auth.uid() = user_id);
+ALTER TABLE published_projects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users own published" ON published_projects FOR ALL USING (auth.uid() = user_id OR user_id IS NULL);
 */

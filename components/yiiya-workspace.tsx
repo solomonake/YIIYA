@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { Suspense, useEffect, useState } from "react";
+import { AccountIndicator } from "@/components/account-indicator";
 import { AuthOverlay } from "@/components/auth-overlay";
 import { CanvasModeToggle } from "@/components/canvas-mode-toggle";
 import { ProjectDrawer } from "@/components/project-drawer";
@@ -32,27 +33,29 @@ export function YiiyaWorkspace() {
   const sidebarCollapsed = useYiiyaStore((state) => state.sidebarCollapsed);
   const sections = useYiiyaStore((state) => state.sections);
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
+  const saveStatus = useYiiyaStore((state) => state.saveStatus);
+  const lastSavedAt = useYiiyaStore((state) => state.lastSavedAt);
   const addLog = useYiiyaStore((state) => state.addLog);
   const resetProject = useYiiyaStore((state) => state.resetProject);
 
   useEffect(() => {
     try {
-      if (sessionStorage.getItem("yiiya_v2_upgrade_logged") === "true") {
+      if (sessionStorage.getItem("yiiya_v2_supercharge_logged") === "true") {
         return;
       }
 
-      for (let step = 1; step <= 8; step += 1) {
+      for (let step = 1; step <= 12; step += 1) {
         addLog(`SYSTEM: Step ${step} complete.`);
       }
 
-      addLog("SYSTEM: Yiiya V2 upgrade complete.");
-      sessionStorage.setItem("yiiya_v2_upgrade_logged", "true");
+      addLog("SYSTEM: Yiiya V2 supercharge complete.");
+      sessionStorage.setItem("yiiya_v2_supercharge_logged", "true");
     } catch {
-      for (let step = 1; step <= 8; step += 1) {
+      for (let step = 1; step <= 12; step += 1) {
         addLog(`SYSTEM: Step ${step} complete.`);
       }
 
-      addLog("SYSTEM: Yiiya V2 upgrade complete.");
+      addLog("SYSTEM: Yiiya V2 supercharge complete.");
     }
   }, [addLog]);
 
@@ -81,12 +84,21 @@ export function YiiyaWorkspace() {
   return (
     <main className="flex h-svh flex-col overflow-hidden bg-ink font-mono text-bone">
       <header className="z-20 flex h-12 shrink-0 items-center justify-between border-b border-terminalBorder bg-ink px-4">
-        <input
-          aria-label="Project name"
-          value={projectName}
-          onChange={(event) => setProjectName(event.target.value)}
-          className="w-[min(46vw,420px)] rounded-none border-none bg-transparent text-[13px] font-semibold tracking-[0] text-bone outline-none transition-colors placeholder:text-white/35 focus:text-amber"
-        />
+        <div className="flex min-w-0 items-center gap-3">
+          <input
+            aria-label="Project name"
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+            className="w-[min(36vw,360px)] rounded-none border-none bg-transparent text-[13px] font-semibold tracking-[0] text-bone outline-none transition-colors placeholder:text-white/35 focus:text-amber"
+          />
+          <span className="hidden text-[11px] text-white/35 sm:inline">
+            {saveStatus === "saving"
+              ? "// saving"
+              : saveStatus === "saved" && lastSavedAt
+                ? `// saved ${lastSavedAt}`
+                : ""}
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <button
             aria-label="Open projects"
@@ -143,6 +155,7 @@ export function YiiyaWorkspace() {
           >
             Publish
           </button>
+          <AccountIndicator />
         </div>
       </header>
 
