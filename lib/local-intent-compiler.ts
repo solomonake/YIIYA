@@ -3,6 +3,11 @@ import { themeFromVibe, type YiiyaTheme } from "@/lib/designSystem";
 type LocalCompilerInput = {
   transcript: string;
   activeElementId: string | null;
+  current_canvas_json?: object;
+  history?: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
   referenceImage?: {
     base64: string;
     mediaType: string;
@@ -147,6 +152,10 @@ function inferMaterial(text: string) {
 }
 
 function inferShape(text: string) {
+  if (text.includes("plane") || text.includes("panel")) {
+    return "plane";
+  }
+
   if (text.includes("cube") || text.includes("box")) {
     return "box";
   }
@@ -176,11 +185,38 @@ function inferColor(text: string) {
 
 function compileElementModification(input: LocalCompilerInput, text: string) {
   if (!input.activeElementId) {
-    return null;
+    return [];
   }
 
-  if (hasAny(text, ["bigger", "larger", "increase", "scale up"])) {
-    return {
+  const actions: LocalAction[] = [];
+
+  if (
+    hasAny(text, ["center", "centered", "middle", "centre", "move this to middle"])
+  ) {
+    actions.push(
+      {
+        type: "MODIFY_ELEMENT",
+        payload: {
+          elementId: input.activeElementId,
+          property: "textAlign",
+          value: "center",
+          mode: "replace"
+        }
+      },
+      {
+        type: "MODIFY_ELEMENT",
+        payload: {
+          elementId: input.activeElementId,
+          property: "marginInline",
+          value: "auto",
+          mode: "replace"
+        }
+      }
+    );
+  }
+
+  if (hasAny(text, ["bigger", "larger", "increase", "scale up", "more"])) {
+    actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
         elementId: input.activeElementId,
@@ -188,11 +224,11 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
         value: 1.2,
         mode: "multiply"
       }
-    };
+    });
   }
 
-  if (hasAny(text, ["smaller", "reduce", "shrink", "scale down"])) {
-    return {
+  if (hasAny(text, ["smaller", "reduce", "shrink", "scale down", "less"])) {
+    actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
         elementId: input.activeElementId,
@@ -200,13 +236,13 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
         value: 0.88,
         mode: "multiply"
       }
-    };
+    });
   }
 
   const color = inferColor(text);
 
   if (color !== "#EF9F27" || text.includes("amber") || text.includes("orange")) {
-    return {
+    actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
         elementId: input.activeElementId,
@@ -214,11 +250,11 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
         value: color,
         mode: "replace"
       }
-    };
+    });
   }
 
   if (text.includes("round")) {
-    return {
+    actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
         elementId: input.activeElementId,
@@ -226,10 +262,10 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
         value: "24px",
         mode: "replace"
       }
-    };
+    });
   }
 
-  return null;
+  return actions;
 }
 
 export function compileLocalIntent(input: LocalCompilerInput) {
@@ -237,7 +273,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const actions: LocalAction[] = [];
   const subject = inferBrandSubject(text);
   const theme = themeFromVibe(text);
-  const modification = compileElementModification(input, text);
+  const modifications = compileElementModification(input, text);
 
   if (Object.keys(theme).length > 0) {
     actions.push({
@@ -266,19 +302,31 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     actions.push({ type: "ADJUST_DENSITY", payload: { scale: 1.34 } });
   }
 
-  if (modification) {
-    actions.push(modification);
+  if (modifications.length > 0) {
+    actions.push(...modifications);
   }
 
-  if (hasAny(text, ["3d", "sphere", "cube", "object", "glass", "chrome"])) {
+  if (
+    hasAny(text, [
+      "3d",
+      "sphere",
+      "cube",
+      "object",
+      "glass",
+      "chrome",
+      "plane",
+      "panel",
+      "floating"
+    ])
+  ) {
     actions.push({
-      type: "ADD_SPATIAL_OBJECT",
+      type: "ADD_3D_OBJECT",
       payload: {
         shape: inferShape(text),
         material: inferMaterial(text),
         color: inferColor(text),
         animation: hasAny(text, ["spin", "rotate", "rotating"]) ? "rotate" : "float",
-        position: [0, 1.2, 0]
+        position: text.includes("behind") ? [0, 1.2, -1.4] : [0, 1.2, 0]
       }
     });
   }
@@ -296,20 +344,41 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     (text.includes("make") &&
       hasAny(text, ["landing", "website", "site", "page"]));
 
-  if (wantsSite || hasAny(text, ["hero", "about", "features", "contact"])) {
-    if (wantsSite || text.includes("hero")) {
+  const wantsHeroSection = hasAny(text, ["hero section", "add hero", "create hero"]);
+  const wantsAboutSection = hasAny(text, ["about section", "add about"]);
+  const wantsFeaturesSection = hasAny(text, [
+    "features section",
+    "feature section",
+    "add features",
+    "bento"
+  ]);
+  const wantsContactSection = hasAny(text, [
+    "contact section",
+    "contact form",
+    "add contact",
+    "form"
+  ]);
+
+  if (
+    wantsSite ||
+    wantsHeroSection ||
+    wantsAboutSection ||
+    wantsFeaturesSection ||
+    wantsContactSection
+  ) {
+    if (wantsSite || wantsHeroSection) {
       addSection(actions, "HERO", subject);
     }
 
-    if (wantsSite || text.includes("about")) {
+    if (wantsSite || wantsAboutSection) {
       addSection(actions, "ABOUT", subject);
     }
 
-    if (wantsSite || text.includes("features") || text.includes("bento")) {
+    if (wantsSite || wantsFeaturesSection) {
       addSection(actions, "FEATURES", subject);
     }
 
-    if (wantsSite || text.includes("contact") || text.includes("form")) {
+    if (wantsSite || wantsContactSection) {
       addSection(actions, "CONTACT", subject);
     }
   }

@@ -4,15 +4,8 @@ import html2canvas from "html2canvas";
 import { useYiiyaStore } from "@/lib/store";
 import type { PublishedProject } from "@/lib/published-project-types";
 
+const draftStoragePrefix = "yiiya:draft:";
 const storagePrefix = "yiiya:published:";
-
-function createSlug() {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const bytes = new Uint8Array(8);
-  window.crypto.getRandomValues(bytes);
-
-  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
-}
 
 function getSceneCanvasImage() {
   const canvas = document.querySelector<HTMLCanvasElement>(
@@ -78,25 +71,50 @@ async function publishToSupabase(project: PublishedProject) {
   return (await response.json()) as PublishedProject;
 }
 
-export async function publishCurrentProject() {
+export async function autosaveToSupabase(project: PublishedProject) {
+  const response = await fetch("/api/projects/autosave", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(project)
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+
+    throw new Error(payload?.error ?? `Autosave failed with ${response.status}`);
+  }
+}
+
+export async function createCurrentProjectSnapshot(options?: {
+  includeCanvasImage?: boolean;
+  requireContent?: boolean;
+}) {
   const store = useYiiyaStore.getState();
   const root = document.querySelector<HTMLElement>("[data-yiiya-publish-root]");
+  const includeCanvasImage = options?.includeCanvasImage ?? true;
+  const requireContent = options?.requireContent ?? true;
 
-  if (!root) {
-    store.addLog("Publish failed: no website content found");
+  if (!root && requireContent) {
     return null;
   }
 
-  const slug = createSlug();
-  const htmlCanvas = await html2canvas(root, {
-    backgroundColor: null,
-    scale: Math.min(window.devicePixelRatio || 1, 2),
-    useCORS: true
-  });
-  const project: PublishedProject = {
-    slug,
-    htmlSnapshot: getSanitizedHtmlSnapshot(root),
-    htmlCanvasImage: htmlCanvas.toDataURL("image/png"),
+  const htmlCanvas =
+    includeCanvasImage && root
+      ? await html2canvas(root, {
+          backgroundColor: null,
+          scale: Math.min(window.devicePixelRatio || 1, 2),
+          useCORS: true
+        })
+      : null;
+
+  return {
+    slug: store.currentProjectSlug,
+    htmlSnapshot: root ? getSanitizedHtmlSnapshot(root) : "",
+    htmlCanvasImage: htmlCanvas ? htmlCanvas.toDataURL("image/png") : "",
     sceneState: {
       projectName: store.projectName,
       sections: store.sections,
@@ -107,9 +125,42 @@ export async function publishCurrentProject() {
       sceneCanvasImage: getSceneCanvasImage()
     },
     createdAt: new Date().toISOString()
-  };
+  } satisfies PublishedProject;
+}
 
-  let publishedProject = project;
+export async function autosaveCurrentProject() {
+  const project = await createCurrentProjectSnapshot({
+    includeCanvasImage: false,
+    requireContent: false
+  });
+
+  if (!project) {
+    return;
+  }
+
+  try {
+    await autosaveToSupabase(project);
+  } catch {
+    localStorage.setItem(
+      `${draftStoragePrefix}${project.slug}`,
+      JSON.stringify(project)
+    );
+  }
+}
+
+export async function publishCurrentProject() {
+  const store = useYiiyaStore.getState();
+  const project = await createCurrentProjectSnapshot({
+    includeCanvasImage: true,
+    requireContent: true
+  });
+
+  if (!project) {
+    store.addLog("[SYSTEM]: Publish failed: no website content found.");
+    return null;
+  }
+
+  let publishedProject: PublishedProject = project;
   let publishedToCloud = false;
 
   try {
@@ -118,8 +169,8 @@ export async function publishCurrentProject() {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Cloud publish unavailable";
-    store.addLog(`PUBLISH: Cloud fallback active. ${message}`);
-    localStorage.setItem(`${storagePrefix}${slug}`, JSON.stringify(project));
+    store.addLog(`[SYSTEM]: Publish cloud fallback active. ${message}`);
+    localStorage.setItem(`${storagePrefix}${project.slug}`, JSON.stringify(project));
   }
 
   const shareUrl = `${window.location.origin}/p/${publishedProject.slug}`;
@@ -127,13 +178,13 @@ export async function publishCurrentProject() {
   try {
     await copyShareUrl(shareUrl);
   } catch {
-    store.addLog("Published link could not be copied automatically");
+    store.addLog("[SYSTEM]: Published link could not be copied automatically.");
   }
 
   store.addLog(
     publishedToCloud
-      ? `PUBLISH: Stored /p/${publishedProject.slug} in Supabase.`
-      : `PUBLISH: Stored /p/${publishedProject.slug} in local fallback.`
+      ? `[EXECUTE]: Stored /p/${publishedProject.slug} in Supabase.`
+      : `[EXECUTE]: Stored /p/${publishedProject.slug} in local fallback.`
   );
   store.setToastMessage(`Copied ${shareUrl}`);
 

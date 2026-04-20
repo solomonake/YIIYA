@@ -45,6 +45,31 @@ function setElementValue(element: HTMLElement, property: string, value: unknown)
 
   if (property === "padding") {
     element.style.padding = stringValue;
+    return;
+  }
+
+  if (property === "textAlign") {
+    element.style.textAlign = stringValue;
+    return;
+  }
+
+  if (property === "justifyContent") {
+    element.style.justifyContent = stringValue;
+    return;
+  }
+
+  if (property === "alignItems") {
+    element.style.alignItems = stringValue;
+    return;
+  }
+
+  if (property === "marginInline") {
+    element.style.marginInline = stringValue;
+    return;
+  }
+
+  if (property === "transform") {
+    element.style.transform = stringValue;
   }
 }
 
@@ -56,7 +81,9 @@ function applyModifyElement(action: YiiyaAction) {
   const { elementId, property, value, mode } = action.payload;
 
   if (typeof elementId !== "string" || typeof property !== "string") {
-    useYiiyaStore.getState().addLog("MODIFY_ELEMENT missing elementId or property");
+    useYiiyaStore
+      .getState()
+      .addLog("[SYSTEM]: MODIFY_ELEMENT missing elementId or property.");
     return;
   }
 
@@ -65,7 +92,7 @@ function applyModifyElement(action: YiiyaAction) {
   );
 
   if (!element) {
-    useYiiyaStore.getState().addLog(`Element not found: ${elementId}`);
+    useYiiyaStore.getState().addLog(`[SYSTEM]: Element not found: ${elementId}.`);
     return;
   }
 
@@ -75,9 +102,14 @@ function applyModifyElement(action: YiiyaAction) {
     property !== "color" &&
     property !== "fontSize" &&
     property !== "borderRadius" &&
-    property !== "padding"
+    property !== "padding" &&
+    property !== "textAlign" &&
+    property !== "justifyContent" &&
+    property !== "alignItems" &&
+    property !== "marginInline" &&
+    property !== "transform"
   ) {
-    useYiiyaStore.getState().addLog(`Unsupported property: ${property}`);
+    useYiiyaStore.getState().addLog(`[SYSTEM]: Unsupported property: ${property}.`);
     return;
   }
 
@@ -246,7 +278,7 @@ function applyChangeTheme(action: YiiyaAction) {
   const { property, value } = action.payload;
 
   if (typeof property !== "string") {
-    useYiiyaStore.getState().addLog("CHANGE_THEME missing property");
+    useYiiyaStore.getState().addLog("[SYSTEM]: CHANGE_THEME missing property.");
     return;
   }
 

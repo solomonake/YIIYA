@@ -79,8 +79,48 @@ function isYiiyaActionArray(value: unknown): value is YiiyaAction[] {
   );
 }
 
+function getSelectedElementSnapshot(elementId: string | null) {
+  if (!elementId) {
+    return null;
+  }
+
+  const element = document.querySelector<HTMLElement>(
+    `[data-yiiya-id="${CSS.escape(elementId)}"]`
+  );
+
+  if (!element) {
+    return null;
+  }
+
+  const styles = window.getComputedStyle(element);
+
+  return {
+    id: elementId,
+    textContent: element.textContent?.slice(0, 500) ?? "",
+    computedStyle: {
+      color: styles.color,
+      backgroundColor: styles.backgroundColor,
+      fontSize: styles.fontSize,
+      borderRadius: styles.borderRadius,
+      padding: styles.padding,
+      textAlign: styles.textAlign,
+      transform: styles.transform
+    }
+  };
+}
+
 async function interpretTranscript(transcript: string) {
   const state = useYiiyaStore.getState();
+  const currentCanvasJson = {
+    projectSlug: state.currentProjectSlug,
+    projectName: state.projectName,
+    selectedElementId: state.selectedElementId,
+    activeElement: getSelectedElementSnapshot(state.selectedElementId),
+    sections: state.sections,
+    sceneObjects: state.sceneObjects,
+    themeState: state.themeState,
+    layers: state.layers
+  };
 
   const response = await fetch("/api/interpret", {
     method: "POST",
@@ -90,14 +130,9 @@ async function interpretTranscript(transcript: string) {
     body: JSON.stringify({
       transcript,
       activeElementId: state.selectedElementId,
-      currentScene: {
-        projectName: state.projectName,
-        selectedElementId: state.selectedElementId,
-        sections: state.sections,
-        sceneObjects: state.sceneObjects,
-        themeState: state.themeState,
-        layers: state.layers
-      },
+      currentScene: currentCanvasJson,
+      current_canvas_json: currentCanvasJson,
+      history: state.messageHistory.slice(-5),
       referenceImage: state.referenceImage
     })
   });
@@ -131,6 +166,7 @@ export function useSpeechInterpreter() {
   );
   const addLog = useYiiyaStore((state) => state.addLog);
   const addActionLogs = useYiiyaStore((state) => state.addActionLogs);
+  const addMessage = useYiiyaStore((state) => state.addMessage);
 
   const submitTranscript = useCallback(
     async (transcript: string, options?: { allowRepeat?: boolean }) => {
@@ -145,7 +181,8 @@ export function useSpeechInterpreter() {
       }
 
       submittedTranscriptRef.current = normalizedTranscript;
-      addLog(`INTERPRET: Intent = '${normalizedTranscript.slice(0, 52)}'.`);
+      addMessage({ role: "user", content: normalizedTranscript });
+      addLog(`[INTERPRET]: Intent = '${normalizedTranscript.slice(0, 52)}'.`);
       setInterpreting(true);
 
       try {
@@ -153,24 +190,28 @@ export function useSpeechInterpreter() {
           await interpretTranscript(normalizedTranscript);
 
         if (interpreter === "local-fallback") {
-          addLog("INTERPRET: Fast local compiler fallback.");
+          addLog("[INTERPRET]: Fast local compiler fallback.");
         }
 
         runYiiyaActions(actions);
         addActionLogs(actions);
+        addMessage({
+          role: "assistant",
+          content: JSON.stringify(actions).slice(0, 1000)
+        });
 
         if (actions.length === 0) {
-          addLog("No action detected");
+          addLog("[SYSTEM]: No action detected.");
         }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Interpret request failed";
-        addLog(message);
+        addLog(`[SYSTEM]: ${message}`);
       } finally {
         setInterpreting(false);
       }
     },
-    [addActionLogs, addLog, setInterpreting]
+    [addActionLogs, addLog, addMessage, setInterpreting]
   );
 
   const submitManualTranscript = useCallback(
@@ -196,7 +237,7 @@ export function useSpeechInterpreter() {
     const Recognition = getSpeechRecognition();
 
     if (!Recognition) {
-      addLog("SpeechRecognition unavailable in this browser");
+      addLog("[SYSTEM]: SpeechRecognition unavailable in this browser.");
       return null;
     }
 
@@ -234,7 +275,7 @@ export function useSpeechInterpreter() {
     recognition.onerror = (event) => {
       isRecognitionActiveRef.current = false;
       setListening(false);
-      addLog(`Voice input error: ${event.error}`);
+      addLog(`[SYSTEM]: Voice input error: ${event.error}`);
     };
 
     recognition.onend = () => {
@@ -269,7 +310,7 @@ export function useSpeechInterpreter() {
       setListening(false);
       const message =
         error instanceof Error ? error.message : "Unable to start voice input";
-      addLog(message);
+      addLog(`[SYSTEM]: ${message}`);
     }
   }, [addLog, getRecognition, setInterimTranscript, setListening]);
 

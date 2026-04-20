@@ -4,13 +4,13 @@
 
 - Product definition: Spatial Design Orchestrator, not a template website builder.
 - Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, website sections, and spatial objects.
-- Current phase completed: Phase 6 Local Intent Compiler Fallback.
+- Current phase completed: Phase 7 Stateful Project Sessions.
 - Active backend route: `/api/interpret`.
 - Active publish route: `/api/publish`.
 - Active status route: `/api/status`.
 - Interpreter pipeline: Architect agent generates semantic JSON actions, Critic agent validates/fixes contrast, mobile overflow, hierarchy, payload shape, and semantic action quality before returning JSON to the frontend.
 - Interpreter fallback: if the selected model is unavailable or fails, `/api/interpret` uses a deterministic local compiler for common demo/business commands.
-- Provider support: `AI_PROVIDER=anthropic` uses Anthropic Messages API; `AI_PROVIDER=gemini` uses Gemini generateContent.
+- Provider support: Gemini is the default fast path (`AI_PROVIDER=gemini`, `GEMINI_MODEL=gemini-1.5-flash`). Anthropic remains available with `AI_PROVIDER=anthropic`.
 - MCP status: no Supabase or Vercel MCP resources are exposed in this session. Supabase schema is tracked locally.
 
 ## Active Design Tokens
@@ -84,3 +84,15 @@
 - `/api/interpret` now returns fallback actions with `x-yiiya-interpreter: local-fallback` when the selected LLM provider is missing or fails.
 - The voice/manual command pipeline logs `INTERPRET: Fast local compiler fallback.` when fallback actions are used.
 - Added `/api/status` to report AI/Supabase configuration booleans without exposing secrets.
+
+## Phase 7 Implementation Notes
+
+- `/api/interpret` accepts `history` and `current_canvas_json` while preserving legacy `currentScene` compatibility.
+- Voice/manual commands send the last five Yiiya messages plus the selected element's computed style snapshot for contextual follow-up edits.
+- Local compiler now resolves selected-element follow-ups such as center/middle, more/less, bigger/smaller, and basic color/radius commands.
+- Local compiler maps 3D phrases such as glass sphere, chrome cube, floating plane, and behind hero to `ADD_3D_OBJECT`.
+- Added `resetProject()` to Zustand. It clears sections, scene objects, selection, reference image, theme tokens, layers, and message history.
+- Added a minimal New Project icon button in the top bar.
+- Added debounced 2000ms draft autosave via `/api/projects/autosave`; cloud autosave uses Supabase service role and falls back to browser draft storage when unavailable.
+- Publish uses the current project slug so autosaved drafts upgrade into clean published artifacts.
+- Workspace wraps the canvas/rendering layer in React Suspense to keep the command surface responsive during rendering work.

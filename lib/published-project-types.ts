@@ -18,5 +18,6 @@ export type PublishedProjectContent = Omit<
   PublishedProject,
   "slug" | "createdAt"
 > & {
+  draft?: boolean;
   createdAt?: string;
 };

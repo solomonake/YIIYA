@@ -6,7 +6,7 @@ function hasUsableValue(value: string | undefined, placeholder: string) {
 }
 
 export function GET() {
-  const provider = process.env.AI_PROVIDER === "gemini" ? "gemini" : "anthropic";
+  const provider = process.env.AI_PROVIDER === "anthropic" ? "anthropic" : "gemini";
   const anthropicConfigured = hasUsableValue(
     process.env.ANTHROPIC_API_KEY,
     "your_anthropic"

@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { compileLocalIntent } from "@/lib/local-intent-compiler";
 
 const ARCHITECT_PROMPT =
-  "You are the Architect agent for Yiiya, a Spatial Design Orchestrator. Yiiya is not a website builder. It compiles vague human intent into a tokenized design system, live website sections, and spatial 3D objects. Aesthetic target: Institutional Professional, Bloomberg Terminal meets high-end creative studio. Dark, dense, precise, fast. Return valid JSON only: an array of actions. Supported actions: ADD_SECTION payload { sectionType, theme, content }; MODIFY_ELEMENT payload { elementId, property, value, mode? }; SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }; SYNC_BRAND_TO_IMAGE payload { palette, fontWeights, layoutStructure, visualTone }; ADJUST_DENSITY payload { scale }; ADD_SPATIAL_OBJECT payload { shape, material, color, animation, position }; PUBLISH payload {}. Legacy actions ADD_3D_OBJECT and CHANGE_THEME are allowed only when needed for backward compatibility. If activeElementId is present and the user says relative phrases like 'this', 'a bit bigger', 'make it warmer', target that element with MODIFY_ELEMENT and use mode values like multiply, increment, replace when useful. If an image is provided, extract dominant hex palette, layout structure, visual tone, and font weight cues, then include SYNC_BRAND_TO_IMAGE and appropriate theme actions.";
+  "You are the Architect agent for Yiiya, a Stateful Design Compiler and Spatial Design Orchestrator. Yiiya is not a website builder. It compiles vague human intent into design tokens, live website sections, selected-element edits, and 3D objects. Aesthetic target: Institutional Professional, Bloomberg Terminal meets high-end creative studio. Dark, dense, precise, fast. Return valid JSON only: an array of actions. Supported actions: ADD_SECTION payload { sectionType, theme, content }; MODIFY_ELEMENT payload { elementId, property, value, mode? }; SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }; SYNC_BRAND_TO_IMAGE payload { palette, fontWeights, layoutStructure, visualTone }; ADJUST_DENSITY payload { scale }; ADD_3D_OBJECT payload { shape, material, color, animation, position }; ADD_SPATIAL_OBJECT payload { shape, material, color, animation, position }; PUBLISH payload {}. Context is authoritative: use history for follow-up commands and current_canvas_json for current state. If selectedElementId is present, prioritize modifying that exact ID for relative phrases like 'this', 'it', 'move this', 'make it bigger', 'more', 'less', or 'center it'. Use MODIFY_ELEMENT with math-aware mode values: multiply, increment, replace. For 3D commands, map 'glass sphere', 'chrome cube', 'floating plane' directly to ADD_3D_OBJECT with material Glass/Chrome/Matte, shape sphere/box/plane/cylinder/torus, animation float/rotate/static, and position [x,y,z]. If an image is provided, extract dominant hex palette, layout structure, visual tone, and font weight cues, then include SYNC_BRAND_TO_IMAGE and appropriate token actions.";
 
 const CRITIC_PROMPT =
-  "You are the Critic agent for Yiiya. Review the Architect's JSON action array before it reaches the frontend. Return valid JSON only: the corrected action array, no markdown, no explanation. Check: color contrast, mobile overflow risk, logical hierarchy, missing payloads, unsupported action types, malformed values, excessive spacing, and vague low-level edits where semantic actions would be stronger. Fix silently. Keep the user intent intact. Prefer token-level actions such as SET_GLOBAL_THEME and ADJUST_DENSITY over scattered DOM edits. Clamp ADJUST_DENSITY scale to 0.5..2.0. Ensure colors are hex where possible. Ensure ADD_SPATIAL_OBJECT material is one of Glass, Chrome, Matte.";
+  "You are the Critic agent for Yiiya. Review the Architect's JSON action array before it reaches the frontend. Return valid JSON only: the corrected action array, no markdown, no explanation. Check: color contrast, mobile overflow risk, logical hierarchy, missing payloads, unsupported action types, malformed values, excessive spacing, 3D z-index/depth conflicts, and vague low-level edits where semantic actions would be stronger. Fix silently. Keep the user intent intact. Prefer token-level actions such as SET_GLOBAL_THEME and ADJUST_DENSITY over scattered DOM edits. Clamp ADJUST_DENSITY scale to 0.5..2.0. Ensure colors are hex where possible. Ensure 3D material is one of Glass, Chrome, Matte, positions do not all overlap, and selectedElementId edits target the selected ID.";
 
 type ReferenceImage = {
   base64: string;
@@ -16,7 +16,12 @@ type ReferenceImage = {
 type InterpretRequest = {
   transcript: string;
   activeElementId: string | null;
-  currentScene: object;
+  currentScene?: object;
+  current_canvas_json?: object;
+  history?: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
   referenceImage?: ReferenceImage | null;
 };
 
@@ -87,8 +92,31 @@ function isInterpretRequest(value: unknown): value is InterpretRequest {
     typeof candidate.transcript === "string" &&
     (typeof candidate.activeElementId === "string" ||
       candidate.activeElementId === null) &&
-    typeof candidate.currentScene === "object" &&
-    candidate.currentScene !== null &&
+    (candidate.currentScene === undefined ||
+      (typeof candidate.currentScene === "object" &&
+        candidate.currentScene !== null)) &&
+    (candidate.current_canvas_json === undefined ||
+      (typeof candidate.current_canvas_json === "object" &&
+        candidate.current_canvas_json !== null)) &&
+    (Boolean(candidate.currentScene) || Boolean(candidate.current_canvas_json)) &&
+    (candidate.history === undefined ||
+      (Array.isArray(candidate.history) &&
+        candidate.history.every((message) => {
+          if (!message || typeof message !== "object") {
+            return false;
+          }
+
+          const candidateMessage = message as {
+            role?: unknown;
+            content?: unknown;
+          };
+
+          return (
+            (candidateMessage.role === "user" ||
+              candidateMessage.role === "assistant") &&
+            typeof candidateMessage.content === "string"
+          );
+        }))) &&
     (candidate.referenceImage === undefined ||
       candidate.referenceImage === null ||
       isReferenceImage(candidate.referenceImage))
@@ -116,7 +144,9 @@ function buildArchitectContext(body: InterpretRequest) {
   return JSON.stringify({
     transcript: body.transcript,
     activeElementId: body.activeElementId,
-    currentScene: body.currentScene,
+    history: body.history?.slice(-5) ?? [],
+    currentScene: body.currentScene ?? body.current_canvas_json,
+    current_canvas_json: body.current_canvas_json ?? body.currentScene,
     referenceImage: body.referenceImage
       ? {
           name: body.referenceImage.name,
@@ -130,7 +160,9 @@ function buildCriticContext(body: InterpretRequest, architectActions: unknown[])
   return JSON.stringify({
     transcript: body.transcript,
     activeElementId: body.activeElementId,
-    currentScene: body.currentScene,
+    history: body.history?.slice(-5) ?? [],
+    currentScene: body.currentScene ?? body.current_canvas_json,
+    current_canvas_json: body.current_canvas_json ?? body.currentScene,
     architectActions
   });
 }
@@ -203,7 +235,7 @@ async function callGemini(input: ModelInput) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
 
-  const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash-lite";
+  const model = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
   const parts: GeminiPart[] = [{ text: input.text }];
 
   if (input.image) {
@@ -256,7 +288,7 @@ async function callGemini(input: ModelInput) {
 }
 
 async function callModel(input: ModelInput) {
-  if (process.env.AI_PROVIDER === "gemini") {
+  if (process.env.AI_PROVIDER !== "anthropic") {
     return callGemini(input);
   }
 
@@ -308,7 +340,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Expected { transcript: string, activeElementId: string | null, currentScene: object }"
+          "Expected { transcript: string, activeElementId: string | null, current_canvas_json: object }"
       },
       { status: 400 }
     );

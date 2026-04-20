@@ -6,6 +6,7 @@ import {
   mergeYiiyaTheme,
   type YiiyaTheme
 } from "@/lib/designSystem";
+import { createProjectSlug } from "@/lib/project-slug";
 
 export type Layer = {
   id: string;
@@ -58,6 +59,11 @@ export type ReferenceImage = {
   name: string;
 };
 
+export type YiiyaMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type YiiyaAction =
   | {
       type: "ADD_SECTION";
@@ -71,6 +77,7 @@ export type YiiyaAction =
       type: "ADD_3D_OBJECT";
       payload: {
         shape: unknown;
+        material?: unknown;
         color: unknown;
         animation: unknown;
         position: unknown;
@@ -130,6 +137,7 @@ export type YiiyaAction =
     };
 
 type YiiyaState = {
+  currentProjectSlug: string;
   projectName: string;
   isListening: boolean;
   isInterpreting: boolean;
@@ -144,7 +152,9 @@ type YiiyaState = {
   sceneObjects: SceneObject[];
   layers: Layer[];
   logs: LogEntry[];
+  messageHistory: YiiyaMessage[];
   setProjectName: (projectName: string) => void;
+  setCurrentProjectSlug: (currentProjectSlug: string) => void;
   setListening: (isListening: boolean) => void;
   setInterpreting: (isInterpreting: boolean) => void;
   setInterimTranscript: (interimTranscript: string) => void;
@@ -167,14 +177,29 @@ type YiiyaState = {
   }) => SceneObject;
   addLog: (label: string) => void;
   addActionLogs: (actions: YiiyaAction[]) => void;
+  addMessage: (message: YiiyaMessage) => void;
+  resetProject: () => void;
   toggleSidebar: () => void;
 };
 
 const initialLayers: Layer[] = [];
 
 const initialLogs: LogEntry[] = [
-  { id: "log-1", label: "SYSTEM: Waiting for input.", timestamp: "--:--:--" }
+  { id: "log-1", label: "[SYSTEM]: Waiting for input.", timestamp: "--:--:--" }
 ];
+
+function createInitialLog(label = "[SYSTEM]: New project session initialized.") {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    label,
+    timestamp: new Intl.DateTimeFormat("en", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(new Date())
+  };
+}
 
 function createLog(label: string): LogEntry {
   return {
@@ -196,7 +221,7 @@ function describeAction(action: YiiyaAction) {
         ? action.payload.sectionType.toUpperCase()
         : "HERO";
 
-    return `COMPILE: Injecting ${sectionType}_Section_v2.`;
+    return `[EXECUTE]: Injecting ${sectionType}_Section_v2.`;
   }
 
   if (action.type === "ADD_SPATIAL_OBJECT" || action.type === "ADD_3D_OBJECT") {
@@ -207,7 +232,7 @@ function describeAction(action: YiiyaAction) {
         ? action.payload.material
         : "Matte";
 
-    return `SPATIAL: Mounting ${material}_${shape}.`;
+    return `[EXECUTE]: Mounting ${material}_${shape}.`;
   }
 
   if (action.type === "SET_GLOBAL_THEME") {
@@ -216,7 +241,7 @@ function describeAction(action: YiiyaAction) {
         ? action.payload.layoutDensity
         : "token";
 
-    return `THEME: Syncing global ${density} system.`;
+    return `[EXECUTE]: Syncing global ${density} system.`;
   }
 
   if (action.type === "SYNC_BRAND_TO_IMAGE") {
@@ -225,11 +250,11 @@ function describeAction(action: YiiyaAction) {
         ? action.payload.visualTone
         : "reference";
 
-    return `VISION: Brand image mapped to '${tone}'.`;
+    return `[EXECUTE]: Brand image mapped to '${tone}'.`;
   }
 
   if (action.type === "ADJUST_DENSITY") {
-    return `DENSITY: Scaling layout to ${String(action.payload.scale)}.`;
+    return `[EXECUTE]: Scaling layout to ${String(action.payload.scale)}.`;
   }
 
   if (action.type === "MODIFY_ELEMENT") {
@@ -242,7 +267,7 @@ function describeAction(action: YiiyaAction) {
         ? action.payload.property
         : "property";
 
-    return `MODIFY: ${elementId} -> ${property}.`;
+    return `[EXECUTE]: Applying '${property}' to '${elementId}'.`;
   }
 
   if (action.type === "CHANGE_THEME") {
@@ -251,10 +276,10 @@ function describeAction(action: YiiyaAction) {
         ? action.payload.property
         : "theme";
 
-    return `THEME: Applying legacy ${property}.`;
+    return `[EXECUTE]: Applying legacy ${property}.`;
   }
 
-  return "PUBLISH: Generating public artifact.";
+  return "[EXECUTE]: Generating public artifact.";
 }
 
 function normalizeSectionType(sectionType: unknown): SectionType {
@@ -315,6 +340,7 @@ function normalizeMaterial(material: unknown): SceneObject["material"] {
 }
 
 export const useYiiyaStore = create<YiiyaState>((set) => ({
+  currentProjectSlug: createProjectSlug(),
   projectName: "yiiya.app — new project",
   isListening: false,
   isInterpreting: false,
@@ -329,7 +355,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   sceneObjects: [],
   layers: initialLayers,
   logs: initialLogs,
+  messageHistory: [],
   setProjectName: (projectName) => set({ projectName }),
+  setCurrentProjectSlug: (currentProjectSlug) => set({ currentProjectSlug }),
   setListening: (isListening) => set({ isListening }),
   setInterpreting: (isInterpreting) => set({ isInterpreting }),
   setInterimTranscript: (interimTranscript) => set({ interimTranscript }),
@@ -400,6 +428,28 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         ...actions.map((action) => createLog(describeAction(action)))
       ].slice(-40)
     })),
+  addMessage: (message) =>
+    set((state) => ({
+      messageHistory: [...state.messageHistory, message].slice(-5)
+    })),
+  resetProject: () =>
+    set({
+      currentProjectSlug: createProjectSlug(),
+      projectName: "yiiya.app — new project",
+      isListening: false,
+      isInterpreting: false,
+      interimTranscript: "",
+      selectedElementId: null,
+      hoveredElementId: null,
+      referenceImage: null,
+      toastMessage: null,
+      themeState: defaultYiiyaTheme,
+      sections: [],
+      sceneObjects: [],
+      layers: [],
+      logs: [createInitialLog()],
+      messageHistory: []
+    }),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed }))
 }));

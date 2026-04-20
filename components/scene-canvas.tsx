@@ -11,6 +11,14 @@ function ObjectGeometry({ shape }: { shape: string }) {
     return <boxGeometry args={[1.4, 1.4, 1.4]} />;
   }
 
+  if (normalizedShape.includes("plane") || normalizedShape.includes("panel")) {
+    return <planeGeometry args={[2.4, 1.35, 8, 8]} />;
+  }
+
+  if (normalizedShape.includes("cylinder")) {
+    return <cylinderGeometry args={[0.58, 0.58, 1.5, 48]} />;
+  }
+
   if (normalizedShape.includes("torus") || normalizedShape.includes("ring")) {
     return <torusKnotGeometry args={[0.55, 0.14, 96, 12]} />;
   }
@@ -88,8 +96,8 @@ export function SceneCanvas() {
       dpr={[1, 2]}
       className="h-full w-full"
     >
-      <color attach="background" args={["#0a0a0a"]} />
-      <fog attach="fog" args={["#0a0a0a", 6, 16]} />
+      <color attach="background" args={["#050505"]} />
+      <fog attach="fog" args={["#050505", 6, 16]} />
       {hasBuildContent ? <StarterScene objects={sceneObjects} /> : null}
       <OrbitControls
         enablePan={false}

@@ -40,25 +40,26 @@ export function canUseSupabasePublish() {
   return Boolean(getSupabaseConfig("service"));
 }
 
-export async function insertPublishedProject(project: PublishedProject) {
+async function upsertProject(project: PublishedProject, draft: boolean) {
   const config = getSupabaseConfig("service");
 
   if (!config) {
     throw new Error("Supabase service role is not configured");
   }
 
-  const response = await fetch(`${config.url}/rest/v1/projects`, {
+  const response = await fetch(`${config.url}/rest/v1/projects?on_conflict=slug`, {
     method: "POST",
     headers: {
       apikey: config.key,
       Authorization: `Bearer ${config.key}`,
       "Content-Type": "application/json",
-      Prefer: "return=representation"
+      Prefer: "resolution=merge-duplicates,return=representation"
     },
     body: JSON.stringify({
       slug: project.slug,
       owner_id: null,
       content_json: {
+        draft,
         htmlSnapshot: project.htmlSnapshot,
         htmlCanvasImage: project.htmlCanvasImage,
         sceneState: project.sceneState,
@@ -81,6 +82,14 @@ export async function insertPublishedProject(project: PublishedProject) {
   }
 
   return rowToPublishedProject(row);
+}
+
+export async function insertPublishedProject(project: PublishedProject) {
+  return upsertProject(project, false);
+}
+
+export async function autosaveProjectDraft(project: PublishedProject) {
+  return upsertProject(project, true);
 }
 
 export async function readPublishedProjectFromSupabase(slug: string) {

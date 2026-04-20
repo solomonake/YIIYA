@@ -87,16 +87,18 @@ export function ReferenceImageDropzone() {
       );
 
       if (!image) {
-        addLog("Drop ignored: no image file found");
+        addLog("[SYSTEM]: Drop ignored: no image file found.");
         return;
       }
 
       try {
         const referenceImage = await readImageAsReference(image);
         setReferenceImage(referenceImage);
-        addLog(`Reference image attached: ${image.name}`);
+        addLog(`[SYSTEM]: Reference image attached: ${image.name}.`);
       } catch (error) {
-        addLog(error instanceof Error ? error.message : "Unable to read image");
+        addLog(
+          `[SYSTEM]: ${error instanceof Error ? error.message : "Unable to read image."}`
+        );
       }
     };
 
