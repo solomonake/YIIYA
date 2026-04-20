@@ -4,7 +4,7 @@
 
 - Product definition: Spatial Design Orchestrator, not a template website builder.
 - Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, website sections, and spatial objects.
-- Current phase completed: Phase 3 Command Center UI Polish.
+- Current phase completed: Phase 4 Demo-Safe Text Fallback.
 - Active backend route: `/api/interpret`.
 - Interpreter pipeline: Architect agent generates semantic JSON actions, Critic agent validates/fixes contrast, mobile overflow, hierarchy, payload shape, and semantic action quality before returning JSON to the frontend.
 - Provider support: `AI_PROVIDER=anthropic` uses Anthropic Messages API; `AI_PROVIDER=gemini` uses Gemini generateContent.
@@ -56,3 +56,10 @@
 - Right panel: AI Log is now a System Operation Feed with timestamped semantic operations instead of raw JSON payloads.
 - Voice bar states: `Listening...` uses fluorescent green `#39FF14`; `Thinking...` uses amber `#FFB100`; idle remains dim.
 - Operation feed language: interpret, compile, theme, density, spatial, modify, publish events are formatted for demo-readable system telemetry.
+
+## Phase 4 Implementation Notes
+
+- Voice bar now includes a manual typed command input for accessibility, noisy rooms, and live-demo safety.
+- Typed commands reuse the same `/api/interpret` pipeline as speech, including active element context, reference image context, current scene state, Architect, Critic, and action runner.
+- Spacebar voice capture remains disabled while typing because input targets are excluded from the global keyboard listener.
+- Manual commands can repeat intentionally, while speech final-result de-duping still prevents duplicate Web Speech submissions.

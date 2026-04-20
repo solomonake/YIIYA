@@ -1,5 +1,6 @@
 "use client";
 
+import { type FormEvent, useState } from "react";
 import { useYiiyaStore } from "@/lib/store";
 import { useSpeechInterpreter } from "@/lib/use-speech-interpreter";
 
@@ -10,7 +11,8 @@ export function VoiceBar() {
   const isInterpreting = useYiiyaStore((state) => state.isInterpreting);
   const interimTranscript = useYiiyaStore((state) => state.interimTranscript);
   const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
-  const { toggleListening } = useSpeechInterpreter();
+  const { toggleListening, submitManualTranscript } = useSpeechInterpreter();
+  const [manualCommand, setManualCommand] = useState("");
 
   const status = isInterpreting
     ? "Thinking..."
@@ -32,11 +34,25 @@ export function VoiceBar() {
     : isListening
       ? "animate-pulseDot bg-signalGreen shadow-[0_0_22px_rgba(57,255,20,0.82)]"
       : "bg-white/20";
+  const canSubmitManualCommand =
+    manualCommand.trim().length > 0 && !isInterpreting;
+
+  const handleManualSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!canSubmitManualCommand) {
+      return;
+    }
+
+    const command = manualCommand;
+    setManualCommand("");
+    void submitManualTranscript(command);
+  };
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-7 z-10 flex justify-center px-3 sm:px-6">
       <div
-        className={`pointer-events-auto flex h-14 w-[min(620px,calc(100vw-24px))] items-center justify-center gap-3 rounded-full border bg-[#070707]/94 px-4 backdrop-blur-xl transition-[border-color,box-shadow] duration-200 sm:gap-4 sm:px-5 ${shellStateClass}`}
+        className={`pointer-events-auto flex min-h-16 w-[min(760px,calc(100vw-24px))] items-center justify-center gap-3 rounded-full border bg-[#070707]/94 px-4 py-2 backdrop-blur-xl transition-[border-color,box-shadow] duration-200 sm:gap-4 sm:px-5 ${shellStateClass}`}
       >
         <button
           aria-label={isListening ? "Stop voice input" : "Start voice input"}
@@ -60,7 +76,7 @@ export function VoiceBar() {
           </svg>
         </button>
 
-        <div className="flex h-7 w-10 items-center justify-center gap-1">
+        <div className="hidden h-7 w-10 items-center justify-center gap-1 sm:flex">
           {bars.map((bar) => (
             <span
               key={bar}
@@ -76,15 +92,57 @@ export function VoiceBar() {
           ))}
         </div>
 
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <span className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />
-          <div className="flex min-w-0 items-baseline gap-2 whitespace-nowrap text-[11px] sm:text-xs">
+          <div className="flex min-w-0 max-w-[96px] items-baseline gap-2 whitespace-nowrap text-[11px] sm:max-w-[180px] sm:text-xs lg:max-w-[260px]">
             <span className="font-bold uppercase tracking-[0.12em] text-bone">
               {status}
             </span>
-            <span className="truncate text-white/45">{promptText}</span>
+            <span className="hidden truncate text-white/45 sm:inline">
+              {promptText}
+            </span>
           </div>
         </div>
+
+        <form
+          className="flex min-w-0 flex-1 items-center gap-2 border-l border-terminalBorder pl-3"
+          onSubmit={handleManualSubmit}
+        >
+          <label className="sr-only" htmlFor="yiiya-manual-command">
+            Type a Yiiya command
+          </label>
+          <input
+            id="yiiya-manual-command"
+            value={manualCommand}
+            disabled={isInterpreting}
+            onChange={(event) => setManualCommand(event.target.value)}
+            placeholder={
+              selectedElementId
+                ? `Pointing at ${selectedElementId} - type to modify`
+                : "Type a command for demo safety"
+            }
+            className="min-w-0 flex-1 border-none bg-transparent text-[11px] text-bone outline-none placeholder:text-white/32 disabled:cursor-not-allowed disabled:text-white/35 sm:text-xs"
+          />
+          <button
+            type="submit"
+            aria-label="Submit typed command"
+            disabled={!canSubmitManualCommand}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-terminalBorder text-white/60 transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber disabled:cursor-not-allowed disabled:border-white/5 disabled:text-white/20"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+            >
+              <path d="m5 12 14-7-7 14-2-5-5-2Z" />
+            </svg>
+          </button>
+        </form>
       </div>
     </div>
   );

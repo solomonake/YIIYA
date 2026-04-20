@@ -130,12 +130,13 @@ export function useSpeechInterpreter() {
   const addActionLogs = useYiiyaStore((state) => state.addActionLogs);
 
   const submitTranscript = useCallback(
-    async (transcript: string) => {
+    async (transcript: string, options?: { allowRepeat?: boolean }) => {
       const normalizedTranscript = transcript.trim();
 
       if (
         !normalizedTranscript ||
-        normalizedTranscript === submittedTranscriptRef.current
+        (!options?.allowRepeat &&
+          normalizedTranscript === submittedTranscriptRef.current)
       ) {
         return;
       }
@@ -161,6 +162,21 @@ export function useSpeechInterpreter() {
       }
     },
     [addActionLogs, addLog, setInterpreting]
+  );
+
+  const submitManualTranscript = useCallback(
+    async (transcript: string) => {
+      const normalizedTranscript = transcript.trim();
+
+      if (!normalizedTranscript) {
+        return;
+      }
+
+      setInterimTranscript(normalizedTranscript);
+      await submitTranscript(normalizedTranscript, { allowRepeat: true });
+      setInterimTranscript("");
+    },
+    [setInterimTranscript, submitTranscript]
   );
 
   const getRecognition = useCallback(() => {
@@ -299,6 +315,7 @@ export function useSpeechInterpreter() {
   return {
     startListening,
     stopListening,
-    toggleListening
+    toggleListening,
+    submitManualTranscript
   };
 }
