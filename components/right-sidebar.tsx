@@ -14,6 +14,7 @@ export function RightSidebar() {
   const collapsed = useYiiyaStore((state) => state.sidebarCollapsed);
   const logs = useYiiyaStore((state) => state.logs);
   const layers = useYiiyaStore((state) => state.layers);
+  const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const toggleSidebar = useYiiyaStore((state) => state.toggleSidebar);
 
   return (
@@ -72,11 +73,19 @@ export function RightSidebar() {
             <h2 className="mb-3 border-b border-terminalBorder pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/40">
               Mode
             </h2>
-            <div className="grid grid-cols-2 border border-terminalBorder bg-white/[0.025] p-1 text-center text-[10px] font-bold uppercase tracking-[0.08em]">
-              <span className="bg-amber px-2 py-1.5 text-ink">
-                Web+3D
-              </span>
-              <span className="px-2 py-1.5 text-white/45">Web</span>
+            <div className="grid grid-cols-3 border border-terminalBorder bg-white/[0.025] p-1 text-center text-[10px] font-bold uppercase tracking-[0.08em]">
+              {(["WEB", "3D", "HYBRID"] as const).map((mode) => (
+                <span
+                  key={mode}
+                  className={
+                    canvasMode === mode
+                      ? "bg-amber px-2 py-1.5 text-ink"
+                      : "px-2 py-1.5 text-white/45"
+                  }
+                >
+                  {mode}
+                </span>
+              ))}
             </div>
           </section>
         </div>

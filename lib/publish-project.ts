@@ -34,6 +34,16 @@ function getSanitizedHtmlSnapshot(root: HTMLElement) {
     element.setAttribute("data-yiiya-active", "false");
   });
 
+  if (useYiiyaStore.getState().isGuest) {
+    const watermark = document.createElement("div");
+    watermark.textContent = "Built with Yiiya guest mode";
+    watermark.setAttribute(
+      "style",
+      "position:fixed;right:16px;bottom:16px;z-index:9999;background:rgba(5,5,5,.82);color:#ededed;border:1px solid rgba(255,255,255,.18);padding:8px 10px;font:600 11px monospace;letter-spacing:.08em;text-transform:uppercase;"
+    );
+    clone.append(watermark);
+  }
+
   return clone.outerHTML;
 }
 
@@ -163,14 +173,19 @@ export async function publishCurrentProject() {
   let publishedProject: PublishedProject = project;
   let publishedToCloud = false;
 
-  try {
-    publishedProject = await publishToSupabase(project);
-    publishedToCloud = true;
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Cloud publish unavailable";
-    store.addLog(`[SYSTEM]: Publish cloud fallback active. ${message}`);
+  if (store.isGuest) {
     localStorage.setItem(`${storagePrefix}${project.slug}`, JSON.stringify(project));
+    store.addLog("[SYSTEM]: Guest publish stored locally with watermark.");
+  } else {
+    try {
+      publishedProject = await publishToSupabase(project);
+      publishedToCloud = true;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Cloud publish unavailable";
+      store.addLog(`[SYSTEM]: Publish cloud fallback active. ${message}`);
+      localStorage.setItem(`${storagePrefix}${project.slug}`, JSON.stringify(project));
+    }
   }
 
   const shareUrl = `${window.location.origin}/p/${publishedProject.slug}`;

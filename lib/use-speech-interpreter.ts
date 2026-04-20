@@ -79,6 +79,23 @@ function isYiiyaActionArray(value: unknown): value is YiiyaAction[] {
   );
 }
 
+function isInterpretPayload(
+  value: unknown
+): value is { actions: YiiyaAction[]; qa_log?: string[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const payload = value as { actions?: unknown; qa_log?: unknown };
+
+  return (
+    isYiiyaActionArray(payload.actions) &&
+    (payload.qa_log === undefined ||
+      (Array.isArray(payload.qa_log) &&
+        payload.qa_log.every((item) => typeof item === "string")))
+  );
+}
+
 function getSelectedElementSnapshot(elementId: string | null) {
   if (!elementId) {
     return null;
@@ -109,10 +126,44 @@ function getSelectedElementSnapshot(elementId: string | null) {
   };
 }
 
-async function interpretTranscript(transcript: string) {
+function summarizeActions(actions: YiiyaAction[]) {
+  const sectionCount = actions.filter((action) => action.type === "ADD_SECTION").length;
+  const objectCount = actions.filter(
+    (action) => action.type === "ADD_3D_OBJECT" || action.type === "ADD_SPATIAL_OBJECT"
+  ).length;
+  const editCount = actions.filter((action) => action.type === "MODIFY_ELEMENT").length;
+
+  if (sectionCount > 0 && objectCount > 0) {
+    return `Added ${sectionCount} section(s) and ${objectCount} 3D object(s).`;
+  }
+
+  if (sectionCount > 0) {
+    return `Added ${sectionCount} section(s).`;
+  }
+
+  if (objectCount > 0) {
+    return `Added ${objectCount} 3D object(s).`;
+  }
+
+  if (editCount > 0) {
+    return `Modified ${editCount} selected element property/properties.`;
+  }
+
+  if (actions.some((action) => action.type === "SET_GLOBAL_THEME" || action.type === "CHANGE_THEME")) {
+    return "Updated the project theme.";
+  }
+
+  return "No visible changes were applied.";
+}
+
+async function interpretTranscript(
+  transcript: string,
+  history: Array<{ role: "user" | "assistant"; content: string }>
+) {
   const state = useYiiyaStore.getState();
   const currentCanvasJson = {
     projectSlug: state.currentProjectSlug,
+    projectId: state.currentProjectId,
     projectName: state.projectName,
     selectedElementId: state.selectedElementId,
     activeElement: getSelectedElementSnapshot(state.selectedElementId),
@@ -132,7 +183,7 @@ async function interpretTranscript(transcript: string) {
       activeElementId: state.selectedElementId,
       currentScene: currentCanvasJson,
       current_canvas_json: currentCanvasJson,
-      history: state.messageHistory.slice(-5),
+      history: history.slice(-5),
       referenceImage: state.referenceImage
     })
   });
@@ -141,14 +192,23 @@ async function interpretTranscript(transcript: string) {
     throw new Error(`Interpret request failed with ${response.status}`);
   }
 
-  const actions: unknown = await response.json();
+  const payload: unknown = await response.json();
 
-  if (!isYiiyaActionArray(actions)) {
+  if (isYiiyaActionArray(payload)) {
+    return {
+      actions: payload,
+      qaLog: [],
+      interpreter: response.headers.get("x-yiiya-interpreter")
+    };
+  }
+
+  if (!isInterpretPayload(payload)) {
     throw new Error("Interpret response was not an action array");
   }
 
   return {
-    actions,
+    actions: payload.actions,
+    qaLog: payload.qa_log ?? [],
     interpreter: response.headers.get("x-yiiya-interpreter")
   };
 }
@@ -161,6 +221,7 @@ export function useSpeechInterpreter() {
 
   const setListening = useYiiyaStore((state) => state.setListening);
   const setInterpreting = useYiiyaStore((state) => state.setInterpreting);
+  const setTranscript = useYiiyaStore((state) => state.setTranscript);
   const setInterimTranscript = useYiiyaStore(
     (state) => state.setInterimTranscript
   );
@@ -181,13 +242,16 @@ export function useSpeechInterpreter() {
       }
 
       submittedTranscriptRef.current = normalizedTranscript;
+      const previousHistory = useYiiyaStore.getState().conversationHistory;
+
+      setTranscript(normalizedTranscript);
       addMessage({ role: "user", content: normalizedTranscript });
       addLog(`[INTERPRET]: Intent = '${normalizedTranscript.slice(0, 52)}'.`);
       setInterpreting(true);
 
       try {
-        const { actions, interpreter } =
-          await interpretTranscript(normalizedTranscript);
+        const { actions, qaLog, interpreter } =
+          await interpretTranscript(normalizedTranscript, previousHistory);
 
         if (interpreter === "local-fallback") {
           addLog("[INTERPRET]: Fast local compiler fallback.");
@@ -195,9 +259,10 @@ export function useSpeechInterpreter() {
 
         runYiiyaActions(actions);
         addActionLogs(actions);
+        qaLog.forEach((log) => addLog(log));
         addMessage({
           role: "assistant",
-          content: JSON.stringify(actions).slice(0, 1000)
+          content: summarizeActions(actions)
         });
 
         if (actions.length === 0) {
@@ -211,7 +276,7 @@ export function useSpeechInterpreter() {
         setInterpreting(false);
       }
     },
-    [addActionLogs, addLog, addMessage, setInterpreting]
+    [addActionLogs, addLog, addMessage, setInterpreting, setTranscript]
   );
 
   const submitManualTranscript = useCallback(

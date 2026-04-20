@@ -86,25 +86,35 @@ function StarterScene({ objects }: { objects: SceneObject[] }) {
 
 export function SceneCanvas() {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
+  const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const hasBuildContent = sceneObjects.length > 0;
 
   return (
-    <Canvas
-      data-yiiya-scene-canvas="true"
-      camera={{ position: [3.9, 3.2, 5.2], fov: 42 }}
-      gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
-      dpr={[1, 2]}
-      className="h-full w-full"
+    <div
+      className="absolute inset-0 z-20 transition-opacity"
+      style={{
+        opacity: canvasMode === "WEB" ? 0 : 1,
+        pointerEvents:
+          canvasMode === "3D" ? "auto" : "none"
+      }}
     >
-      <color attach="background" args={["#050505"]} />
-      <fog attach="fog" args={["#050505", 6, 16]} />
-      {hasBuildContent ? <StarterScene objects={sceneObjects} /> : null}
-      <OrbitControls
-        enablePan={false}
-        minDistance={3.2}
-        maxDistance={8}
-        maxPolarAngle={Math.PI * 0.48}
-      />
-    </Canvas>
+      <Canvas
+        data-yiiya-scene-canvas="true"
+        camera={{ position: [3.9, 3.2, 5.2], fov: 42 }}
+        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
+        dpr={[1, 2]}
+        className="h-full w-full"
+      >
+        {canvasMode === "3D" ? <color attach="background" args={["#050505"]} /> : null}
+        <fog attach="fog" args={["#050505", 6, 16]} />
+        {hasBuildContent ? <StarterScene objects={sceneObjects} /> : null}
+        <OrbitControls
+          enablePan={false}
+          minDistance={3.2}
+          maxDistance={8}
+          maxPolarAngle={Math.PI * 0.48}
+        />
+      </Canvas>
+    </div>
   );
 }

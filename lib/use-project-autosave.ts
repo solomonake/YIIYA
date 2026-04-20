@@ -1,28 +1,38 @@
 "use client";
 
 import { useEffect } from "react";
-import { autosaveCurrentProject } from "@/lib/publish-project";
+import {
+  listLocalProjects,
+  saveCurrentProject
+} from "@/lib/project-persistence";
 import { useYiiyaStore } from "@/lib/store";
 
 export function useProjectAutosave() {
-  const currentProjectSlug = useYiiyaStore((state) => state.currentProjectSlug);
-  const projectName = useYiiyaStore((state) => state.projectName);
+  const currentProjectId = useYiiyaStore((state) => state.currentProjectId);
   const sections = useYiiyaStore((state) => state.sections);
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const themeState = useYiiyaStore((state) => state.themeState);
-  const layers = useYiiyaStore((state) => state.layers);
+  const loadProject = useYiiyaStore((state) => state.loadProject);
 
   useEffect(() => {
-    const hasCanvasState = sections.length > 0 || sceneObjects.length > 0;
+    const [latestLocalProject] = listLocalProjects(1);
 
-    if (!hasCanvasState) {
-      return;
+    if (latestLocalProject) {
+      loadProject({
+        id: latestLocalProject.id,
+        projectName: latestLocalProject.project_name,
+        canvas_json: latestLocalProject.canvas_json,
+        theme_json: latestLocalProject.theme_json,
+        logLabel: "SYSTEM: Project restored from local storage."
+      });
     }
+  }, [loadProject]);
 
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      void autosaveCurrentProject();
+      void saveCurrentProject();
     }, 2000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [currentProjectSlug, layers, projectName, sceneObjects, sections, themeState]);
+  }, [currentProjectId, sceneObjects, sections, themeState]);
 }

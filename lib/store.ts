@@ -30,6 +30,7 @@ export type SectionType =
   | "TESTIMONIALS"
   | "PRICING"
   | "FAQ"
+  | "LOGO_STRIP"
   | "CONTACT"
   | "FOOTER";
 
@@ -51,6 +52,7 @@ export type SectionContent = Record<string, unknown>;
 export type YiiyaSection = {
   id: string;
   sectionType: SectionType;
+  layoutVariant?: string;
   theme: SectionTheme;
   content: SectionContent;
 };
@@ -62,12 +64,16 @@ export type SceneObject = {
   color: string;
   animation: string;
   position: [number, number, number];
+  anchorSection?: string;
 };
 
 export type ReferenceImage = {
   base64: string;
   mediaType: string;
   name: string;
+  dominantColor?: string;
+  accentCandidate?: string;
+  extractedMode?: "dark" | "light";
 };
 
 export type YiiyaMessage = {
@@ -80,6 +86,7 @@ export type YiiyaAction =
       type: "ADD_SECTION";
       payload: {
         sectionType: unknown;
+        layoutVariant?: unknown;
         theme?: unknown;
         content?: unknown;
       };
@@ -92,6 +99,7 @@ export type YiiyaAction =
         color: unknown;
         animation: unknown;
         position: unknown;
+        anchorSection?: unknown;
       };
     }
   | {
@@ -102,6 +110,7 @@ export type YiiyaAction =
         color: unknown;
         animation: unknown;
         position: unknown;
+        anchorSection?: unknown;
       };
     }
   | {
@@ -147,11 +156,34 @@ export type YiiyaAction =
       payload: Record<string, never>;
     };
 
+export type CanvasMode = "WEB" | "3D" | "HYBRID";
+
+export type SavedProjectState = {
+  id?: string;
+  currentProjectId?: string;
+  projectName?: string;
+  logLabel?: string;
+  canvas_json?: {
+    sections?: YiiyaSection[];
+    sceneObjects?: SceneObject[];
+    layers?: Layer[];
+  };
+  theme_json?: Partial<YiiyaTheme>;
+  sections?: YiiyaSection[];
+  sceneObjects?: SceneObject[];
+  layers?: Layer[];
+  themeState?: Partial<YiiyaTheme>;
+};
+
 type YiiyaState = {
+  currentProjectId: string;
   currentProjectSlug: string;
   projectName: string;
+  isGuest: boolean;
+  canvasMode: CanvasMode;
   isListening: boolean;
   isInterpreting: boolean;
+  transcript: string;
   interimTranscript: string;
   selectedElementId: string | null;
   hoveredElementId: string | null;
@@ -163,11 +195,15 @@ type YiiyaState = {
   sceneObjects: SceneObject[];
   layers: Layer[];
   logs: LogEntry[];
-  messageHistory: YiiyaMessage[];
+  conversationHistory: YiiyaMessage[];
+  setCurrentProjectId: (currentProjectId: string) => void;
   setProjectName: (projectName: string) => void;
+  setGuest: (isGuest: boolean) => void;
+  setCanvasMode: (canvasMode: CanvasMode) => void;
   setCurrentProjectSlug: (currentProjectSlug: string) => void;
   setListening: (isListening: boolean) => void;
   setInterpreting: (isInterpreting: boolean) => void;
+  setTranscript: (transcript: string) => void;
   setInterimTranscript: (interimTranscript: string) => void;
   setSelectedElementId: (selectedElementId: string | null) => void;
   setHoveredElementId: (hoveredElementId: string | null) => void;
@@ -176,6 +212,7 @@ type YiiyaState = {
   setThemeState: (themeState: Partial<YiiyaTheme>) => void;
   addSection: (section: {
     sectionType: unknown;
+    layoutVariant?: unknown;
     theme?: unknown;
     content?: unknown;
   }) => YiiyaSection;
@@ -185,21 +222,33 @@ type YiiyaState = {
     color?: unknown;
     animation?: unknown;
     position?: unknown;
+    anchorSection?: unknown;
   }) => SceneObject;
   addLog: (label: string) => void;
   addActionLogs: (actions: YiiyaAction[]) => void;
   addMessage: (message: YiiyaMessage) => void;
+  loadProject: (project: SavedProjectState) => void;
   resetProject: () => void;
   toggleSidebar: () => void;
 };
 
 const initialLayers: Layer[] = [];
 
+const defaultProjectName = "untitled project";
+
 const initialLogs: LogEntry[] = [
-  { id: "log-1", label: "[SYSTEM]: Waiting for input.", timestamp: "--:--:--" }
+  { id: "log-1", label: "SYSTEM: Waiting for input.", timestamp: "--:--:--" }
 ];
 
-function createInitialLog(label = "[SYSTEM]: New project session initialized.") {
+function createProjectId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createInitialLog(label = "SYSTEM: New project session initialized.") {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     label,
@@ -293,6 +342,32 @@ function describeAction(action: YiiyaAction) {
   return "[EXECUTE]: Generating public artifact.";
 }
 
+function normalizeLayoutVariant(value: unknown, sectionType: SectionType) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.toUpperCase();
+
+  if (
+    sectionType === "HERO" &&
+    (normalized === "CENTERED_IMPACT" ||
+      normalized === "EDITORIAL_SPLIT" ||
+      normalized === "BENTO_GRID")
+  ) {
+    return normalized;
+  }
+
+  if (
+    sectionType === "FEATURES" &&
+    (normalized === "FEATURES_GRID" || normalized === "FEATURES_HORIZONTAL")
+  ) {
+    return normalized;
+  }
+
+  return undefined;
+}
+
 function normalizeSectionType(sectionType: unknown): SectionType {
   if (typeof sectionType !== "string") {
     return "HERO";
@@ -310,6 +385,7 @@ function normalizeSectionType(sectionType: unknown): SectionType {
     normalized === "TESTIMONIALS" ||
     normalized === "PRICING" ||
     normalized === "FAQ" ||
+    normalized === "LOGO_STRIP" ||
     normalized === "CONTACT" ||
     normalized === "FOOTER"
   ) {
@@ -358,10 +434,14 @@ function normalizeMaterial(material: unknown): SceneObject["material"] {
 }
 
 export const useYiiyaStore = create<YiiyaState>((set) => ({
+  currentProjectId: createProjectId(),
   currentProjectSlug: createProjectSlug(),
-  projectName: "yiiya.app — new project",
+  projectName: defaultProjectName,
+  isGuest: false,
+  canvasMode: "HYBRID",
   isListening: false,
   isInterpreting: false,
+  transcript: "",
   interimTranscript: "",
   selectedElementId: null,
   hoveredElementId: null,
@@ -373,11 +453,15 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   sceneObjects: [],
   layers: initialLayers,
   logs: initialLogs,
-  messageHistory: [],
+  conversationHistory: [],
+  setCurrentProjectId: (currentProjectId) => set({ currentProjectId }),
   setProjectName: (projectName) => set({ projectName }),
+  setGuest: (isGuest) => set({ isGuest }),
+  setCanvasMode: (canvasMode) => set({ canvasMode }),
   setCurrentProjectSlug: (currentProjectSlug) => set({ currentProjectSlug }),
   setListening: (isListening) => set({ isListening }),
   setInterpreting: (isInterpreting) => set({ isInterpreting }),
+  setTranscript: (transcript) => set({ transcript }),
   setInterimTranscript: (interimTranscript) => set({ interimTranscript }),
   setSelectedElementId: (selectedElementId) => set({ selectedElementId }),
   setHoveredElementId: (hoveredElementId) => set({ hoveredElementId }),
@@ -389,9 +473,11 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     })),
   addSection: (section) => {
     const id = `section-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const sectionType = normalizeSectionType(section.sectionType);
     const nextSection: YiiyaSection = {
       id,
-      sectionType: normalizeSectionType(section.sectionType),
+      sectionType,
+      layoutVariant: normalizeLayoutVariant(section.layoutVariant, sectionType),
       theme: normalizeRecord(section.theme) as SectionTheme,
       content: normalizeRecord(section.content)
     };
@@ -418,7 +504,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       material: normalizeMaterial(object.material),
       color: typeof object.color === "string" ? object.color : "#EF9F27",
       animation: typeof object.animation === "string" ? object.animation : "float",
-      position: normalizePosition(object.position)
+      position: normalizePosition(object.position),
+      anchorSection:
+        typeof object.anchorSection === "string" ? object.anchorSection : undefined
     };
 
     set((state) => ({
@@ -448,14 +536,54 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     })),
   addMessage: (message) =>
     set((state) => ({
-      messageHistory: [...state.messageHistory, message].slice(-5)
+      conversationHistory: [...state.conversationHistory, message].slice(-5)
     })),
+  loadProject: (project) =>
+    set((state) => {
+      const canvas = project.canvas_json;
+      const theme = project.theme_json ?? project.themeState;
+      const sections = canvas?.sections ?? project.sections ?? [];
+      const sceneObjects = canvas?.sceneObjects ?? project.sceneObjects ?? [];
+      const layers =
+        canvas?.layers ??
+        project.layers ??
+        [
+          ...sections.map((section) => ({
+            id: section.id,
+            name: `${section.sectionType.toLowerCase()} section`,
+            type: "section" as const
+          })),
+          ...sceneObjects.map((object) => ({
+            id: object.id,
+            name: `${object.color} ${object.shape}`,
+            type: "mesh" as const
+          }))
+        ];
+
+      return {
+        currentProjectId:
+          project.currentProjectId ?? project.id ?? state.currentProjectId,
+        projectName: project.projectName ?? state.projectName,
+        sections,
+        sceneObjects,
+        layers,
+        selectedElementId: null,
+        hoveredElementId: null,
+        referenceImage: null,
+        themeState: mergeYiiyaTheme(defaultYiiyaTheme, theme ?? {}),
+        logs: project.logLabel
+          ? [...state.logs, createLog(project.logLabel)].slice(-40)
+          : state.logs
+      };
+    }),
   resetProject: () =>
-    set({
+    set((state) => ({
+      currentProjectId: createProjectId(),
       currentProjectSlug: createProjectSlug(),
-      projectName: "yiiya.app — new project",
+      projectName: defaultProjectName,
       isListening: false,
       isInterpreting: false,
+      transcript: "",
       interimTranscript: "",
       selectedElementId: null,
       hoveredElementId: null,
@@ -465,9 +593,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       sections: [],
       sceneObjects: [],
       layers: [],
-      logs: [createInitialLog()],
-      messageHistory: []
-    }),
+      logs: [...state.logs, createLog("SYSTEM: New project initialized.")].slice(-40),
+      conversationHistory: []
+    })),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed }))
 }));

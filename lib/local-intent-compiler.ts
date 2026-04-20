@@ -87,8 +87,8 @@ function sectionContent(sectionType: string, subject: string) {
   if (sectionType === "NAVBAR") {
     return {
       brand: subject,
-      links: ["Work", "Services", "Proof", "Contact"],
-      cta: "Book call"
+      links: ["Work", "About", "Contact"],
+      cta: "Start"
     };
   }
 
@@ -153,10 +153,17 @@ function sectionContent(sectionType: string, subject: string) {
     return {
       heading: "Operating signals",
       metrics: [
-        { value: "3 min", label: "intent to draft" },
-        { value: "11", label: "editable blocks" },
-        { value: "24/7", label: "publish-ready iteration" }
+        { value: "2,400+", label: "Projects created" },
+        { value: "18k", label: "Voice edits" },
+        { value: "96%", label: "Faster drafts" },
+        { value: "11", label: "Section types" }
       ]
+    };
+  }
+
+  if (sectionType === "LOGO_STRIP") {
+    return {
+      logos: ["Aster", "Northline", "Vanta", "Echelon", "Monarch", "Kepler"]
     };
   }
 
@@ -165,12 +172,22 @@ function sectionContent(sectionType: string, subject: string) {
       heading: "Proof from real buyers",
       testimonials: [
         {
-          quote: "The first draft gave us enough clarity to pitch the direction immediately.",
-          author: "Amina, founder"
+          quote:
+            "The first draft gave us enough clarity to pitch the direction immediately. Every edit stayed structured and fast.",
+          name: "Amina Cole",
+          role: "Founder"
         },
         {
-          quote: "It felt like a creative director and front-end team in the same room.",
-          author: "David, agency lead"
+          quote:
+            "It felt like a creative director and front-end team in the same room. The canvas made iteration visible.",
+          name: "David Lin",
+          role: "Agency lead"
+        },
+        {
+          quote:
+            "We moved from a rough brief to a page we could review with clients. The voice loop changed the meeting.",
+          name: "Nia Brooks",
+          role: "Producer"
         }
       ]
     };
@@ -181,14 +198,19 @@ function sectionContent(sectionType: string, subject: string) {
       heading: "Simple engagement model",
       plans: [
         {
-          name: "Launch",
-          price: "$1,500",
-          features: ["One landing page", "Design system", "Publish setup"]
+          name: "Starter",
+          price: "$49",
+          features: ["One project", "Voice editing", "Local drafts", "Publish link"]
         },
         {
-          name: "Growth",
-          price: "$3,500",
-          features: ["Multi-section site", "3D direction", "Lead capture"]
+          name: "Pro",
+          price: "$149",
+          features: ["Unlimited projects", "3D scenes", "Reference images", "Sync history"]
+        },
+        {
+          name: "Studio",
+          price: "$399",
+          features: ["Team projects", "Client review", "Custom themes", "Priority support"]
         }
       ]
     };
@@ -203,8 +225,20 @@ function sectionContent(sectionType: string, subject: string) {
           answer: "Yes. Yiiya keeps project state structured so future edits can target sections and elements."
         },
         {
-          question: "Is this only for prototypes?",
-          answer: "Today it is strongest for fast drafts. The compiler is moving toward production-grade output."
+          question: "Can I mix websites and 3D?",
+          answer: "Yes. The spatial layer can sit behind, above, or beside the generated web sections."
+        },
+        {
+          question: "Does reference imagery affect the theme?",
+          answer: "Dropped images immediately update the palette before the model responds."
+        },
+        {
+          question: "Do guests get the full canvas?",
+          answer: "Guest users can use the full canvas, with local drafts and watermarked publishing."
+        },
+        {
+          question: "Is there an accordion?",
+          answer: "Not yet. Answers stay visible so the first pass remains simple and editable."
         }
       ]
     };
@@ -214,7 +248,7 @@ function sectionContent(sectionType: string, subject: string) {
     return {
       brand: subject,
       subtext: "Built with Yiiya.",
-      links: ["Privacy", "Contact", "Launch"]
+      links: ["Work", "About", "Services", "Pricing", "Contact"]
     };
   }
 
@@ -225,11 +259,39 @@ function sectionContent(sectionType: string, subject: string) {
   };
 }
 
-function addSection(actions: LocalAction[], sectionType: string, subject: string) {
+function inferHeroLayoutVariant(text: string) {
+  if (hasAny(text, ["product", "startup", "data", "dashboard", "bento"])) {
+    return "BENTO_GRID";
+  }
+
+  if (hasAny(text, ["agency", "portfolio", "professional", "service"])) {
+    return "EDITORIAL_SPLIT";
+  }
+
+  return "CENTERED_IMPACT";
+}
+
+function inferFeaturesLayoutVariant(text: string) {
+  if (hasAny(text, ["scroll", "showcase", "gallery"])) {
+    return "FEATURES_HORIZONTAL";
+  }
+
+  return "FEATURES_GRID";
+}
+
+function addSection(actions: LocalAction[], sectionType: string, subject: string, text: string) {
+  const layoutVariant =
+    sectionType === "HERO"
+      ? inferHeroLayoutVariant(text)
+      : sectionType === "FEATURES"
+        ? inferFeaturesLayoutVariant(text)
+        : undefined;
+
   actions.push({
     type: "ADD_SECTION",
     payload: {
       sectionType,
+      layoutVariant,
       theme: {},
       content: sectionContent(sectionType, subject)
     }
@@ -444,6 +506,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const wantsHeroSection = hasAny(text, ["hero section", "add hero", "create hero"]);
   const wantsAboutSection = hasAny(text, ["about section", "add about"]);
   const wantsFeaturesSection = hasAny(text, [
+    "features",
     "features section",
     "feature section",
     "add features",
@@ -467,6 +530,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const wantsPricing = hasAny(text, ["pricing", "plans", "packages"]);
   const wantsFaq = hasAny(text, ["faq", "questions"]);
   const wantsFooter = hasAny(text, ["footer"]);
+  const wantsLogoStrip = hasAny(text, ["logo strip", "logo cloud", "logos", "brand strip"]);
 
   if (
     wantsSite ||
@@ -479,50 +543,55 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     wantsTestimonials ||
     wantsPricing ||
     wantsFaq ||
-    wantsContactSection
+    wantsContactSection ||
+    wantsLogoStrip
   ) {
     if (wantsSite || wantsNavbar) {
-      addSection(actions, "NAVBAR", subject);
+      addSection(actions, "NAVBAR", subject, text);
     }
 
     if (wantsSite || wantsHeroSection) {
-      addSection(actions, "HERO", subject);
+      addSection(actions, "HERO", subject, text);
     }
 
     if (wantsSite || wantsAboutSection) {
-      addSection(actions, "ABOUT", subject);
+      addSection(actions, "ABOUT", subject, text);
     }
 
     if (wantsServices) {
-      addSection(actions, "SERVICES", subject);
+      addSection(actions, "SERVICES", subject, text);
     }
 
     if (wantsSite || wantsFeaturesSection) {
-      addSection(actions, "FEATURES", subject);
+      addSection(actions, "FEATURES", subject, text);
     }
 
     if (wantsMetrics) {
-      addSection(actions, "METRICS", subject);
+      addSection(actions, "METRICS", subject, text);
+    }
+
+    if (wantsLogoStrip) {
+      addSection(actions, "LOGO_STRIP", subject, text);
     }
 
     if (wantsTestimonials) {
-      addSection(actions, "TESTIMONIALS", subject);
+      addSection(actions, "TESTIMONIALS", subject, text);
     }
 
     if (wantsPricing) {
-      addSection(actions, "PRICING", subject);
+      addSection(actions, "PRICING", subject, text);
     }
 
     if (wantsFaq) {
-      addSection(actions, "FAQ", subject);
+      addSection(actions, "FAQ", subject, text);
     }
 
     if (wantsSite || wantsContactSection) {
-      addSection(actions, "CONTACT", subject);
+      addSection(actions, "CONTACT", subject, text);
     }
 
     if (wantsSite || wantsFooter) {
-      addSection(actions, "FOOTER", subject);
+      addSection(actions, "FOOTER", subject, text);
     }
   }
 

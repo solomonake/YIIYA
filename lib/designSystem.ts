@@ -125,7 +125,7 @@ export function compileYiiyaTheme(theme: YiiyaTheme): CompiledYiiyaTheme {
       md: 20 * spacing,
       lg: 32 * spacing,
       xl: 48 * spacing,
-      sectionY: 56 * spacing,
+      sectionY: Math.max(64, 56 * spacing),
       sectionX: 40 * spacing
     },
     type: {

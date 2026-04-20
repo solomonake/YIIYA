@@ -157,9 +157,30 @@ function applyAddSection(action: YiiyaAction) {
 
   useYiiyaStore.getState().addSection({
     sectionType: action.payload.sectionType,
+    layoutVariant: action.payload.layoutVariant,
     theme: action.payload.theme,
     content: action.payload.content
   });
+}
+
+function positionFromAnchorSection(anchorSection: unknown) {
+  if (typeof anchorSection !== "string") {
+    return undefined;
+  }
+
+  const element = document.querySelector<HTMLElement>(
+    `[data-yiiya-id="${CSS.escape(anchorSection)}"]`
+  );
+
+  if (!element) {
+    return undefined;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const midpoint = rect.top + rect.height / 2;
+  const y = Math.max(-2, Math.min(3, (window.innerHeight / 2 - midpoint) / 180 + 1.2));
+
+  return [0, y, 0] as [number, number, number];
 }
 
 function applyAdd3DObject(action: YiiyaAction) {
@@ -167,7 +188,19 @@ function applyAdd3DObject(action: YiiyaAction) {
     return;
   }
 
-  useYiiyaStore.getState().addSceneObject(action.payload);
+  const store = useYiiyaStore.getState();
+
+  if (store.canvasMode === "WEB") {
+    store.setCanvasMode("HYBRID");
+    store.addLog("SYSTEM: Mode switched to HYBRID — 3D object detected.");
+  }
+
+  store.addSceneObject({
+    ...action.payload,
+    position:
+      positionFromAnchorSection(action.payload.anchorSection) ??
+      action.payload.position
+  });
 }
 
 function toNumber(value: unknown) {

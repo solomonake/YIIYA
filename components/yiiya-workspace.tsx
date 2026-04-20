@@ -1,7 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { AuthOverlay } from "@/components/auth-overlay";
+import { CanvasModeToggle } from "@/components/canvas-mode-toggle";
+import { ProjectDrawer } from "@/components/project-drawer";
 import { useYiiyaStore } from "@/lib/store";
 import { RightSidebar } from "@/components/right-sidebar";
 import { ReferenceImageDropzone } from "@/components/reference-image-dropzone";
@@ -22,11 +25,36 @@ const SceneCanvas = dynamic(
 export function YiiyaWorkspace() {
   useProjectAutosave();
 
+  const [showNewConfirmation, setShowNewConfirmation] = useState(false);
+  const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const projectName = useYiiyaStore((state) => state.projectName);
   const setProjectName = useYiiyaStore((state) => state.setProjectName);
   const sidebarCollapsed = useYiiyaStore((state) => state.sidebarCollapsed);
+  const sections = useYiiyaStore((state) => state.sections);
+  const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const addLog = useYiiyaStore((state) => state.addLog);
   const resetProject = useYiiyaStore((state) => state.resetProject);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("yiiya_v2_upgrade_logged") === "true") {
+        return;
+      }
+
+      for (let step = 1; step <= 8; step += 1) {
+        addLog(`SYSTEM: Step ${step} complete.`);
+      }
+
+      addLog("SYSTEM: Yiiya V2 upgrade complete.");
+      sessionStorage.setItem("yiiya_v2_upgrade_logged", "true");
+    } catch {
+      for (let step = 1; step <= 8; step += 1) {
+        addLog(`SYSTEM: Step ${step} complete.`);
+      }
+
+      addLog("SYSTEM: Yiiya V2 upgrade complete.");
+    }
+  }, [addLog]);
 
   const handlePublish = async () => {
     try {
@@ -37,7 +65,17 @@ export function YiiyaWorkspace() {
   };
 
   const handleNewProject = () => {
+    if (sections.length === 0 && sceneObjects.length === 0) {
+      resetProject();
+      return;
+    }
+
+    setShowNewConfirmation(true);
+  };
+
+  const confirmNewProject = () => {
     resetProject();
+    setShowNewConfirmation(false);
   };
 
   return (
@@ -51,9 +89,9 @@ export function YiiyaWorkspace() {
         />
         <div className="flex items-center gap-2">
           <button
-            aria-label="New project"
-            title="New project"
-            onClick={handleNewProject}
+            aria-label="Open projects"
+            title="Open projects"
+            onClick={() => setProjectDrawerOpen((open) => !open)}
             className="grid h-8 w-8 place-items-center border border-terminalBorder text-white/65 transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber"
           >
             <svg
@@ -66,10 +104,39 @@ export function YiiyaWorkspace() {
               strokeLinejoin="round"
               strokeWidth="2"
             >
-              <path d="M12 5v14" />
-              <path d="M5 12h14" />
+              <path d="M4 4h7v7H4z" />
+              <path d="M13 4h7v7h-7z" />
+              <path d="M4 13h7v7H4z" />
+              <path d="M13 13h7v7h-7z" />
             </svg>
           </button>
+          {showNewConfirmation ? (
+            <div className="flex h-8 items-center gap-2 border border-terminalBorder px-2 text-[11px] text-white/55">
+              <span>Clear canvas and start fresh?</span>
+              <button
+                type="button"
+                onClick={confirmNewProject}
+                className="px-1.5 py-1 font-bold text-amber transition hover:text-signalAmber focus:outline-none focus:ring-1 focus:ring-amber"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowNewConfirmation(false)}
+                className="px-1.5 py-1 text-white/45 transition hover:text-bone focus:outline-none focus:ring-1 focus:ring-amber"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleNewProject}
+              className="h-8 border border-terminalBorder px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-white/65 transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber"
+            >
+              New
+            </button>
+          )}
           <button
             onClick={handlePublish}
             className="h-8 border border-amber/60 bg-amber px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-ink transition hover:bg-signalAmber focus:outline-none focus:ring-1 focus:ring-amber"
@@ -91,12 +158,18 @@ export function YiiyaWorkspace() {
             <SceneCanvas />
             <WebsiteLayer />
           </Suspense>
+          <CanvasModeToggle />
           <VoiceBar />
         </div>
         <RightSidebar />
+        <ProjectDrawer
+          open={projectDrawerOpen}
+          onClose={() => setProjectDrawerOpen(false)}
+        />
       </section>
       <ReferenceImageDropzone />
       <Toast />
+      <AuthOverlay />
     </main>
   );
 }

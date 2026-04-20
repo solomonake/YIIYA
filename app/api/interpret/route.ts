@@ -2,15 +2,18 @@ import { NextResponse } from "next/server";
 import { compileLocalIntent } from "@/lib/local-intent-compiler";
 
 const ARCHITECT_PROMPT =
-  "You are the Architect agent for Yiiya, a Stateful Design Compiler and Spatial Design Orchestrator. Yiiya is not a website builder. It compiles vague human intent into design tokens, live website sections, selected-element edits, and 3D objects. Aesthetic target: Institutional Professional, Bloomberg Terminal meets high-end creative studio. Dark, dense, precise, fast. Return valid JSON only: an array of actions. Supported actions: ADD_SECTION payload { sectionType, theme, content }; MODIFY_ELEMENT payload { elementId, property, value, mode? }; SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }; SYNC_BRAND_TO_IMAGE payload { palette, fontWeights, layoutStructure, visualTone }; ADJUST_DENSITY payload { scale }; ADD_3D_OBJECT payload { shape, material, color, animation, position }; ADD_SPATIAL_OBJECT payload { shape, material, color, animation, position }; PUBLISH payload {}. Supported sectionType values: NAVBAR, HERO, ABOUT, SERVICES, FEATURES, METRICS, TESTIMONIALS, PRICING, FAQ, CONTACT, FOOTER. Context is authoritative: use history for follow-up commands and current_canvas_json for current state. If selectedElementId is present, prioritize modifying that exact ID for relative phrases like 'this', 'it', 'move this', 'make it bigger', 'more', 'less', or 'center it'. Use MODIFY_ELEMENT with math-aware mode values: multiply, increment, replace. For 3D commands, map 'glass sphere', 'chrome cube', 'floating plane' directly to ADD_3D_OBJECT with material Glass/Chrome/Matte, shape sphere/box/plane/cylinder/torus, animation float/rotate/static, and position [x,y,z]. If an image is provided, extract dominant hex palette, layout structure, visual tone, and font weight cues, then include SYNC_BRAND_TO_IMAGE and appropriate token actions.";
+  "You are the Architect agent for Yiiya, a Stateful Design Compiler and Spatial Design Orchestrator. Yiiya is not a website builder. It compiles vague human intent into design tokens, live website sections, selected-element edits, and 3D objects. Aesthetic target: Institutional Professional, Bloomberg Terminal meets high-end creative studio. Dark, dense, precise, fast. Return valid JSON only: an array of actions. Supported actions: ADD_SECTION payload { sectionType, layoutVariant?, theme, content }; MODIFY_ELEMENT payload { elementId, property, value, mode? }; SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }; SYNC_BRAND_TO_IMAGE payload { palette, fontWeights, layoutStructure, visualTone }; ADJUST_DENSITY payload { scale }; ADD_3D_OBJECT payload { shape, material, color, animation, position, anchorSection? }; ADD_SPATIAL_OBJECT payload { shape, material, color, animation, position, anchorSection? }; PUBLISH payload {}. Supported sectionType values: NAVBAR, HERO, ABOUT, SERVICES, FEATURES, METRICS, LOGO_STRIP, TESTIMONIALS, PRICING, FAQ, CONTACT, FOOTER. Context is authoritative: use history for follow-up commands and current_canvas_json for current state. If selectedElementId is present, prioritize modifying that exact ID for relative phrases like 'this', 'it', 'move this', 'make it bigger', 'more', 'less', or 'center it'. Use MODIFY_ELEMENT with math-aware mode values: multiply, increment, replace. For 3D commands, map 'glass sphere', 'chrome cube', 'floating plane' directly to ADD_3D_OBJECT with material Glass/Chrome/Matte, shape sphere/box/plane/cylinder/torus, animation float/rotate/static, and position [x,y,z]. When adding a HERO section, you must include a layoutVariant field. Choose CENTERED_IMPACT for bold, minimal, or editorial vibes. Choose EDITORIAL_SPLIT for agency, portfolio, or professional service vibes. Choose BENTO_GRID for product, startup, or data-forward vibes. When adding a FEATURES section, include layoutVariant: FEATURES_GRID for most cases, FEATURES_HORIZONTAL if the user mentions scroll, showcase, or gallery. If an image is provided, extract dominant hex palette, layout structure, visual tone, and font weight cues, then include SYNC_BRAND_TO_IMAGE and appropriate token actions.";
 
 const CRITIC_PROMPT =
-  "You are the Critic agent for Yiiya. Review the Architect's JSON action array before it reaches the frontend. Return valid JSON only: the corrected action array, no markdown, no explanation. Check: color contrast, mobile overflow risk, logical hierarchy, missing payloads, unsupported action types, malformed values, excessive spacing, 3D z-index/depth conflicts, and vague low-level edits where semantic actions would be stronger. Fix silently. Keep the user intent intact. Prefer token-level actions such as SET_GLOBAL_THEME and ADJUST_DENSITY over scattered DOM edits. Clamp ADJUST_DENSITY scale to 0.5..2.0. Ensure colors are hex where possible. Ensure 3D material is one of Glass, Chrome, Matte, positions do not all overlap, and selectedElementId edits target the selected ID.";
+  "You are the Critic agent for Yiiya. You receive a design action JSON from the Architect agent. Your job is to silently correct quality issues before the frontend receives it. Perform these checks in order:\n\n1. CONTRAST: For every section action, check that the text colour has sufficient contrast against the background colour. If contrast is below 4.5:1, swap the text colour to either pure white (#FFFFFF) or pure black (#000000), whichever is farther from the background. Never leave low-contrast text.\n\n2. FONT SIZES: Body text must never be smaller than 16px equivalent. Headings must never be smaller than 32px equivalent. If font scale tokens are too small, increase them to the minimum.\n\n3. SPACING: Section padding must be at least 64px vertical. If a spacing token would produce less than this, override it.\n\n4. CTA PRESENCE: Every page-level generation should contain at least one CTA button. If the Architect generated only text sections with no button, add a simple CTA section at the end.\n\n5. LAYOUT COMPLETENESS: If only a HERO was requested, append a FEATURES and CONTACT section automatically so the user always gets a credible starting page, not a single section.\n\nAfter making corrections, return only the corrected JSON array. Do not explain corrections. Do not add commentary. Return raw JSON only.\n\nFor each check, also return a qa_log array of strings to append to the operations feed. Format each string as: [QA]: [check name] — PASS or [QA]: [check name] — corrected.";
 
 type ReferenceImage = {
   base64: string;
   mediaType: string;
   name: string;
+  dominantColor?: string;
+  accentCandidate?: string;
+  extractedMode?: "dark" | "light";
 };
 
 type InterpretRequest = {
@@ -134,26 +137,65 @@ function extractJsonArray(text: string) {
   return parsed;
 }
 
+function extractModelOutput(text: string) {
+  const trimmed = text.trim();
+  const parsed: unknown = JSON.parse(trimmed);
+
+  if (Array.isArray(parsed)) {
+    return { actions: parsed, qaLog: [] };
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const record = parsed as { actions?: unknown; qa_log?: unknown };
+
+    if (Array.isArray(record.actions)) {
+      return {
+        actions: record.actions,
+        qaLog: Array.isArray(record.qa_log)
+          ? record.qa_log.filter((item): item is string => typeof item === "string")
+          : []
+      };
+    }
+  }
+
+  throw new Error("Model response was not a JSON action array");
+}
+
 function headerSafeMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "unknown";
 
   return message.replace(/[\r\n]/g, " ").slice(0, 180);
 }
 
+function buildHistoryContext(history: InterpretRequest["history"]) {
+  return (history ?? [])
+    .slice(-3)
+    .map((turn) => `[${turn.role}]: ${turn.content}`)
+    .join("\n");
+}
+
+function buildReferenceExtractionContext(referenceImage: ReferenceImage | null | undefined) {
+  if (
+    !referenceImage?.dominantColor ||
+    !referenceImage.accentCandidate ||
+    !referenceImage.extractedMode
+  ) {
+    return "";
+  }
+
+  return `\nThe user dropped a reference image. Local extraction found: dominant colour ${referenceImage.dominantColor}, accent colour ${referenceImage.accentCandidate}, mode ${referenceImage.extractedMode}. Honour these values in all CHANGE_THEME and ADD_SECTION actions. Do not override the extracted palette with generic colours.`;
+}
+
 function buildArchitectContext(body: InterpretRequest) {
-  return JSON.stringify({
-    transcript: body.transcript,
-    activeElementId: body.activeElementId,
-    history: body.history?.slice(-5) ?? [],
-    currentScene: body.currentScene ?? body.current_canvas_json,
-    current_canvas_json: body.current_canvas_json ?? body.currentScene,
-    referenceImage: body.referenceImage
-      ? {
-          name: body.referenceImage.name,
-          mediaType: body.referenceImage.mediaType
-        }
-      : null
-  });
+  return `Previous context:
+${buildHistoryContext(body.history)}
+
+Current command: ${body.transcript}
+Selected element: ${body.activeElementId ?? "none"}
+
+current_canvas_json:
+${JSON.stringify(body.current_canvas_json ?? body.currentScene)}
+${buildReferenceExtractionContext(body.referenceImage)}`;
 }
 
 function buildCriticContext(body: InterpretRequest, architectActions: unknown[]) {
@@ -324,7 +366,7 @@ async function runCritic(
     throw new Error("Critic response did not include text content");
   }
 
-  return extractJsonArray(text);
+  return extractModelOutput(text);
 }
 
 export async function POST(request: Request) {
@@ -348,19 +390,35 @@ export async function POST(request: Request) {
 
   try {
     const architectActions = await runArchitect(body);
-    const criticActions = await runCritic(body, architectActions);
+    try {
+      const criticOutput = await runCritic(body, architectActions);
 
-    return NextResponse.json(criticActions);
+      return NextResponse.json({
+        actions: criticOutput.actions,
+        qa_log: criticOutput.qaLog
+      });
+    } catch {
+      return NextResponse.json({
+        actions: architectActions,
+        qa_log: ["SYSTEM: QA pass skipped — using Architect output."]
+      });
+    }
   } catch (error) {
     const fallbackActions = compileLocalIntent(body);
 
     if (fallbackActions.length > 0) {
-      return NextResponse.json(fallbackActions, {
+      return NextResponse.json(
+        {
+          actions: fallbackActions,
+          qa_log: ["SYSTEM: QA pass skipped — using Architect output."]
+        },
+        {
         headers: {
           "x-yiiya-interpreter": "local-fallback",
           "x-yiiya-model-error": headerSafeMessage(error)
         }
-      });
+        }
+      );
     }
 
     return NextResponse.json(
