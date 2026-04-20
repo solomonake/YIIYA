@@ -4,8 +4,17 @@
 
 :root {
   color-scheme: dark;
-  background: #050505;
-  color: #ededed;
+  --yiiya-bg: #050505;
+  --yiiya-fg: #ededed;
+  --yiiya-muted: rgba(237, 237, 237, 0.62);
+  --yiiya-surface: rgba(255, 255, 255, 0.045);
+  --yiiya-border: #1a1a1a;
+  --yiiya-accent: #ef9f27;
+  --yiiya-gap: 18px;
+  --yiiya-radius: 4px;
+  --yiiya-font-scale: 1;
+  background: var(--yiiya-bg);
+  color: var(--yiiya-fg);
 }
 
 * {
@@ -15,12 +24,14 @@
 html,
 body {
   min-height: 100%;
-  background: #050505;
+  max-width: 100%;
+  overflow-x: hidden;
+  background: var(--yiiya-bg);
 }
 
 body {
   margin: 0;
-  color: #ededed;
+  color: var(--yiiya-fg);
   font-family:
     "JetBrains Mono", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, "Liberation Mono", monospace;
@@ -44,7 +55,7 @@ button {
   background-image:
     linear-gradient(rgba(237, 237, 237, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(237, 237, 237, 0.025) 1px, transparent 1px);
-  background-color: #050505;
+  background-color: var(--yiiya-bg);
   background-size: 48px 48px;
 }
 

@@ -1,117 +1,56 @@
--- Yiiya schema version 0001
--- Durable project publishing foundation.
+-- Yiiya production schema v2.
+-- This migration intentionally clean-replaces legacy project storage.
 
 create extension if not exists "pgcrypto";
 
-create table if not exists public.projects (
+drop table if exists public.published_projects cascade;
+drop table if exists public.projects cascade;
+
+create table public.projects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete cascade,
   project_name text not null default 'untitled project',
-  canvas_json jsonb not null default '{}'::jsonb,
+  canvas_json jsonb not null default '{"sections":[],"sceneObjects":[],"layers":[]}'::jsonb,
   theme_json jsonb not null default '{}'::jsonb,
-  updated_at timestamptz not null default now(),
-  slug text unique,
-  owner_id uuid references auth.users(id) on delete set null,
-  content_json jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
-alter table public.projects
-  alter column slug drop not null,
-  add column if not exists user_id uuid references auth.users(id) on delete cascade,
-  add column if not exists project_name text not null default 'untitled project',
-  add column if not exists canvas_json jsonb not null default '{}'::jsonb,
-  add column if not exists updated_at timestamptz not null default now();
-
-create index if not exists projects_user_id_updated_at_idx
-  on public.projects (user_id, updated_at desc);
-
-create index if not exists projects_content_json_gin_idx
-  on public.projects using gin (content_json);
-
-alter table public.projects enable row level security;
-
-drop policy if exists "Public projects are readable by slug" on public.projects;
-create policy "Public projects are readable by slug"
-  on public.projects
-  for select
-  using (slug is not null and content_json->>'draft' = 'false');
-
-drop policy if exists "Users can read their own projects" on public.projects;
-create policy "Users can read their own projects"
-  on public.projects
-  for select
-  to authenticated
-  using (user_id = auth.uid());
-
-drop policy if exists "Users can insert their own projects" on public.projects;
-create policy "Users can insert their own projects"
-  on public.projects
-  for insert
-  to authenticated
-  with check (user_id = auth.uid());
-
-drop policy if exists "Users can update their own projects" on public.projects;
-create policy "Users can update their own projects"
-  on public.projects
-  for update
-  to authenticated
-  using (user_id = auth.uid())
-  with check (user_id = auth.uid());
-
-drop policy if exists "Users can delete their own projects" on public.projects;
-create policy "Users can delete their own projects"
-  on public.projects
-  for delete
-  to authenticated
-  using (user_id = auth.uid());
-
-drop policy if exists "Authenticated users can create owned projects" on public.projects;
-create policy "Authenticated users can create owned projects"
-  on public.projects
-  for insert
-  to authenticated
-  with check (owner_id = auth.uid());
-
-drop policy if exists "Owners can update projects" on public.projects;
-create policy "Owners can update projects"
-  on public.projects
-  for update
-  to authenticated
-  using (owner_id = auth.uid())
-  with check (owner_id = auth.uid());
-
-drop policy if exists "Owners can delete projects" on public.projects;
-create policy "Owners can delete projects"
-  on public.projects
-  for delete
-  to authenticated
-  using (owner_id = auth.uid());
-
-create table if not exists public.published_projects (
+create table public.published_projects (
   slug text primary key,
   user_id uuid references auth.users(id) on delete set null,
-  html_snapshot text not null,
-  scene_json jsonb not null default '{}'::jsonb,
+  canvas_json jsonb not null default '{"sections":[],"sceneObjects":[],"layers":[]}'::jsonb,
   theme_json jsonb not null default '{}'::jsonb,
+  html_snapshot text not null default '',
+  scene_json jsonb not null default '{}'::jsonb,
+  react_export text not null default '',
   created_at timestamptz not null default now()
 );
 
-create index if not exists published_projects_user_id_created_at_idx
+create index projects_user_updated_idx
+  on public.projects (user_id, updated_at desc);
+
+create index published_projects_user_created_idx
   on public.published_projects (user_id, created_at desc);
 
+alter table public.projects enable row level security;
 alter table public.published_projects enable row level security;
 
-drop policy if exists "Public published projects are readable" on public.published_projects;
-create policy "Public published projects are readable"
-  on public.published_projects
-  for select
-  using (true);
+create policy "users own projects"
+  on public.projects
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
-drop policy if exists "users own published" on public.published_projects;
 create policy "users own published"
   on public.published_projects
   for all
   to authenticated
-  using (auth.uid() = user_id or user_id is null)
-  with check (auth.uid() = user_id or user_id is null);
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "published projects are readable"
+  on public.published_projects
+  for select
+  using (true);

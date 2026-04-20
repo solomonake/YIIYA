@@ -15,7 +15,7 @@ export const materialPresets = {
     opacity: 0.85
   },
   chrome: { metalness: 1, roughness: 0.05, color: "#c0c0c0" },
-  gold: { metalness: 1, roughness: 0.15, color: "#d4a017" },
+  gold: { metalness: 1, roughness: 0.2, color: "#FFD700" },
   matte: { roughness: 0.95, metalness: 0 },
   carbon: { roughness: 0.4, metalness: 0.8, color: "#1a1a1a" },
   holographic: {

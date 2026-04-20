@@ -8,6 +8,13 @@ type ExtractedPalette = {
   dominantColor: string;
   accentCandidate: string;
   extractedMode: "dark" | "light";
+  aspectRatio: number;
+  silhouette: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 };
 
 function hasDraggedFiles(event: DragEvent) {
@@ -97,10 +104,50 @@ async function extractPalette(dataUrl: string): Promise<ExtractedPalette> {
       : best
   );
 
+  const imageData = context.getImageData(0, 0, width, height).data;
+  const threshold = brightness < 128 ? brightness + 28 : brightness - 28;
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 80))) {
+    for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 80))) {
+      const index = (y * width + x) * 4;
+      const r = imageData[index] ?? 0;
+      const g = imageData[index + 1] ?? 0;
+      const b = imageData[index + 2] ?? 0;
+      const pixelBrightness = r * 0.299 + g * 0.587 + b * 0.114;
+      const differs =
+        brightness < 128
+          ? pixelBrightness > threshold
+          : pixelBrightness < threshold;
+
+      if (differs) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  const silhouette =
+    maxX > minX && maxY > minY
+      ? {
+          x: minX / width,
+          y: minY / height,
+          width: (maxX - minX) / width,
+          height: (maxY - minY) / height
+        }
+      : { x: 0.18, y: 0.12, width: 0.64, height: 0.76 };
+
   return {
     dominantColor: rgbToHex(dominant.r, dominant.g, dominant.b),
     accentCandidate: rgbToHex(accent.r, accent.g, accent.b),
-    extractedMode: brightness < 128 ? "dark" : "light"
+    extractedMode: brightness < 128 ? "dark" : "light",
+    aspectRatio: Math.max(0.3, Math.min(3, silhouette.height / Math.max(0.1, silhouette.width))),
+    silhouette
   };
 }
 
@@ -195,6 +242,7 @@ export function ReferenceImageDropzone() {
   const addLog = useYiiyaStore((state) => state.addLog);
   const addActionLogs = useYiiyaStore((state) => state.addActionLogs);
   const addMessage = useYiiyaStore((state) => state.addMessage);
+  const morphBlob = useYiiyaStore((state) => state.morphBlob);
 
   const applyPalette = useCallback((extractedPalette: ExtractedPalette) => {
     const foreground =
@@ -290,6 +338,21 @@ export function ReferenceImageDropzone() {
 
     setReferenceImage(referencePayload);
 
+    morphBlob({
+      targetShape:
+        extractedPalette.aspectRatio > 1.45
+          ? "bottle"
+          : extractedPalette.aspectRatio < 0.78
+            ? "cube"
+            : "organic",
+      distort: 0.38,
+      speed: 2.15,
+      aspectRatio: extractedPalette.aspectRatio,
+      morphProgress: 0.55,
+      material: "glass",
+      silhouette: extractedPalette.silhouette
+    });
+
     if (mode === "WEB") {
       addLog("[VISION]: Web mode — extracting design DNA...");
       applyPalette(extractedPalette);
@@ -314,7 +377,8 @@ export function ReferenceImageDropzone() {
     applyPalette,
     canvasMode,
     sendVisionInterpret,
-    setReferenceImage
+    setReferenceImage,
+    morphBlob
   ]);
 
   useEffect(() => {

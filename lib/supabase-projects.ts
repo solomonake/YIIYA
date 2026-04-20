@@ -3,9 +3,15 @@ import type { PublishedProject } from "@/lib/published-project-types";
 type SupabaseProjectRow = {
   slug: string;
   user_id?: string | null;
+  canvas_json: {
+    sections?: unknown[];
+    sceneObjects?: unknown[];
+    layers?: unknown[];
+  };
   html_snapshot: string;
   scene_json: PublishedProject["sceneState"];
   theme_json: unknown;
+  react_export?: string;
   created_at: string;
 };
 
@@ -31,8 +37,15 @@ function rowToPublishedProject(row: SupabaseProjectRow): PublishedProject {
     userId: row.user_id ?? null,
     htmlSnapshot: row.html_snapshot,
     htmlCanvasImage: "",
-    sceneState: row.scene_json,
-    createdAt: row.created_at
+    sceneState: {
+      ...row.scene_json,
+      sections: row.canvas_json?.sections ?? row.scene_json.sections ?? [],
+      sceneObjects: row.canvas_json?.sceneObjects ?? row.scene_json.sceneObjects ?? [],
+      layers: row.canvas_json?.layers ?? row.scene_json.layers ?? [],
+      themeState: row.theme_json ?? row.scene_json.themeState
+    },
+    createdAt: row.created_at,
+    reactCode: row.react_export
   };
 }
 
@@ -58,9 +71,15 @@ async function upsertProject(project: PublishedProject, draft: boolean) {
     body: JSON.stringify({
       slug: project.slug,
       user_id: project.userId ?? null,
+      canvas_json: {
+        sections: project.sceneState.sections,
+        sceneObjects: project.sceneState.sceneObjects,
+        layers: project.sceneState.layers
+      },
       html_snapshot: project.htmlSnapshot,
       scene_json: project.sceneState,
       theme_json: project.sceneState.themeState ?? {},
+      react_export: project.reactCode ?? "",
       created_at: project.createdAt
     })
   });
@@ -96,7 +115,7 @@ export async function readPublishedProjectFromSupabase(slug: string) {
   }
 
   const params = new URLSearchParams({
-    select: "slug,user_id,html_snapshot,scene_json,theme_json,created_at",
+    select: "slug,user_id,canvas_json,html_snapshot,scene_json,theme_json,react_export,created_at",
     slug: `eq.${slug}`,
     limit: "1"
   });

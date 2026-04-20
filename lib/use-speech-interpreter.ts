@@ -79,23 +79,6 @@ function isYiiyaActionArray(value: unknown): value is YiiyaAction[] {
   );
 }
 
-function isInterpretPayload(
-  value: unknown
-): value is { actions: YiiyaAction[]; qa_log?: string[] } {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const payload = value as { actions?: unknown; qa_log?: unknown };
-
-  return (
-    isYiiyaActionArray(payload.actions) &&
-    (payload.qa_log === undefined ||
-      (Array.isArray(payload.qa_log) &&
-        payload.qa_log.every((item) => typeof item === "string")))
-  );
-}
-
 function getSelectedElementSnapshot(elementId: string | null) {
   if (!elementId) {
     return null;
@@ -156,9 +139,27 @@ function summarizeActions(actions: YiiyaAction[]) {
   return "No visible changes were applied.";
 }
 
+function shouldPrimeSpeculativeResearch(transcript: string) {
+  const text = transcript.toLowerCase();
+
+  return [
+    "luxury",
+    "watch",
+    "plumbing",
+    "restaurant",
+    "studio",
+    "photography",
+    "dental",
+    "agency",
+    "startup"
+  ].some((term) => text.includes(term));
+}
+
 async function interpretTranscript(
   transcript: string,
-  history: Array<{ role: "user" | "assistant"; content: string }>
+  history: Array<{ role: "user" | "assistant"; content: string }>,
+  onPipelineLog?: (log: string) => void,
+  partial = false
 ) {
   const state = useYiiyaStore.getState();
   const currentCanvasJson = {
@@ -173,44 +174,91 @@ async function interpretTranscript(
     layers: state.layers
   };
 
-  const response = await fetch("/api/interpret", {
+  const requestPayload = {
+    transcript,
+    activeElementId: state.selectedElementId,
+    currentScene: currentCanvasJson,
+    current_canvas_json: currentCanvasJson,
+    history: history.slice(-5),
+    referenceImage: state.referenceImage,
+    strategyMode: state.strategyMode,
+    partial
+  };
+  const response = await fetch("/api/interpret/stream", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      transcript,
-      activeElementId: state.selectedElementId,
-      currentScene: currentCanvasJson,
-      current_canvas_json: currentCanvasJson,
-      history: history.slice(-5),
-      referenceImage: state.referenceImage
-    })
+    body: JSON.stringify(requestPayload)
   });
 
   if (!response.ok) {
     throw new Error(`Interpret request failed with ${response.status}`);
   }
 
-  const payload: unknown = await response.json();
-
-  if (isYiiyaActionArray(payload)) {
-    return {
-      actions: payload,
-      qaLog: [],
-      interpreter: response.headers.get("x-yiiya-interpreter")
-    };
+  if (!response.body) {
+    throw new Error("Interpret stream was unavailable");
   }
 
-  if (!isInterpretPayload(payload)) {
-    throw new Error("Interpret response was not an action array");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let actions: YiiyaAction[] = [];
+  const qaLog: string[] = [];
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const event of events) {
+      const line = event
+        .split("\n")
+        .find((item) => item.startsWith("data: "));
+
+      if (!line) {
+        continue;
+      }
+
+      const payload: unknown = JSON.parse(line.slice(6));
+
+      if (!payload || typeof payload !== "object") {
+        continue;
+      }
+
+      const record = payload as {
+        type?: string;
+        log?: string;
+        message?: string;
+        actions?: unknown;
+        qa_log?: unknown;
+      };
+
+      if (record.type === "error") {
+        throw new Error(record.message ?? "Interpret pipeline failed");
+      }
+
+      if (record.log) {
+        onPipelineLog?.(record.log);
+      }
+
+      if ((record.type === "actions" || record.type === "done") && isYiiyaActionArray(record.actions)) {
+        actions = record.actions;
+      }
+
+      if (record.type === "qa" && Array.isArray(record.qa_log)) {
+        qaLog.push(...record.qa_log.filter((item): item is string => typeof item === "string"));
+      }
+    }
   }
 
-  return {
-    actions: payload.actions,
-    qaLog: payload.qa_log ?? [],
-    interpreter: response.headers.get("x-yiiya-interpreter")
-  };
+  return { actions, qaLog, interpreter: "stream" };
 }
 
 export function useSpeechInterpreter() {
@@ -218,6 +266,7 @@ export function useSpeechInterpreter() {
   const finalTranscriptRef = useRef("");
   const isRecognitionActiveRef = useRef(false);
   const submittedTranscriptRef = useRef("");
+  const speculativeTranscriptRef = useRef("");
 
   const setListening = useYiiyaStore((state) => state.setListening);
   const setInterpreting = useYiiyaStore((state) => state.setInterpreting);
@@ -250,11 +299,14 @@ export function useSpeechInterpreter() {
       setInterpreting(true);
 
       try {
-        const { actions, qaLog, interpreter } =
-          await interpretTranscript(normalizedTranscript, previousHistory);
+        const { actions, qaLog, interpreter } = await interpretTranscript(
+          normalizedTranscript,
+          previousHistory,
+          addLog
+        );
 
-        if (interpreter === "local-fallback") {
-          addLog("[INTERPRET]: Fast local compiler fallback.");
+        if (interpreter === "stream") {
+          addLog("[INTERPRET]: Streaming agent pipeline completed.");
         }
 
         runYiiyaActions(actions);
@@ -294,6 +346,43 @@ export function useSpeechInterpreter() {
     [setInterimTranscript, submitTranscript]
   );
 
+  const primeSpeculativeResearch = useCallback(
+    async (partialTranscript: string) => {
+      const normalized = partialTranscript.trim();
+
+      if (
+        normalized.length < 12 ||
+        speculativeTranscriptRef.current === normalized ||
+        !shouldPrimeSpeculativeResearch(normalized)
+      ) {
+        return;
+      }
+
+      speculativeTranscriptRef.current = normalized;
+      addLog("[CONDUCTOR]: Speculative intent detected — priming research.");
+
+      try {
+        await interpretTranscript(
+          normalized,
+          useYiiyaStore.getState().conversationHistory,
+          (log) => {
+            if (log.startsWith("[ROUTER]") || log.startsWith("[RESEARCH]")) {
+              addLog(log);
+            }
+          },
+          true
+        );
+      } catch (error) {
+        addLog(
+          `[CONDUCTOR]: Speculative pass unavailable — ${
+            error instanceof Error ? error.message : "unknown"
+          }`
+        );
+      }
+    },
+    [addLog]
+  );
+
   const getRecognition = useCallback(() => {
     if (recognitionRef.current) {
       return recognitionRef.current;
@@ -331,9 +420,9 @@ export function useSpeechInterpreter() {
         setInterimTranscript(finalTranscriptRef.current);
         void submitTranscript(finalTranscriptRef.current);
       } else {
-        setInterimTranscript(
-          `${finalTranscriptRef.current} ${interimTranscript}`.trim()
-        );
+        const partialTranscript = `${finalTranscriptRef.current} ${interimTranscript}`.trim();
+        setInterimTranscript(partialTranscript);
+        void primeSpeculativeResearch(partialTranscript);
       }
     };
 
@@ -350,7 +439,13 @@ export function useSpeechInterpreter() {
 
     recognitionRef.current = recognition;
     return recognition;
-  }, [addLog, setInterimTranscript, setListening, submitTranscript]);
+  }, [
+    addLog,
+    primeSpeculativeResearch,
+    setInterimTranscript,
+    setListening,
+    submitTranscript
+  ]);
 
   const startListening = useCallback(() => {
     if (isRecognitionActiveRef.current) {
@@ -364,6 +459,7 @@ export function useSpeechInterpreter() {
     }
 
     finalTranscriptRef.current = "";
+    speculativeTranscriptRef.current = "";
     submittedTranscriptRef.current = "";
     setInterimTranscript("");
     setListening(true);

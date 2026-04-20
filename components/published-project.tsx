@@ -1,8 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { readPublishedProject } from "@/lib/publish-project";
 import type { PublishedProject } from "@/lib/published-project-types";
+import { useYiiyaStore } from "@/lib/store";
+import { WebsiteLayer } from "@/components/website-layer";
+
+const SceneCanvas = dynamic(
+  () => import("@/components/scene-canvas").then((mod) => mod.SceneCanvas),
+  { ssr: false }
+);
 
 export function PublishedProjectView({
   slug,
@@ -14,6 +22,8 @@ export function PublishedProjectView({
   const [project, setProject] = useState<PublishedProject | null | undefined>(
     initialProject
   );
+  const loadProject = useYiiyaStore((state) => state.loadProject);
+  const setCanvasMode = useYiiyaStore((state) => state.setCanvasMode);
 
   useEffect(() => {
     if (initialProject) {
@@ -22,6 +32,24 @@ export function PublishedProjectView({
 
     setProject(readPublishedProject(slug));
   }, [initialProject, slug]);
+
+  useEffect(() => {
+    if (!project) {
+      return;
+    }
+
+    loadProject({
+      id: slug,
+      projectName: project.sceneState.projectName,
+      canvas_json: {
+        sections: project.sceneState.sections as never,
+        sceneObjects: project.sceneState.sceneObjects as never,
+        layers: project.sceneState.layers as never
+      },
+      theme_json: project.sceneState.themeState as never
+    });
+    setCanvasMode("HYBRID");
+  }, [loadProject, project, setCanvasMode, slug]);
 
   if (project === undefined) {
     return <main className="min-h-svh bg-ink" />;
@@ -41,20 +69,13 @@ export function PublishedProjectView({
   }
 
   return (
-    <main className="min-h-svh bg-ink text-bone">
-      {project.sceneState.sceneCanvasImage ? (
-        <img
-          src={project.sceneState.sceneCanvasImage}
-          alt=""
-          className="pointer-events-none fixed inset-0 h-full w-full object-cover opacity-55"
-        />
-      ) : null}
-      <div
-        className="relative z-10 min-h-svh"
-        dangerouslySetInnerHTML={{ __html: project.htmlSnapshot }}
-      />
+    <main className="relative min-h-svh overflow-hidden bg-ink text-bone">
+      <SceneCanvas />
+      <div className="pointer-events-none relative z-10 min-h-svh">
+        <WebsiteLayer />
+      </div>
       {project.sceneState.showWatermark ?? !project.isPro ? (
-        <div className="fixed bottom-4 right-4 z-50 rounded-full border border-white/12 bg-[#11110f]/92 px-3 py-2 text-xs font-semibold text-bone backdrop-blur-xl">
+        <div className="fixed bottom-4 right-4 z-50 border border-white/12 bg-[#11110f]/92 px-3 py-2 text-xs font-semibold text-bone backdrop-blur-xl">
           Built with <span className="text-amber">Yiiya</span>
         </div>
       ) : null}

@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { AccountIndicator } from "@/components/account-indicator";
 import { AuthOverlay } from "@/components/auth-overlay";
 import { CanvasModeToggle } from "@/components/canvas-mode-toggle";
+import { PitchMap } from "@/components/pitch-map";
 import { ProjectDrawer } from "@/components/project-drawer";
 import { useYiiyaStore } from "@/lib/store";
 import { RightSidebar } from "@/components/right-sidebar";
@@ -28,6 +29,7 @@ export function YiiyaWorkspace() {
 
   const [showNewConfirmation, setShowNewConfirmation] = useState(false);
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
+  const [pitchMapOpen, setPitchMapOpen] = useState(false);
   const projectName = useYiiyaStore((state) => state.projectName);
   const setProjectName = useYiiyaStore((state) => state.setProjectName);
   const sidebarCollapsed = useYiiyaStore((state) => state.sidebarCollapsed);
@@ -35,6 +37,8 @@ export function YiiyaWorkspace() {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const saveStatus = useYiiyaStore((state) => state.saveStatus);
   const lastSavedAt = useYiiyaStore((state) => state.lastSavedAt);
+  const strategyMode = useYiiyaStore((state) => state.strategyMode);
+  const setStrategyMode = useYiiyaStore((state) => state.setStrategyMode);
   const addLog = useYiiyaStore((state) => state.addLog);
   const resetProject = useYiiyaStore((state) => state.resetProject);
 
@@ -122,6 +126,26 @@ export function YiiyaWorkspace() {
               <path d="M13 13h7v7h-7z" />
             </svg>
           </button>
+          <button
+            type="button"
+            title="Open founder pitch map"
+            onClick={() => setPitchMapOpen((open) => !open)}
+            className="h-8 border border-terminalBorder px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-white/60 transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber"
+          >
+            Map
+          </button>
+          <button
+            type="button"
+            title="Strategy mode adds business rationale to new generations"
+            onClick={() => setStrategyMode(!strategyMode)}
+            className="h-8 border px-3 text-[11px] font-bold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-1 focus:ring-amber"
+            style={{
+              borderColor: strategyMode ? "#EF9F27" : "#1A1A1A",
+              color: strategyMode ? "#EF9F27" : "rgba(255,255,255,0.55)"
+            }}
+          >
+            Strategy
+          </button>
           {showNewConfirmation ? (
             <div className="flex h-8 items-center gap-2 border border-terminalBorder px-2 text-[11px] text-white/55">
               <span>Clear canvas and start fresh?</span>
@@ -179,6 +203,7 @@ export function YiiyaWorkspace() {
           open={projectDrawerOpen}
           onClose={() => setProjectDrawerOpen(false)}
         />
+        <PitchMap open={pitchMapOpen} onClose={() => setPitchMapOpen(false)} />
       </section>
       <ReferenceImageDropzone />
       <Toast />

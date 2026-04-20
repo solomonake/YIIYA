@@ -80,7 +80,7 @@ export function VoiceBar() {
             }}
             className="h-8 rounded-full border border-terminalBorder px-3 text-[11px] uppercase tracking-[0.12em] text-white/62 transition hover:border-amber/70 hover:text-amber"
           >
-            Copy React code
+            Copy Production Code
           </button>
           <a
             href={publishResult.zipUrl}

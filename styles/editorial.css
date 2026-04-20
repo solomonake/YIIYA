@@ -3,6 +3,7 @@
   box-shadow: none;
   transition:
     filter 200ms ease,
+    transform 200ms ease,
     border-color 200ms ease,
     color 200ms ease;
 }
@@ -13,7 +14,8 @@
 }
 
 .yiiya-element[data-yiiya-active="true"] {
-  filter: brightness(1.1);
+  filter: brightness(1.12);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--yiiya-accent) 34%, transparent);
 }
 
 .yiiya-element[data-yiiya-block-active="true"] {
@@ -34,4 +36,14 @@
 .yiiya-section {
   border: none;
   box-shadow: none;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.react-flow {
+  --xy-background-color: #050505;
+  --xy-edge-stroke-default: #ef9f27;
+  --xy-controls-button-background-color-default: #050505;
+  --xy-controls-button-color-default: #ededed;
+  --xy-controls-button-border-color-default: #1a1a1a;
 }

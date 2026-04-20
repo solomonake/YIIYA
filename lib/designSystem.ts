@@ -16,6 +16,11 @@ export type YiiyaTheme = {
 };
 
 export type CompiledYiiyaTheme = YiiyaTheme & {
+  cssVariables: Record<string, string>;
+  layoutTokens: {
+    hero: "CENTERED_IMPACT" | "EDITORIAL_SPLIT" | "BENTO_GRID";
+    features: "FEATURES_GRID" | "FEATURES_HORIZONTAL";
+  };
   spacing: {
     xs: number;
     sm: number;
@@ -34,24 +39,24 @@ export type CompiledYiiyaTheme = YiiyaTheme & {
 };
 
 export const defaultYiiyaTheme: YiiyaTheme = {
-  spacingMultiplier: 1,
-  borderRadius: 18,
+  spacingMultiplier: 0.92,
+  borderRadius: 4,
   primaryAccent: "#EF9F27",
   fontScale: 1,
-  layoutDensity: "balanced",
-  background: "#F5F5F0",
-  foreground: "#111111",
-  mutedForeground: "rgba(17, 17, 17, 0.68)",
-  surface: "rgba(255, 255, 255, 0.64)",
-  border: "rgba(17, 17, 17, 0.12)",
-  fontWeight: 650,
-  palette: ["#F5F5F0", "#111111", "#EF9F27"]
+  layoutDensity: "compact",
+  background: "#050505",
+  foreground: "#EDEDED",
+  mutedForeground: "rgba(237, 237, 237, 0.62)",
+  surface: "rgba(255, 255, 255, 0.045)",
+  border: "#1A1A1A",
+  fontWeight: 620,
+  palette: ["#050505", "#EDEDED", "#EF9F27"]
 };
 
 export const vibePresets: Record<string, Partial<YiiyaTheme>> = {
   luxury: {
     spacingMultiplier: 1.32,
-    borderRadius: 10,
+    borderRadius: 4,
     primaryAccent: "#D8B56D",
     fontScale: 1.08,
     layoutDensity: "spacious",
@@ -65,7 +70,7 @@ export const vibePresets: Record<string, Partial<YiiyaTheme>> = {
   },
   institutional: {
     spacingMultiplier: 0.86,
-    borderRadius: 6,
+    borderRadius: 4,
     primaryAccent: "#EF9F27",
     fontScale: 0.96,
     layoutDensity: "compact",
@@ -79,7 +84,7 @@ export const vibePresets: Record<string, Partial<YiiyaTheme>> = {
   },
   playful: {
     spacingMultiplier: 1.12,
-    borderRadius: 28,
+    borderRadius: 8,
     primaryAccent: "#39FF14",
     fontScale: 1.02,
     layoutDensity: "balanced",
@@ -114,11 +119,31 @@ export function compileYiiyaTheme(theme: YiiyaTheme): CompiledYiiyaTheme {
   const spacing = theme.spacingMultiplier * density;
   const fontScale = clamp(theme.fontScale, 0.75, 1.4);
 
-  return {
+  const compiled: CompiledYiiyaTheme = {
     ...theme,
     spacingMultiplier: clamp(theme.spacingMultiplier, 0.5, 2),
-    borderRadius: clamp(theme.borderRadius, 0, 48),
+    borderRadius: clamp(theme.borderRadius, 0, 12),
     fontScale,
+    cssVariables: {
+      "--yiiya-bg": theme.background,
+      "--yiiya-fg": theme.foreground,
+      "--yiiya-muted": theme.mutedForeground,
+      "--yiiya-surface": theme.surface,
+      "--yiiya-border": theme.border,
+      "--yiiya-accent": theme.primaryAccent,
+      "--yiiya-gap": `${20 * spacing}px`,
+      "--yiiya-radius": `${clamp(theme.borderRadius, 0, 12)}px`,
+      "--yiiya-font-scale": String(fontScale)
+    },
+    layoutTokens: {
+      hero:
+        theme.layoutDensity === "compact"
+          ? "BENTO_GRID"
+          : theme.layoutDensity === "spacious"
+            ? "EDITORIAL_SPLIT"
+            : "CENTERED_IMPACT",
+      features: theme.layoutDensity === "spacious" ? "FEATURES_HORIZONTAL" : "FEATURES_GRID"
+    },
     spacing: {
       xs: 8 * spacing,
       sm: 12 * spacing,
@@ -135,6 +160,8 @@ export function compileYiiyaTheme(theme: YiiyaTheme): CompiledYiiyaTheme {
       small: 12 * fontScale
     }
   };
+
+  return compiled;
 }
 
 export function mergeYiiyaTheme(

@@ -35,5 +35,6 @@ export function getSupabaseBrowserClient() {
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "users own projects" ON projects FOR ALL USING (auth.uid() = user_id);
 ALTER TABLE published_projects ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "users own published" ON published_projects FOR ALL USING (auth.uid() = user_id OR user_id IS NULL);
+CREATE POLICY "users own published" ON published_projects FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "published projects are readable" ON published_projects FOR SELECT USING (true);
 */

@@ -8,6 +8,7 @@ import {
   type LayoutDensity,
   type YiiyaTheme
 } from "@/lib/designSystem";
+import { normalizeSpatialMaterial } from "@/lib/materials";
 
 function numericStyleValue(value: string) {
   const parsed = Number.parseFloat(value);
@@ -225,6 +226,21 @@ function blobTargetFromValue(value: unknown) {
   return undefined;
 }
 
+function silhouetteFromValue(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    x: numericOverride(record.x) ?? 0,
+    y: numericOverride(record.y) ?? 0,
+    width: numericOverride(record.width) ?? 1,
+    height: numericOverride(record.height) ?? 1
+  };
+}
+
 function applyMorphBlob(action: YiiyaAction) {
   if (action.type !== "MORPH_BLOB") {
     return;
@@ -233,7 +249,45 @@ function applyMorphBlob(action: YiiyaAction) {
   useYiiyaStore.getState().morphBlob({
     targetShape: blobTargetFromValue(action.payload.targetShape),
     distort: numericOverride(action.payload.distort),
-    speed: numericOverride(action.payload.speed)
+    speed: numericOverride(action.payload.speed),
+    aspectRatio: numericOverride(action.payload.aspectRatio),
+    morphProgress: numericOverride(action.payload.morphProgress),
+    material:
+      typeof action.payload.material === "string"
+        ? normalizeSpatialMaterial(action.payload.material)
+        : undefined,
+    silhouette: silhouetteFromValue(action.payload.silhouette)
+  });
+}
+
+function applyLoad3DMesh(action: YiiyaAction) {
+  if (action.type !== "LOAD_3D_MESH") {
+    return;
+  }
+
+  const store = useYiiyaStore.getState();
+
+  if (typeof action.payload.url !== "string") {
+    store.addLog("[SYSTEM]: LOAD_3D_MESH missing url.");
+    return;
+  }
+
+  if (store.canvasMode === "WEB") {
+    store.setCanvasMode("HYBRID");
+    store.addLog("SYSTEM: Mode switched to HYBRID — 3D mesh detected.");
+  }
+
+  store.addSceneObject({
+    shape: "mesh",
+    meshUrl: action.payload.url,
+    material: action.payload.material,
+    color: action.payload.color,
+    animation: "float",
+    position:
+      positionFromAnchorSection(action.payload.anchorSection) ??
+      action.payload.position,
+    scale: action.payload.scale,
+    anchorSection: action.payload.anchorSection
   });
 }
 
@@ -498,6 +552,10 @@ export function runYiiyaActions(actions: YiiyaAction[]) {
 
     if (action.type === "MORPH_BLOB") {
       applyMorphBlob(action);
+    }
+
+    if (action.type === "LOAD_3D_MESH") {
+      applyLoad3DMesh(action);
     }
 
     if (action.type === "SET_MATERIAL") {

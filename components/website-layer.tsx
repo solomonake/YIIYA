@@ -4,9 +4,11 @@ import {
   type CSSProperties,
   type MouseEvent,
   type PropsWithChildren,
+  useEffect,
   useRef,
   useState
 } from "react";
+import { motion } from "framer-motion";
 import {
   compileYiiyaTheme,
   mergeYiiyaTheme,
@@ -170,6 +172,26 @@ function Selectable({
     setSelectedElementId(id);
     setSelectedElements([id]);
   };
+
+  if (as === "div") {
+    return (
+      <motion.div
+        layout
+        transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.7 }}
+        data-yiiya-id={id}
+        data-yiiya-active={isHovered || isSelected ? "true" : "false"}
+        data-yiiya-selected={isSelected ? "true" : "false"}
+        className={`yiiya-element relative ${className ?? ""}`}
+        style={style}
+        onClick={handleClick}
+      >
+        {children}
+        {isSelected ? (
+          <span className="pointer-events-none absolute left-0 top-0 h-1.5 w-1.5 rounded-full bg-amber" />
+        ) : null}
+      </motion.div>
+    );
+  }
 
   return (
     <Component
@@ -1594,9 +1616,64 @@ export function WebsiteLayer() {
   const setSelectedElements = useYiiyaStore((state) => state.setSelectedElements);
   const setHoveredElementId = useYiiyaStore((state) => state.setHoveredElementId);
   const addLog = useYiiyaStore((state) => state.addLog);
+  const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
+  const addSpatialAnchor = useYiiyaStore((state) => state.addSpatialAnchor);
   const baseTheme = compileYiiyaTheme(themeState);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const [dragRect, setDragRect] = useState<CSSProperties | null>(null);
+
+  useEffect(() => {
+    const anchoredObjects = sceneObjects.filter((object) => object.anchorSection);
+
+    if (anchoredObjects.length === 0 || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const updateAnchors = () => {
+      anchoredObjects.forEach((object) => {
+        if (!object.anchorSection) {
+          return;
+        }
+
+        const element = document.querySelector<HTMLElement>(
+          `[data-yiiya-id="${CSS.escape(object.anchorSection)}"]`
+        );
+
+        if (!element) {
+          return;
+        }
+
+        const rect = element.getBoundingClientRect();
+        const x = ((rect.left + rect.width / 2) / window.innerWidth - 0.5) * 5.2;
+        const y = (0.5 - (rect.top + rect.height / 2) / window.innerHeight) * 3.4;
+
+        addSpatialAnchor({
+          objectId: object.id,
+          elementId: object.anchorSection,
+          placement: "behind",
+          worldPosition: [x, y, -0.8]
+        });
+      });
+    };
+    const observer = new ResizeObserver(updateAnchors);
+
+    anchoredObjects.forEach((object) => {
+      if (!object.anchorSection) {
+        return;
+      }
+
+      const element = document.querySelector<HTMLElement>(
+        `[data-yiiya-id="${CSS.escape(object.anchorSection)}"]`
+      );
+
+      if (element) {
+        observer.observe(element);
+      }
+    });
+    updateAnchors();
+
+    return () => observer.disconnect();
+  }, [addSpatialAnchor, sceneObjects]);
 
   const clearBlockActive = () => {
     document

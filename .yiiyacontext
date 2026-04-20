@@ -1,0 +1,47 @@
+YIIYA DESIGN DNA / PRODUCTION CONTEXT
+
+Identity:
+- Yiiya is the operating system for intent: voice and reference images compile into production-ready web and spatial experiences.
+- The app must feel like Bloomberg Terminal meets high-end creative studio: fast, dark, precise, editorial, and never generic.
+
+SRL Institutional Tokens:
+- Background: #050505
+- Foreground: #EDEDED
+- Border: #1A1A1A
+- Accent: #EF9F27
+- Surface: rgba(255,255,255,0.045)
+- Muted text: rgba(237,237,237,0.62)
+- Typeface: JetBrains Mono, Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace
+
+Layout Systems:
+- CENTERED_IMPACT: bold minimal hero; centered editorial headline; high contrast; one CTA.
+- EDITORIAL_SPLIT: asymmetric 58/42 split; left copy, right visual; professional services, portfolio, agency.
+- BENTO_GRID: modern startup/data layout; named grid areas; metrics and CTA cells.
+- FEATURES_GRID: dense 3-column card system.
+- FEATURES_HORIZONTAL: wide scroll/showcase row.
+
+Generation Rules:
+- Never return static HTML from AI. Return action JSON and layout/material tokens.
+- Never use Lorem Ipsum, Company Name, or placeholder image services.
+- Use grounded industry copy and Unsplash assets for business categories.
+- Prefer clean sections with strong offer, proof, CTA, and founder-friendly copy.
+- Every button in Yiiya UI must perform a clear action or disclose why it is disabled.
+
+Spatial Rules:
+- The 3D layer is never blank. Use a living MeshDistortMaterial blob by default.
+- Speech maps directly to material props and Zustand state.
+- Uploaded images instantly morph the blob locally; Fal Trellis 2 GLB replaces it when ready.
+- In HYBRID mode, 3D never blocks HTML clicks.
+
+QA Rules:
+- Contrast must be at least 4.5:1.
+- Mobile must not horizontally overflow.
+- Sections must feel visually balanced and token-consistent.
+- System feed must narrate routing, research, QA, autosave, publish, and spatial sync.
+
+Routing Defaults:
+- Conductor: Gemini 1.5 Flash.
+- Researcher: Gemini 1.5 Pro with Google Search grounding.
+- Architect: Claude 3.5 Sonnet.
+- Critic: Claude 3.5 Haiku.
+- Alchemist: GPT-4o Vision plus Fal Trellis 2.

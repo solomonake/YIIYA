@@ -27,7 +27,7 @@ const colorMap: Record<string, string> = {
   black: "#050505",
   blue: "#3B82F6",
   cream: "#F5F5F0",
-  gold: "#D8B56D",
+  gold: "#FFD700",
   green: "#39FF14",
   orange: "#EF9F27",
   pink: "#EC4899",
@@ -534,7 +534,10 @@ export function compileLocalIntent(input: LocalCompilerInput) {
         type: "SET_MATERIAL",
         payload: {
           objectId: "latest",
-          material: inferMaterial(text)
+          material: inferMaterial(text),
+          metalness: text.includes("gold") ? 1 : undefined,
+          roughness: text.includes("gold") ? 0.2 : undefined,
+          color: text.includes("gold") ? "#FFD700" : undefined
         }
       });
       return actions;

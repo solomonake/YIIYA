@@ -20,6 +20,7 @@ function isPublishedProject(value: unknown): value is PublishedProject {
       project.userId === null) &&
     typeof project.htmlSnapshot === "string" &&
     typeof project.htmlCanvasImage === "string" &&
+    (project.reactCode === undefined || typeof project.reactCode === "string") &&
     Boolean(project.sceneState) &&
     typeof project.createdAt === "string"
   );

@@ -68,6 +68,8 @@ export type SceneObject = {
   position: [number, number, number];
   scale: [number, number, number];
   intensity: number;
+  meshUrl?: string;
+  opacity?: number;
   materialOverrides?: Record<string, unknown>;
   anchorSection?: string;
 };
@@ -76,6 +78,22 @@ export type BlobState = {
   targetShape: "sphere" | "bottle" | "cube" | "organic" | "crystal";
   distort: number;
   speed: number;
+  aspectRatio: number;
+  morphProgress: number;
+  material: SpatialMaterial;
+  silhouette?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+};
+
+export type SpatialAnchor = {
+  objectId: string;
+  elementId: string;
+  placement: "behind" | "left" | "right" | "above" | "center";
+  worldPosition: [number, number, number];
 };
 
 export type ReferenceImage = {
@@ -133,6 +151,21 @@ export type YiiyaAction =
         targetShape: unknown;
         distort: unknown;
         speed: unknown;
+        aspectRatio?: unknown;
+        morphProgress?: unknown;
+        material?: unknown;
+        silhouette?: unknown;
+      };
+    }
+  | {
+      type: "LOAD_3D_MESH";
+      payload: {
+        url: unknown;
+        material?: unknown;
+        color?: unknown;
+        scale?: unknown;
+        position?: unknown;
+        anchorSection?: unknown;
       };
     }
   | {
@@ -257,6 +290,7 @@ type YiiyaState = {
   isGuest: boolean;
   isPro: boolean;
   canvasMode: CanvasMode;
+  strategyMode: boolean;
   isListening: boolean;
   isInterpreting: boolean;
   transcript: string;
@@ -274,6 +308,7 @@ type YiiyaState = {
   sections: YiiyaSection[];
   sceneObjects: SceneObject[];
   blobState: BlobState;
+  spatialAnchors: SpatialAnchor[];
   layers: Layer[];
   logs: LogEntry[];
   conversationHistory: YiiyaMessage[];
@@ -283,6 +318,7 @@ type YiiyaState = {
   setGuest: (isGuest: boolean) => void;
   setPro: (isPro: boolean) => void;
   setCanvasMode: (canvasMode: CanvasMode) => void;
+  setStrategyMode: (strategyMode: boolean) => void;
   setCurrentProjectSlug: (currentProjectSlug: string) => void;
   setListening: (isListening: boolean) => void;
   setInterpreting: (isInterpreting: boolean) => void;
@@ -310,9 +346,11 @@ type YiiyaState = {
     position?: unknown;
     scale?: unknown;
     intensity?: unknown;
+    meshUrl?: unknown;
     anchorSection?: unknown;
   }) => SceneObject;
   morphBlob: (blobState: Partial<BlobState>) => void;
+  addSpatialAnchor: (anchor: SpatialAnchor) => void;
   updateSceneObject: (
     objectId: string,
     updates: Partial<Omit<SceneObject, "material">> & { material?: unknown }
@@ -400,6 +438,10 @@ function describeAction(action: YiiyaAction) {
         : "matte";
 
     return `[EXECUTE]: Mounting ${material}_${shape}.`;
+  }
+
+  if (action.type === "LOAD_3D_MESH") {
+    return "[EXECUTE]: Loading generated 3D mesh.";
   }
 
   if (action.type === "MORPH_BLOB") {
@@ -588,6 +630,20 @@ function normalizeBlobTarget(value: unknown): BlobState["targetShape"] {
   return "sphere";
 }
 
+function normalizeSilhouette(value: unknown): BlobState["silhouette"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const x = normalizeNumber(record.x, 0);
+  const y = normalizeNumber(record.y, 0);
+  const width = normalizeNumber(record.width, 1);
+  const height = normalizeNumber(record.height, 1);
+
+  return { x, y, width, height };
+}
+
 export const useYiiyaStore = create<YiiyaState>((set) => ({
   currentProjectId: createProjectId(),
   currentProjectSlug: createProjectSlug(),
@@ -595,6 +651,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   isGuest: false,
   isPro: false,
   canvasMode: "HYBRID",
+  strategyMode: false,
   isListening: false,
   isInterpreting: false,
   transcript: "",
@@ -614,8 +671,12 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   blobState: {
     targetShape: "sphere",
     distort: 0.5,
-    speed: 1.8
+    speed: 1.8,
+    aspectRatio: 1,
+    morphProgress: 0,
+    material: "carbon"
   },
+  spatialAnchors: [],
   layers: initialLayers,
   logs: initialLogs,
   conversationHistory: [],
@@ -625,6 +686,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   setGuest: (isGuest) => set({ isGuest }),
   setPro: (isPro) => set({ isPro }),
   setCanvasMode: (canvasMode) => set({ canvasMode }),
+  setStrategyMode: (strategyMode) => set({ strategyMode }),
   setCurrentProjectSlug: (currentProjectSlug) => set({ currentProjectSlug }),
   setListening: (isListening) => set({ isListening }),
   setInterpreting: (isInterpreting) => set({ isInterpreting }),
@@ -682,6 +744,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       position: normalizePosition(object.position),
       scale: normalizeVector(object.scale, [1, 1, 1]),
       intensity: normalizeNumber(object.intensity, 1),
+      meshUrl: typeof object.meshUrl === "string" ? object.meshUrl : undefined,
+      opacity: 1,
       anchorSection:
         typeof object.anchorSection === "string" ? object.anchorSection : undefined
     };
@@ -706,8 +770,24 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       blobState: {
         targetShape: normalizeBlobTarget(blobState.targetShape ?? state.blobState.targetShape),
         distort: normalizeNumber(blobState.distort, state.blobState.distort),
-        speed: normalizeNumber(blobState.speed, state.blobState.speed)
+        speed: normalizeNumber(blobState.speed, state.blobState.speed),
+        aspectRatio: normalizeNumber(blobState.aspectRatio, state.blobState.aspectRatio),
+        morphProgress: normalizeNumber(
+          blobState.morphProgress,
+          Math.min(1, state.blobState.morphProgress + 0.35)
+        ),
+        material: blobState.material
+          ? normalizeSpatialMaterial(blobState.material)
+          : state.blobState.material,
+        silhouette: normalizeSilhouette(blobState.silhouette) ?? state.blobState.silhouette
       }
+    })),
+  addSpatialAnchor: (anchor) =>
+    set((state) => ({
+      spatialAnchors: [
+        ...state.spatialAnchors.filter((item) => item.objectId !== anchor.objectId),
+        anchor
+      ]
     })),
   updateSceneObject: (objectId, updates) =>
     set((state) => {
@@ -828,8 +908,12 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         blobState: {
           targetShape: "sphere",
           distort: 0.5,
-          speed: 1.8
+          speed: 1.8,
+          aspectRatio: 1,
+          morphProgress: 0,
+          material: "carbon"
         },
+        spatialAnchors: [],
         selectedElementId: null,
         selectedElements: [],
         hoveredElementId: null,
@@ -855,6 +939,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       referenceImage: null,
       toastMessage: null,
       publishResult: null,
+      strategyMode: false,
       saveStatus: "idle",
       lastSavedAt: null,
       themeState: defaultYiiyaTheme,
@@ -863,8 +948,12 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       blobState: {
         targetShape: "sphere",
         distort: 0.5,
-        speed: 1.8
+        speed: 1.8,
+        aspectRatio: 1,
+        morphProgress: 0,
+        material: "carbon"
       },
+      spatialAnchors: [],
       layers: [],
       logs: [...state.logs, createLog("SYSTEM: New project initialized.")].slice(-40),
       conversationHistory: [],

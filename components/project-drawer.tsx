@@ -49,6 +49,8 @@ export function ProjectDrawer({
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -73,15 +75,24 @@ export function ProjectDrawer({
       return;
     }
 
+    setStatus("loading");
+    setStatusMessage("");
+
     if (isGuest || !hasSession) {
       setProjects(listLocalProjects(isGuest ? 3 : 8));
+      setStatus("idle");
       return;
     }
 
     void listSupabaseProjects(8)
-      .then(setProjects)
+      .then((items) => {
+        setProjects(items);
+        setStatus("idle");
+      })
       .catch(() => {
         setProjects(listLocalProjects(3));
+        setStatus("error");
+        setStatusMessage("Cloud projects unavailable. Showing local drafts.");
         addLog("SYSTEM: Project list unavailable — showing local drafts.");
       });
   }, [addLog, hasSession, isGuest, open]);
@@ -160,7 +171,9 @@ export function ProjectDrawer({
         New project
       </button>
       <div className="yiiya-scrollbar grid max-h-[calc(100%-112px)] gap-2 overflow-y-auto pr-1">
-        {projects.length === 0 ? (
+        {status === "loading" ? (
+          <p className="text-xs text-white/35">Loading projects...</p>
+        ) : projects.length === 0 ? (
           <p className="text-xs text-white/35">No saved projects yet.</p>
         ) : (
           projects.map((project) => (
@@ -214,6 +227,11 @@ export function ProjectDrawer({
           ))
         )}
       </div>
+      {status === "error" ? (
+        <p className="mt-3 border-t border-terminalBorder pt-3 text-xs text-amber/70">
+          {statusMessage}
+        </p>
+      ) : null}
       {isGuest || !hasSession ? (
         <p className="mt-4 border-t border-terminalBorder pt-3 text-xs text-white/38">
           Sign in to sync

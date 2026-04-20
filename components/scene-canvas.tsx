@@ -1,12 +1,19 @@
 "use client";
 
-import { Environment, Float, Grid, MeshDistortMaterial, OrbitControls } from "@react-three/drei";
+import {
+  Environment,
+  Float,
+  Grid,
+  MeshDistortMaterial,
+  OrbitControls,
+  useGLTF
+} from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ElementRef } from "react";
-import type { Mesh } from "three";
+import type { Group, Mesh } from "three";
 import { materialPresets } from "@/lib/materials";
-import { useYiiyaStore, type SceneObject } from "@/lib/store";
+import { useYiiyaStore, type SceneObject, type SpatialAnchor } from "@/lib/store";
 
 function ObjectGeometry({ shape }: { shape: string }) {
   const normalizedShape = shape.toLowerCase();
@@ -38,7 +45,13 @@ function ObjectGeometry({ shape }: { shape: string }) {
   return <sphereGeometry args={[0.72, 48, 48]} />;
 }
 
-function SceneObjectMesh({ object }: { object: SceneObject }) {
+function SceneObjectMesh({
+  object,
+  anchor
+}: {
+  object: SceneObject;
+  anchor?: SpatialAnchor;
+}) {
   const meshRef = useRef<Mesh>(null);
   const materialPreset = {
     ...materialPresets[object.material],
@@ -70,7 +83,7 @@ function SceneObjectMesh({ object }: { object: SceneObject }) {
   const mesh = (
     <mesh
       ref={meshRef}
-      position={object.position}
+      position={anchor?.worldPosition ?? object.position}
       rotation={[0.22, 0.7, 0.08]}
       scale={object.scale}
     >
@@ -94,6 +107,37 @@ function SceneObjectMesh({ object }: { object: SceneObject }) {
   return mesh;
 }
 
+function LoadedMeshObject({
+  object,
+  anchor
+}: {
+  object: SceneObject;
+  anchor?: SpatialAnchor;
+}) {
+  const groupRef = useRef<Group>(null);
+  const gltf = useGLTF(object.meshUrl ?? "");
+
+  useFrame((state) => {
+    if (!groupRef.current) {
+      return;
+    }
+
+    groupRef.current.rotation.y += 0.004 * object.intensity;
+    groupRef.current.position.y =
+      (anchor?.worldPosition[1] ?? object.position[1]) +
+      Math.sin(state.clock.elapsedTime * 1.2) * 0.05;
+  });
+
+  return (
+    <primitive
+      ref={groupRef}
+      object={gltf.scene}
+      position={anchor?.worldPosition ?? object.position}
+      scale={object.scale}
+    />
+  );
+}
+
 function DefaultBlob() {
   const meshRef = useRef<Mesh>(null);
   const materialRef = useRef<ElementRef<typeof MeshDistortMaterial>>(null);
@@ -106,8 +150,7 @@ function DefaultBlob() {
       meshRef.current.rotation.y += 0.003;
     }
 
-    currentDistortRef.current +=
-      (blobState.distort - currentDistortRef.current) * 0.12;
+    currentDistortRef.current += (blobState.distort - currentDistortRef.current) * 0.18;
     currentSpeedRef.current += (blobState.speed - currentSpeedRef.current) * 0.12;
 
     if (materialRef.current) {
@@ -118,37 +161,63 @@ function DefaultBlob() {
 
   const scale =
     blobState.targetShape === "bottle"
-      ? [0.72, 1.45, 0.72]
+      ? [0.72, 1.45 * blobState.aspectRatio, 0.72]
       : blobState.targetShape === "cube"
         ? [1.05, 1.05, 1.05]
         : blobState.targetShape === "crystal"
           ? [0.86, 1.35, 0.86]
           : blobState.targetShape === "organic"
             ? [1.15, 0.92, 1.05]
-            : [1, 1, 1];
+      : [1, 1, 1];
+  const materialPreset = materialPresets[blobState.material] ?? materialPresets.carbon;
 
   return (
     <mesh ref={meshRef} scale={scale as [number, number, number]}>
       <sphereGeometry args={[1.2, 64, 64]} />
       <MeshDistortMaterial
         ref={materialRef}
-        color="#1a1a1a"
+        color={"color" in materialPreset && typeof materialPreset.color === "string" ? materialPreset.color : "#1a1a1a"}
         distort={currentDistortRef.current}
         speed={0}
-        roughness={0.1}
-        metalness={0.4}
+        roughness={typeof materialPreset.roughness === "number" ? materialPreset.roughness : 0.1}
+        metalness={typeof materialPreset.metalness === "number" ? materialPreset.metalness : 0.4}
       />
     </mesh>
   );
 }
 
-function StarterScene({ objects }: { objects: SceneObject[] }) {
+function StarterScene({
+  objects,
+  anchors
+}: {
+  objects: SceneObject[];
+  anchors: SpatialAnchor[];
+}) {
+  const anchorMap = useMemo(
+    () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
+    [anchors]
+  );
+
   return (
     <>
-      {objects.length > 0 ? (
-        objects.map((object) => <SceneObjectMesh key={object.id} object={object} />)
-      ) : (
+      {objects.length === 0 ? (
         <DefaultBlob />
+      ) : null}
+
+      {objects.map((object) =>
+        object.meshUrl ? (
+          <LoadedMeshObject
+            key={object.id}
+            object={object}
+            anchor={anchorMap.get(object.id)}
+          />
+        ) : (
+          <SceneObjectMesh
+            key={object.id}
+            object={object}
+            anchor={anchorMap.get(object.id)}
+          />
+        )
       )}
 
       <Grid
@@ -170,6 +239,7 @@ function StarterScene({ objects }: { objects: SceneObject[] }) {
 
 export function SceneCanvas() {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
+  const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
 
   useEffect(() => {
@@ -185,14 +255,18 @@ export function SceneCanvas() {
         width: "100%",
         height: "100%",
         opacity: canvasMode === "WEB" ? 0 : 1,
-        pointerEvents: "none"
+        pointerEvents: canvasMode === "3D" ? "auto" : "none"
       }}
     >
       <Canvas
         data-yiiya-scene-canvas="true"
         gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
         camera={{ position: [0, 0, 5], fov: 60 }}
-        style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: canvasMode === "3D" ? "auto" : "none"
+        }}
         dpr={[1, 2]}
         className="h-full w-full"
       >
@@ -201,8 +275,9 @@ export function SceneCanvas() {
         <ambientLight intensity={0.9} />
         <directionalLight position={[3, 4, 5]} intensity={2.2} color="#fff6df" />
         <pointLight position={[-3, 2.4, 3]} intensity={1.4} color="#EF9F27" />
-        <StarterScene objects={sceneObjects} />
+        <StarterScene objects={sceneObjects} anchors={spatialAnchors} />
         <OrbitControls
+          enabled={canvasMode === "3D"}
           enablePan={false}
           maxDistance={12}
           maxPolarAngle={Math.PI * 0.48}
