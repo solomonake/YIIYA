@@ -1,9 +1,12 @@
 import { PublishedProjectView } from "@/components/published-project";
+import { readPublishedProjectFromSupabase } from "@/lib/supabase-projects";
 
-export default function PublishedPage({
+export default async function PublishedPage({
   params
 }: {
   params: { slug: string };
 }) {
-  return <PublishedProjectView slug={params.slug} />;
+  const project = await readPublishedProjectFromSupabase(params.slug);
+
+  return <PublishedProjectView slug={params.slug} initialProject={project} />;
 }

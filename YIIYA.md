@@ -4,8 +4,9 @@
 
 - Product definition: Spatial Design Orchestrator, not a template website builder.
 - Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, website sections, and spatial objects.
-- Current phase completed: Phase 4 Demo-Safe Text Fallback.
+- Current phase completed: Phase 5 Supabase Publishing.
 - Active backend route: `/api/interpret`.
+- Active publish route: `/api/publish`.
 - Interpreter pipeline: Architect agent generates semantic JSON actions, Critic agent validates/fixes contrast, mobile overflow, hierarchy, payload shape, and semantic action quality before returning JSON to the frontend.
 - Provider support: `AI_PROVIDER=anthropic` uses Anthropic Messages API; `AI_PROVIDER=gemini` uses Gemini generateContent.
 - MCP status: no Supabase or Vercel MCP resources are exposed in this session. Supabase schema is tracked locally.
@@ -29,6 +30,8 @@
 - RLS: enabled.
 - Read policy: public select for published slug retrieval.
 - Write policy: authenticated owner insert/update/delete.
+- Runtime write path: `/api/publish` uses `SUPABASE_SERVICE_ROLE_KEY` to insert published rows with `owner_id = null`.
+- Runtime read path: `/p/[slug]` uses `NEXT_PUBLIC_SUPABASE_ANON_KEY` to server-render public project rows.
 
 ## Semantic Action Contract
 
@@ -63,3 +66,11 @@
 - Typed commands reuse the same `/api/interpret` pipeline as speech, including active element context, reference image context, current scene state, Architect, Critic, and action runner.
 - Spacebar voice capture remains disabled while typing because input targets are excluded from the global keyboard listener.
 - Manual commands can repeat intentionally, while speech final-result de-duping still prevents duplicate Web Speech submissions.
+
+## Phase 5 Implementation Notes
+
+- Publish now attempts durable cloud storage first through `/api/publish`.
+- Published rows are inserted into `public.projects` with `slug`, `content_json`, `theme_json`, and Supabase timestamps.
+- `/p/[slug]` now reads Supabase from the server and passes the published JSON into the renderer for an SEO-friendlier first render.
+- Browser localStorage remains as a development fallback when Supabase env vars are not configured or cloud publish fails.
+- Required Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.

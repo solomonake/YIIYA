@@ -2,22 +2,7 @@
 
 import html2canvas from "html2canvas";
 import { useYiiyaStore } from "@/lib/store";
-
-export type PublishedProject = {
-  slug: string;
-  htmlSnapshot: string;
-  htmlCanvasImage: string;
-    sceneState: {
-      projectName: string;
-      sections: unknown[];
-      sceneObjects: unknown[];
-      themeState: unknown;
-      layers: unknown[];
-    selectedElementId: string | null;
-    sceneCanvasImage: string | null;
-  };
-  createdAt: string;
-};
+import type { PublishedProject } from "@/lib/published-project-types";
 
 const storagePrefix = "yiiya:published:";
 
@@ -73,6 +58,26 @@ async function copyShareUrl(url: string) {
   input.remove();
 }
 
+async function publishToSupabase(project: PublishedProject) {
+  const response = await fetch("/api/publish", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(project)
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+
+    throw new Error(payload?.error ?? `Cloud publish failed with ${response.status}`);
+  }
+
+  return (await response.json()) as PublishedProject;
+}
+
 export async function publishCurrentProject() {
   const store = useYiiyaStore.getState();
   const root = document.querySelector<HTMLElement>("[data-yiiya-publish-root]");
@@ -104,9 +109,20 @@ export async function publishCurrentProject() {
     createdAt: new Date().toISOString()
   };
 
-  localStorage.setItem(`${storagePrefix}${slug}`, JSON.stringify(project));
+  let publishedProject = project;
+  let publishedToCloud = false;
 
-  const shareUrl = `${window.location.origin}/p/${slug}`;
+  try {
+    publishedProject = await publishToSupabase(project);
+    publishedToCloud = true;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Cloud publish unavailable";
+    store.addLog(`PUBLISH: Cloud fallback active. ${message}`);
+    localStorage.setItem(`${storagePrefix}${slug}`, JSON.stringify(project));
+  }
+
+  const shareUrl = `${window.location.origin}/p/${publishedProject.slug}`;
 
   try {
     await copyShareUrl(shareUrl);
@@ -114,7 +130,11 @@ export async function publishCurrentProject() {
     store.addLog("Published link could not be copied automatically");
   }
 
-  store.addLog(`Published /p/${slug}`);
+  store.addLog(
+    publishedToCloud
+      ? `PUBLISH: Stored /p/${publishedProject.slug} in Supabase.`
+      : `PUBLISH: Stored /p/${publishedProject.slug} in local fallback.`
+  );
   store.setToastMessage(`Copied ${shareUrl}`);
 
   window.setTimeout(() => {
@@ -123,7 +143,7 @@ export async function publishCurrentProject() {
     }
   }, 3200);
 
-  return project;
+  return publishedProject;
 }
 
 export function readPublishedProject(slug: string) {

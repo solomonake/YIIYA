@@ -1,17 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  readPublishedProject,
-  type PublishedProject
-} from "@/lib/publish-project";
+import { readPublishedProject } from "@/lib/publish-project";
+import type { PublishedProject } from "@/lib/published-project-types";
 
-export function PublishedProjectView({ slug }: { slug: string }) {
-  const [project, setProject] = useState<PublishedProject | null | undefined>();
+export function PublishedProjectView({
+  slug,
+  initialProject
+}: {
+  slug: string;
+  initialProject?: PublishedProject | null;
+}) {
+  const [project, setProject] = useState<PublishedProject | null | undefined>(
+    initialProject
+  );
 
   useEffect(() => {
+    if (initialProject) {
+      return;
+    }
+
     setProject(readPublishedProject(slug));
-  }, [slug]);
+  }, [initialProject, slug]);
 
   if (project === undefined) {
     return <main className="min-h-svh bg-ink" />;
@@ -23,7 +33,7 @@ export function PublishedProjectView({ slug }: { slug: string }) {
         <div>
           <h1 className="text-3xl font-semibold">Project not found</h1>
           <p className="mt-3 text-sm text-white/55">
-            Published Yiiya projects are stored in this browser.
+            This Yiiya project is not available from Supabase or this browser.
           </p>
         </div>
       </main>
