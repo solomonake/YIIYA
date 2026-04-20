@@ -4,10 +4,12 @@
 
 - Product definition: Spatial Design Orchestrator, not a template website builder.
 - Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, website sections, and spatial objects.
-- Current phase completed: Phase 5 Supabase Publishing.
+- Current phase completed: Phase 6 Local Intent Compiler Fallback.
 - Active backend route: `/api/interpret`.
 - Active publish route: `/api/publish`.
+- Active status route: `/api/status`.
 - Interpreter pipeline: Architect agent generates semantic JSON actions, Critic agent validates/fixes contrast, mobile overflow, hierarchy, payload shape, and semantic action quality before returning JSON to the frontend.
+- Interpreter fallback: if the selected model is unavailable or fails, `/api/interpret` uses a deterministic local compiler for common demo/business commands.
 - Provider support: `AI_PROVIDER=anthropic` uses Anthropic Messages API; `AI_PROVIDER=gemini` uses Gemini generateContent.
 - MCP status: no Supabase or Vercel MCP resources are exposed in this session. Supabase schema is tracked locally.
 
@@ -74,3 +76,11 @@
 - `/p/[slug]` now reads Supabase from the server and passes the published JSON into the renderer for an SEO-friendlier first render.
 - Browser localStorage remains as a development fallback when Supabase env vars are not configured or cloud publish fails.
 - Required Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+## Phase 6 Implementation Notes
+
+- Added `lib/local-intent-compiler.ts` as a deterministic fallback for common creation commands.
+- Fallback supports site generation, HERO/ABOUT/FEATURES/CONTACT sections, density changes, vibe theme presets, active-element relative edits, spatial objects, reference-image intent hints, and publish commands.
+- `/api/interpret` now returns fallback actions with `x-yiiya-interpreter: local-fallback` when the selected LLM provider is missing or fails.
+- The voice/manual command pipeline logs `INTERPRET: Fast local compiler fallback.` when fallback actions are used.
+- Added `/api/status` to report AI/Supabase configuration booleans without exposing secrets.

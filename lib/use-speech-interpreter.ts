@@ -112,7 +112,10 @@ async function interpretTranscript(transcript: string) {
     throw new Error("Interpret response was not an action array");
   }
 
-  return actions;
+  return {
+    actions,
+    interpreter: response.headers.get("x-yiiya-interpreter")
+  };
 }
 
 export function useSpeechInterpreter() {
@@ -146,7 +149,13 @@ export function useSpeechInterpreter() {
       setInterpreting(true);
 
       try {
-        const actions = await interpretTranscript(normalizedTranscript);
+        const { actions, interpreter } =
+          await interpretTranscript(normalizedTranscript);
+
+        if (interpreter === "local-fallback") {
+          addLog("INTERPRET: Fast local compiler fallback.");
+        }
+
         runYiiyaActions(actions);
         addActionLogs(actions);
 

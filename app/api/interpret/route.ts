@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { compileLocalIntent } from "@/lib/local-intent-compiler";
 
 const ARCHITECT_PROMPT =
   "You are the Architect agent for Yiiya, a Spatial Design Orchestrator. Yiiya is not a website builder. It compiles vague human intent into a tokenized design system, live website sections, and spatial 3D objects. Aesthetic target: Institutional Professional, Bloomberg Terminal meets high-end creative studio. Dark, dense, precise, fast. Return valid JSON only: an array of actions. Supported actions: ADD_SECTION payload { sectionType, theme, content }; MODIFY_ELEMENT payload { elementId, property, value, mode? }; SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }; SYNC_BRAND_TO_IMAGE payload { palette, fontWeights, layoutStructure, visualTone }; ADJUST_DENSITY payload { scale }; ADD_SPATIAL_OBJECT payload { shape, material, color, animation, position }; PUBLISH payload {}. Legacy actions ADD_3D_OBJECT and CHANGE_THEME are allowed only when needed for backward compatibility. If activeElementId is present and the user says relative phrases like 'this', 'a bit bigger', 'make it warmer', target that element with MODIFY_ELEMENT and use mode values like multiply, increment, replace when useful. If an image is provided, extract dominant hex palette, layout structure, visual tone, and font weight cues, then include SYNC_BRAND_TO_IMAGE and appropriate theme actions.";
@@ -103,6 +104,12 @@ function extractJsonArray(text: string) {
   }
 
   return parsed;
+}
+
+function headerSafeMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "unknown";
+
+  return message.replace(/[\r\n]/g, " ").slice(0, 180);
 }
 
 function buildArchitectContext(body: InterpretRequest) {
@@ -313,6 +320,17 @@ export async function POST(request: Request) {
 
     return NextResponse.json(criticActions);
   } catch (error) {
+    const fallbackActions = compileLocalIntent(body);
+
+    if (fallbackActions.length > 0) {
+      return NextResponse.json(fallbackActions, {
+        headers: {
+          "x-yiiya-interpreter": "local-fallback",
+          "x-yiiya-model-error": headerSafeMessage(error)
+        }
+      });
+    }
+
     return NextResponse.json(
       {
         error:
