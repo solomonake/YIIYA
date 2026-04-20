@@ -20,7 +20,18 @@ export type LogEntry = {
   timestamp: string;
 };
 
-export type SectionType = "HERO" | "ABOUT" | "FEATURES" | "CONTACT";
+export type SectionType =
+  | "NAVBAR"
+  | "HERO"
+  | "ABOUT"
+  | "SERVICES"
+  | "FEATURES"
+  | "METRICS"
+  | "TESTIMONIALS"
+  | "PRICING"
+  | "FAQ"
+  | "CONTACT"
+  | "FOOTER";
 
 export type SectionTheme = {
   background?: string;
@@ -290,10 +301,17 @@ function normalizeSectionType(sectionType: unknown): SectionType {
   const normalized = sectionType.toUpperCase();
 
   if (
+    normalized === "NAVBAR" ||
     normalized === "HERO" ||
     normalized === "ABOUT" ||
+    normalized === "SERVICES" ||
     normalized === "FEATURES" ||
-    normalized === "CONTACT"
+    normalized === "METRICS" ||
+    normalized === "TESTIMONIALS" ||
+    normalized === "PRICING" ||
+    normalized === "FAQ" ||
+    normalized === "CONTACT" ||
+    normalized === "FOOTER"
   ) {
     return normalized;
   }

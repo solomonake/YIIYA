@@ -4,7 +4,7 @@
 
 - Product definition: Spatial Design Orchestrator, not a template website builder.
 - Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, website sections, and spatial objects.
-- Current phase completed: Phase 7 Stateful Project Sessions.
+- Current phase completed: Phase 8 Section Library v2.
 - Active backend route: `/api/interpret`.
 - Active publish route: `/api/publish`.
 - Active status route: `/api/status`.
@@ -45,6 +45,7 @@
 - `MODIFY_ELEMENT`
 - `PUBLISH`
 - Legacy compatibility: `ADD_3D_OBJECT`, `CHANGE_THEME`.
+- Section library: `NAVBAR`, `HERO`, `ABOUT`, `SERVICES`, `FEATURES`, `METRICS`, `TESTIMONIALS`, `PRICING`, `FAQ`, `CONTACT`, `FOOTER`.
 
 ## Phase 2 Implementation Notes
 
@@ -96,3 +97,11 @@
 - Added debounced 2000ms draft autosave via `/api/projects/autosave`; cloud autosave uses Supabase service role and falls back to browser draft storage when unavailable.
 - Publish uses the current project slug so autosaved drafts upgrade into clean published artifacts.
 - Workspace wraps the canvas/rendering layer in React Suspense to keep the command surface responsive during rendering work.
+
+## Phase 8 Implementation Notes
+
+- Expanded `SectionType` beyond the original four-section prototype.
+- Added token-aware renderers for `NAVBAR`, `SERVICES`, `METRICS`, `TESTIMONIALS`, `PRICING`, `FAQ`, and `FOOTER`.
+- Updated the Architect prompt to advertise the full section library.
+- Updated the local intent compiler so business prompts can request services, metrics/stats, testimonials/reviews, pricing/plans, FAQ/questions, navbar/navigation, and footer.
+- Full-site fallback generation now produces `NAVBAR`, `HERO`, `ABOUT`, `FEATURES`, `CONTACT`, and `FOOTER` by default, with optional business sections added when requested.

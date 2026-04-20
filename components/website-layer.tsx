@@ -13,7 +13,7 @@ import {
 } from "@/lib/store";
 
 type SelectableProps = PropsWithChildren<{
-  as?: "section" | "div" | "h1" | "h2" | "p" | "button" | "form";
+  as?: "section" | "div" | "h1" | "h2" | "p" | "button" | "form" | "nav" | "footer";
   id: string;
   className?: string;
   style?: CSSProperties;
@@ -72,6 +72,44 @@ function listFrom(
   });
 }
 
+function stringListFrom(
+  content: SectionContent,
+  key: string,
+  fallback: string[]
+) {
+  const value = content[key];
+
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  return value
+    .map((item) =>
+      typeof item === "string" || typeof item === "number" ? String(item) : null
+    )
+    .filter((item): item is string => Boolean(item));
+}
+
+function recordsFrom(
+  content: SectionContent,
+  key: string,
+  fallback: Array<Record<string, unknown>>
+) {
+  const value = content[key];
+
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  return value
+    .map((item) =>
+      item && typeof item === "object" && !Array.isArray(item)
+        ? (item as Record<string, unknown>)
+        : null
+    )
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
 function Selectable({
   as = "div",
   id,
@@ -127,6 +165,77 @@ function sectionShellStyle(theme: CompiledYiiyaTheme): CSSProperties {
     color: theme.foreground,
     padding: `${theme.spacing.sectionY}px ${theme.spacing.sectionX}px`
   };
+}
+
+function NavbarSection({
+  section,
+  index,
+  theme
+}: {
+  section: YiiyaSection;
+  index: number;
+  theme: CompiledYiiyaTheme;
+}) {
+  const brand = textFrom(section.content, ["brand", "heading", "title"], "Yiiya");
+  const links = stringListFrom(section.content, "links", [
+    "Work",
+    "Services",
+    "Proof",
+    "Contact"
+  ]);
+  const cta = textFrom(section.content, ["cta", "button", "buttonText"], "Book call");
+
+  return (
+    <Selectable
+      as="nav"
+      id={`navbar-section-${index}`}
+      className="flex items-center justify-between border-b"
+      style={{
+        backgroundColor: theme.background,
+        color: theme.foreground,
+        borderColor: theme.border,
+        padding: `${theme.spacing.sm}px ${theme.spacing.sectionX}px`
+      }}
+    >
+      <Selectable
+        id={`navbar-brand-${index}`}
+        className="font-bold uppercase tracking-[0.18em]"
+        style={{ color: theme.foreground, fontSize: theme.type.small }}
+      >
+        {brand}
+      </Selectable>
+      <Selectable
+        id={`navbar-links-${index}`}
+        className="hidden items-center md:flex"
+        style={{ gap: theme.spacing.md }}
+      >
+        {links.slice(0, 5).map((link, linkIndex) => (
+          <Selectable
+            key={`${link}-${linkIndex}`}
+            id={`navbar-link-${index}-${linkIndex + 1}`}
+            style={{ color: theme.mutedForeground, fontSize: theme.type.small }}
+          >
+            {link}
+          </Selectable>
+        ))}
+      </Selectable>
+      <Selectable
+        as="button"
+        id={`navbar-cta-${index}`}
+        type="button"
+        className="font-semibold"
+        style={{
+          borderRadius: theme.borderRadius * 2,
+          backgroundColor: theme.primaryAccent,
+          color: theme.background,
+          fontSize: theme.type.small,
+          padding: `${theme.spacing.xs}px ${theme.spacing.sm}px`
+        }}
+      >
+        {cta}
+      </Selectable>
+    </Selectable>
+  );
 }
 
 function HeroSection({
@@ -349,6 +458,229 @@ function FeaturesSection({
   );
 }
 
+function ServicesSection({
+  section,
+  index,
+  theme
+}: {
+  section: YiiyaSection;
+  index: number;
+  theme: CompiledYiiyaTheme;
+}) {
+  const heading = textFrom(section.content, ["heading", "title"], "Services built for momentum.");
+  const services = listFrom(section.content, "services", [
+    "Launch strategy",
+    "Visual system",
+    "Conversion page"
+  ]);
+
+  return (
+    <Selectable
+      as="section"
+      id={`services-section-${index}`}
+      style={sectionShellStyle(theme)}
+    >
+      <Selectable
+        as="h2"
+        id={`services-title-${index}`}
+        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+      >
+        {heading}
+      </Selectable>
+      <Selectable
+        id={`services-list-${index}`}
+        className="grid"
+        style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}
+      >
+        {services.slice(0, 4).map((service, serviceIndex) => (
+          <Selectable
+            key={`${service.heading}-${serviceIndex}`}
+            id={`service-row-${index}-${serviceIndex + 1}`}
+            className="grid border md:grid-cols-[0.35fr_1fr]"
+            style={{
+              borderColor: theme.border,
+              borderRadius: theme.borderRadius,
+              padding: theme.spacing.md,
+              gap: theme.spacing.md,
+              backgroundColor: theme.surface
+            }}
+          >
+            <Selectable
+              as="h2"
+              id={`service-title-${index}-${serviceIndex + 1}`}
+              style={{ fontSize: theme.type.body, fontWeight: theme.fontWeight }}
+            >
+              {service.heading}
+            </Selectable>
+            <Selectable
+              as="p"
+              id={`service-subtext-${index}-${serviceIndex + 1}`}
+              className="leading-6"
+              style={{ color: theme.mutedForeground, fontSize: theme.type.small }}
+            >
+              {service.subtext}
+            </Selectable>
+          </Selectable>
+        ))}
+      </Selectable>
+    </Selectable>
+  );
+}
+
+function MetricsSection({
+  section,
+  index,
+  theme
+}: {
+  section: YiiyaSection;
+  index: number;
+  theme: CompiledYiiyaTheme;
+}) {
+  const heading = textFrom(section.content, ["heading", "title"], "Operating signals.");
+  const metrics = recordsFrom(section.content, "metrics", [
+    { value: "3 min", label: "intent to draft" },
+    { value: "11", label: "editable blocks" },
+    { value: "24/7", label: "iteration loop" }
+  ]);
+
+  return (
+    <Selectable
+      as="section"
+      id={`metrics-section-${index}`}
+      style={sectionShellStyle(theme)}
+    >
+      <Selectable
+        as="h2"
+        id={`metrics-title-${index}`}
+        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+      >
+        {heading}
+      </Selectable>
+      <Selectable
+        id={`metrics-grid-${index}`}
+        className="grid md:grid-cols-3"
+        style={{ marginTop: theme.spacing.lg, gap: theme.spacing.md }}
+      >
+        {metrics.slice(0, 4).map((metric, metricIndex) => (
+          <Selectable
+            key={`${String(metric.value)}-${metricIndex}`}
+            id={`metric-card-${index}-${metricIndex + 1}`}
+            className="border"
+            style={{
+              borderColor: theme.border,
+              borderRadius: theme.borderRadius,
+              padding: theme.spacing.md,
+              backgroundColor: theme.surface
+            }}
+          >
+            <Selectable
+              as="h2"
+              id={`metric-value-${index}-${metricIndex + 1}`}
+              style={{
+                color: theme.primaryAccent,
+                fontSize: theme.type.title,
+                fontWeight: theme.fontWeight
+              }}
+            >
+              {textFrom(metric, ["value", "number"], "10x")}
+            </Selectable>
+            <Selectable
+              as="p"
+              id={`metric-label-${index}-${metricIndex + 1}`}
+              className="uppercase tracking-[0.14em]"
+              style={{
+                marginTop: theme.spacing.xs,
+                color: theme.mutedForeground,
+                fontSize: theme.type.small
+              }}
+            >
+              {textFrom(metric, ["label", "caption"], "signal")}
+            </Selectable>
+          </Selectable>
+        ))}
+      </Selectable>
+    </Selectable>
+  );
+}
+
+function TestimonialsSection({
+  section,
+  index,
+  theme
+}: {
+  section: YiiyaSection;
+  index: number;
+  theme: CompiledYiiyaTheme;
+}) {
+  const heading = textFrom(section.content, ["heading", "title"], "Proof from real buyers.");
+  const testimonials = recordsFrom(section.content, "testimonials", [
+    {
+      quote: "The first draft gave us enough clarity to pitch the direction immediately.",
+      author: "Amina, founder"
+    },
+    {
+      quote: "It felt like a creative director and front-end team in the same room.",
+      author: "David, agency lead"
+    }
+  ]);
+
+  return (
+    <Selectable
+      as="section"
+      id={`testimonials-section-${index}`}
+      style={sectionShellStyle(theme)}
+    >
+      <Selectable
+        as="h2"
+        id={`testimonials-title-${index}`}
+        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+      >
+        {heading}
+      </Selectable>
+      <Selectable
+        id={`testimonials-grid-${index}`}
+        className="grid md:grid-cols-2"
+        style={{ marginTop: theme.spacing.lg, gap: theme.spacing.md }}
+      >
+        {testimonials.slice(0, 3).map((testimonial, testimonialIndex) => (
+          <Selectable
+            key={`${textFrom(testimonial, ["author"], "author")}-${testimonialIndex}`}
+            id={`testimonial-card-${index}-${testimonialIndex + 1}`}
+            className="border"
+            style={{
+              borderColor: theme.border,
+              borderRadius: theme.borderRadius * 1.2,
+              padding: theme.spacing.md,
+              backgroundColor: theme.surface
+            }}
+          >
+            <Selectable
+              as="p"
+              id={`testimonial-quote-${index}-${testimonialIndex + 1}`}
+              className="leading-7"
+              style={{ color: theme.foreground, fontSize: theme.type.body }}
+            >
+              {textFrom(testimonial, ["quote", "text"], "Strong signal from the market.")}
+            </Selectable>
+            <Selectable
+              as="p"
+              id={`testimonial-author-${index}-${testimonialIndex + 1}`}
+              className="uppercase tracking-[0.14em]"
+              style={{
+                marginTop: theme.spacing.md,
+                color: theme.primaryAccent,
+                fontSize: theme.type.small
+              }}
+            >
+              {textFrom(testimonial, ["author", "name"], "Customer")}
+            </Selectable>
+          </Selectable>
+        ))}
+      </Selectable>
+    </Selectable>
+  );
+}
+
 function ContactSection({
   section,
   index,
@@ -463,6 +795,263 @@ function ContactSection({
   );
 }
 
+function PricingSection({
+  section,
+  index,
+  theme
+}: {
+  section: YiiyaSection;
+  index: number;
+  theme: CompiledYiiyaTheme;
+}) {
+  const heading = textFrom(section.content, ["heading", "title"], "Simple engagement model.");
+  const plans = recordsFrom(section.content, "plans", [
+    {
+      name: "Launch",
+      price: "$1,500",
+      features: ["One landing page", "Design system", "Publish setup"]
+    },
+    {
+      name: "Growth",
+      price: "$3,500",
+      features: ["Multi-section site", "3D direction", "Lead capture"]
+    }
+  ]);
+
+  return (
+    <Selectable
+      as="section"
+      id={`pricing-section-${index}`}
+      style={sectionShellStyle(theme)}
+    >
+      <Selectable
+        as="h2"
+        id={`pricing-title-${index}`}
+        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+      >
+        {heading}
+      </Selectable>
+      <Selectable
+        id={`pricing-grid-${index}`}
+        className="grid md:grid-cols-2"
+        style={{ marginTop: theme.spacing.lg, gap: theme.spacing.md }}
+      >
+        {plans.slice(0, 3).map((plan, planIndex) => {
+          const features = Array.isArray(plan.features)
+            ? plan.features
+                .map((item) =>
+                  typeof item === "string" || typeof item === "number"
+                    ? String(item)
+                    : null
+                )
+                .filter((item): item is string => Boolean(item))
+            : ["Design system", "Production handoff", "Fast publish"];
+
+          return (
+            <Selectable
+              key={`${textFrom(plan, ["name"], "plan")}-${planIndex}`}
+              id={`pricing-card-${index}-${planIndex + 1}`}
+              className="border"
+              style={{
+                borderColor:
+                  planIndex === 0 ? theme.primaryAccent : theme.border,
+                borderRadius: theme.borderRadius * 1.2,
+                padding: theme.spacing.md,
+                backgroundColor: theme.surface
+              }}
+            >
+              <Selectable
+                as="h2"
+                id={`pricing-name-${index}-${planIndex + 1}`}
+                style={{
+                  fontSize: theme.type.body * 1.25,
+                  fontWeight: theme.fontWeight
+                }}
+              >
+                {textFrom(plan, ["name", "title"], "Plan")}
+              </Selectable>
+              <Selectable
+                as="h2"
+                id={`pricing-price-${index}-${planIndex + 1}`}
+                style={{
+                  marginTop: theme.spacing.sm,
+                  color: theme.primaryAccent,
+                  fontSize: theme.type.title,
+                  fontWeight: theme.fontWeight
+                }}
+              >
+                {textFrom(plan, ["price", "cost"], "$2,500")}
+              </Selectable>
+              <Selectable
+                id={`pricing-features-${index}-${planIndex + 1}`}
+                className="grid"
+                style={{ marginTop: theme.spacing.md, gap: theme.spacing.xs }}
+              >
+                {features.slice(0, 5).map((feature, featureIndex) => (
+                  <Selectable
+                    key={`${feature}-${featureIndex}`}
+                    as="p"
+                    id={`pricing-feature-${index}-${planIndex + 1}-${featureIndex + 1}`}
+                    style={{
+                      color: theme.mutedForeground,
+                      fontSize: theme.type.small
+                    }}
+                  >
+                    {feature}
+                  </Selectable>
+                ))}
+              </Selectable>
+            </Selectable>
+          );
+        })}
+      </Selectable>
+    </Selectable>
+  );
+}
+
+function FAQSection({
+  section,
+  index,
+  theme
+}: {
+  section: YiiyaSection;
+  index: number;
+  theme: CompiledYiiyaTheme;
+}) {
+  const heading = textFrom(section.content, ["heading", "title"], "Questions before launch.");
+  const faqs = recordsFrom(section.content, "faqs", [
+    {
+      question: "Can this be edited after publish?",
+      answer: "Yes. Yiiya keeps project state structured so future edits can target sections and elements."
+    },
+    {
+      question: "Is this only for prototypes?",
+      answer: "Today it is strongest for fast drafts. The compiler is moving toward production-grade output."
+    }
+  ]);
+
+  return (
+    <Selectable
+      as="section"
+      id={`faq-section-${index}`}
+      style={sectionShellStyle(theme)}
+    >
+      <Selectable
+        as="h2"
+        id={`faq-title-${index}`}
+        style={{ fontSize: theme.type.title, fontWeight: theme.fontWeight }}
+      >
+        {heading}
+      </Selectable>
+      <Selectable
+        id={`faq-list-${index}`}
+        className="grid"
+        style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}
+      >
+        {faqs.slice(0, 5).map((faq, faqIndex) => (
+          <Selectable
+            key={`${textFrom(faq, ["question"], "question")}-${faqIndex}`}
+            id={`faq-item-${index}-${faqIndex + 1}`}
+            className="border"
+            style={{
+              borderColor: theme.border,
+              borderRadius: theme.borderRadius,
+              padding: theme.spacing.md,
+              backgroundColor: theme.surface
+            }}
+          >
+            <Selectable
+              as="h2"
+              id={`faq-question-${index}-${faqIndex + 1}`}
+              style={{ fontSize: theme.type.body, fontWeight: theme.fontWeight }}
+            >
+              {textFrom(faq, ["question", "heading"], "Question")}
+            </Selectable>
+            <Selectable
+              as="p"
+              id={`faq-answer-${index}-${faqIndex + 1}`}
+              className="leading-6"
+              style={{
+                marginTop: theme.spacing.sm,
+                color: theme.mutedForeground,
+                fontSize: theme.type.small
+              }}
+            >
+              {textFrom(faq, ["answer", "subtext", "body"], "Answer")}
+            </Selectable>
+          </Selectable>
+        ))}
+      </Selectable>
+    </Selectable>
+  );
+}
+
+function FooterSection({
+  section,
+  index,
+  theme
+}: {
+  section: YiiyaSection;
+  index: number;
+  theme: CompiledYiiyaTheme;
+}) {
+  const brand = textFrom(section.content, ["brand", "heading", "title"], "Yiiya");
+  const subtext = textFrom(section.content, ["subtext", "body"], "Built with Yiiya.");
+  const links = stringListFrom(section.content, "links", [
+    "Privacy",
+    "Contact",
+    "Launch"
+  ]);
+
+  return (
+    <Selectable
+      as="footer"
+      id={`footer-section-${index}`}
+      className="border-t"
+      style={{
+        backgroundColor: theme.background,
+        color: theme.foreground,
+        borderColor: theme.border,
+        padding: `${theme.spacing.lg}px ${theme.spacing.sectionX}px`
+      }}
+    >
+      <Selectable
+        id={`footer-brand-${index}`}
+        className="font-bold uppercase tracking-[0.18em]"
+        style={{ fontSize: theme.type.small }}
+      >
+        {brand}
+      </Selectable>
+      <Selectable
+        as="p"
+        id={`footer-subtext-${index}`}
+        style={{
+          marginTop: theme.spacing.sm,
+          color: theme.mutedForeground,
+          fontSize: theme.type.small
+        }}
+      >
+        {subtext}
+      </Selectable>
+      <Selectable
+        id={`footer-links-${index}`}
+        className="flex flex-wrap"
+        style={{ marginTop: theme.spacing.md, gap: theme.spacing.md }}
+      >
+        {links.slice(0, 4).map((link, linkIndex) => (
+          <Selectable
+            key={`${link}-${linkIndex}`}
+            id={`footer-link-${index}-${linkIndex + 1}`}
+            style={{ color: theme.primaryAccent, fontSize: theme.type.small }}
+          >
+            {link}
+          </Selectable>
+        ))}
+      </Selectable>
+    </Selectable>
+  );
+}
+
 function RenderSection({
   section,
   index,
@@ -472,16 +1061,44 @@ function RenderSection({
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
+  if (section.sectionType === "NAVBAR") {
+    return <NavbarSection section={section} index={index} theme={theme} />;
+  }
+
   if (section.sectionType === "ABOUT") {
     return <AboutSection section={section} index={index} theme={theme} />;
+  }
+
+  if (section.sectionType === "SERVICES") {
+    return <ServicesSection section={section} index={index} theme={theme} />;
   }
 
   if (section.sectionType === "FEATURES") {
     return <FeaturesSection section={section} index={index} theme={theme} />;
   }
 
+  if (section.sectionType === "METRICS") {
+    return <MetricsSection section={section} index={index} theme={theme} />;
+  }
+
+  if (section.sectionType === "TESTIMONIALS") {
+    return <TestimonialsSection section={section} index={index} theme={theme} />;
+  }
+
+  if (section.sectionType === "PRICING") {
+    return <PricingSection section={section} index={index} theme={theme} />;
+  }
+
+  if (section.sectionType === "FAQ") {
+    return <FAQSection section={section} index={index} theme={theme} />;
+  }
+
   if (section.sectionType === "CONTACT") {
     return <ContactSection section={section} index={index} theme={theme} />;
+  }
+
+  if (section.sectionType === "FOOTER") {
+    return <FooterSection section={section} index={index} theme={theme} />;
   }
 
   return <HeroSection section={section} index={index} theme={theme} />;

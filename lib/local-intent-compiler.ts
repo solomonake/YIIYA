@@ -84,6 +84,14 @@ function inferBrandSubject(text: string) {
 }
 
 function sectionContent(sectionType: string, subject: string) {
+  if (sectionType === "NAVBAR") {
+    return {
+      brand: subject,
+      links: ["Work", "Services", "Proof", "Contact"],
+      cta: "Book call"
+    };
+  }
+
   if (sectionType === "HERO") {
     return {
       heading: subject,
@@ -118,6 +126,95 @@ function sectionContent(sectionType: string, subject: string) {
           subtext: "Add 3D objects into the same canvas without a separate tool."
         }
       ]
+    };
+  }
+
+  if (sectionType === "SERVICES") {
+    return {
+      heading: "Services built for momentum",
+      services: [
+        {
+          heading: "Launch strategy",
+          subtext: "Position the offer, audience, and page structure before build."
+        },
+        {
+          heading: "Visual system",
+          subtext: "Translate the brand mood into tokens, sections, and reusable patterns."
+        },
+        {
+          heading: "Conversion page",
+          subtext: "Ship a focused landing page with clear proof and next steps."
+        }
+      ]
+    };
+  }
+
+  if (sectionType === "METRICS") {
+    return {
+      heading: "Operating signals",
+      metrics: [
+        { value: "3 min", label: "intent to draft" },
+        { value: "11", label: "editable blocks" },
+        { value: "24/7", label: "publish-ready iteration" }
+      ]
+    };
+  }
+
+  if (sectionType === "TESTIMONIALS") {
+    return {
+      heading: "Proof from real buyers",
+      testimonials: [
+        {
+          quote: "The first draft gave us enough clarity to pitch the direction immediately.",
+          author: "Amina, founder"
+        },
+        {
+          quote: "It felt like a creative director and front-end team in the same room.",
+          author: "David, agency lead"
+        }
+      ]
+    };
+  }
+
+  if (sectionType === "PRICING") {
+    return {
+      heading: "Simple engagement model",
+      plans: [
+        {
+          name: "Launch",
+          price: "$1,500",
+          features: ["One landing page", "Design system", "Publish setup"]
+        },
+        {
+          name: "Growth",
+          price: "$3,500",
+          features: ["Multi-section site", "3D direction", "Lead capture"]
+        }
+      ]
+    };
+  }
+
+  if (sectionType === "FAQ") {
+    return {
+      heading: "Questions before launch",
+      faqs: [
+        {
+          question: "Can this be edited after publish?",
+          answer: "Yes. Yiiya keeps project state structured so future edits can target sections and elements."
+        },
+        {
+          question: "Is this only for prototypes?",
+          answer: "Today it is strongest for fast drafts. The compiler is moving toward production-grade output."
+        }
+      ]
+    };
+  }
+
+  if (sectionType === "FOOTER") {
+    return {
+      brand: subject,
+      subtext: "Built with Yiiya.",
+      links: ["Privacy", "Contact", "Launch"]
     };
   }
 
@@ -358,14 +455,36 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     "add contact",
     "form"
   ]);
+  const wantsNavbar = hasAny(text, ["navbar", "nav bar", "navigation", "menu"]);
+  const wantsServices = hasAny(text, ["services", "offer", "offers"]);
+  const wantsMetrics = hasAny(text, ["metrics", "stats", "numbers", "kpis"]);
+  const wantsTestimonials = hasAny(text, [
+    "testimonial",
+    "testimonials",
+    "social proof",
+    "reviews"
+  ]);
+  const wantsPricing = hasAny(text, ["pricing", "plans", "packages"]);
+  const wantsFaq = hasAny(text, ["faq", "questions"]);
+  const wantsFooter = hasAny(text, ["footer"]);
 
   if (
     wantsSite ||
+    wantsNavbar ||
     wantsHeroSection ||
     wantsAboutSection ||
+    wantsServices ||
     wantsFeaturesSection ||
+    wantsMetrics ||
+    wantsTestimonials ||
+    wantsPricing ||
+    wantsFaq ||
     wantsContactSection
   ) {
+    if (wantsSite || wantsNavbar) {
+      addSection(actions, "NAVBAR", subject);
+    }
+
     if (wantsSite || wantsHeroSection) {
       addSection(actions, "HERO", subject);
     }
@@ -374,12 +493,36 @@ export function compileLocalIntent(input: LocalCompilerInput) {
       addSection(actions, "ABOUT", subject);
     }
 
+    if (wantsServices) {
+      addSection(actions, "SERVICES", subject);
+    }
+
     if (wantsSite || wantsFeaturesSection) {
       addSection(actions, "FEATURES", subject);
     }
 
+    if (wantsMetrics) {
+      addSection(actions, "METRICS", subject);
+    }
+
+    if (wantsTestimonials) {
+      addSection(actions, "TESTIMONIALS", subject);
+    }
+
+    if (wantsPricing) {
+      addSection(actions, "PRICING", subject);
+    }
+
+    if (wantsFaq) {
+      addSection(actions, "FAQ", subject);
+    }
+
     if (wantsSite || wantsContactSection) {
       addSection(actions, "CONTACT", subject);
+    }
+
+    if (wantsSite || wantsFooter) {
+      addSection(actions, "FOOTER", subject);
     }
   }
 
