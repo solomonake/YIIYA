@@ -21,6 +21,7 @@ function setElementValue(element: HTMLElement, property: string, value: unknown)
 
   if (property === "content") {
     element.textContent = stringValue;
+    useYiiyaStore.getState().updateElementContent(element.dataset.yiiyaId ?? "", stringValue);
     return;
   }
 
@@ -306,7 +307,26 @@ function applySetMaterial(action: YiiyaAction) {
     }
   }
 
-  useYiiyaStore.getState().updateSceneObject(objectIdFromValue(action.payload.objectId), {
+  const store = useYiiyaStore.getState();
+  const objectId = objectIdFromValue(action.payload.objectId);
+  const hasTarget =
+    objectId === "latest" ? store.sceneObjects.length > 0 : store.sceneObjects.some((object) => object.id === objectId);
+
+  if (!hasTarget) {
+    store.morphBlob({
+      material:
+        typeof action.payload.material === "string"
+          ? normalizeSpatialMaterial(action.payload.material)
+          : undefined,
+      speed: 2.2,
+      distort: 0.42,
+      morphProgress: 0.85
+    });
+    store.addLog("[SPATIAL]: Blob material updated.");
+    return;
+  }
+
+  store.updateSceneObject(objectId, {
     material:
       typeof action.payload.material === "string"
         ? action.payload.material.toLowerCase()
@@ -536,6 +556,16 @@ export function runYiiyaActions(actions: YiiyaAction[]) {
 
     if (action.type === "UNDO") {
       useYiiyaStore.getState().popUndo();
+    }
+
+    if (action.type === "REDO") {
+      useYiiyaStore.getState().popRedo();
+    }
+
+    if (action.type === "SET_PROJECT_NAME") {
+      if (typeof action.payload.projectName === "string") {
+        useYiiyaStore.getState().renameProject(action.payload.projectName);
+      }
     }
 
     if (action.type === "ADD_SECTION") {

@@ -375,6 +375,10 @@ function commandActions(transcript: string): YiiyaAction[] {
     return [{ type: "PUBLISH", payload: {} } as YiiyaAction];
   }
 
+  if (text.includes("redo")) {
+    return [{ type: "REDO", payload: {} } as YiiyaAction];
+  }
+
   if (text.includes("undo")) {
     return [{ type: "UNDO", payload: {} } as YiiyaAction];
   }
@@ -451,6 +455,15 @@ export async function classifyIntent(transcript: string): Promise<IntentType> {
     ["color", "colour", "font", "spacing", "bigger", "smaller", "center", "align"].some(
       (term) => normalizedTranscript.includes(term)
     )
+  ) {
+    return "STYLE";
+  }
+
+  if (
+    /\b(?:change|rename|set)\s+(?:the\s+)?(?:project\s+)?name\s+(?:to|as)\s+/i.test(
+      transcript
+    ) ||
+    /\bcall\s+(?:it|this|the project)\s+/i.test(transcript)
   ) {
     return "STYLE";
   }
@@ -564,6 +577,23 @@ async function runArchitect(body: InterpretRequestBody, researchBrief: ResearchB
 }
 
 async function runStyle(body: InterpretRequestBody) {
+  const direct = compileLocalYiiyaIntent(body);
+
+  if (
+    direct.length > 0 &&
+    direct.every((action) =>
+      [
+        "SET_PROJECT_NAME",
+        "MODIFY_ELEMENT",
+        "CHANGE_THEME",
+        "SET_GLOBAL_THEME",
+        "ADJUST_DENSITY"
+      ].includes(action.type)
+    )
+  ) {
+    return direct;
+  }
+
   const text = await callAnthropic(
     STYLE_PROMPT,
     buildContext(body, null),

@@ -85,6 +85,27 @@ function inferBrandSubject(text: string) {
   return "New Venture";
 }
 
+function inferRequestedName(rawTranscript: string) {
+  const patterns = [
+    /\b(?:change|rename|set)\s+(?:the\s+)?(?:project\s+)?name\s+(?:to|as)\s+(.+)$/i,
+    /\bcall\s+(?:it|this|the project)\s+(.+)$/i,
+    /\bmake\s+(?:the\s+)?(?:brand|company|project)\s+(?:name\s+)?(.+)$/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = rawTranscript.match(pattern)?.[1]?.trim();
+
+    if (match) {
+      return match
+        .replace(/[.!?]+$/g, "")
+        .replace(/^["']|["']$/g, "")
+        .trim();
+    }
+  }
+
+  return null;
+}
+
 function sectionContent(sectionType: string, subject: string) {
   if (sectionType === "NAVBAR") {
     return {
@@ -453,14 +474,46 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const text = input.transcript.toLowerCase();
   const actions: LocalAction[] = [];
   const subject = inferBrandSubject(text);
+  const requestedName = inferRequestedName(input.transcript);
   const theme = themeFromVibe(text);
   const modifications = compileElementModification(input, text);
+
+  if (requestedName) {
+    actions.push({
+      type: "SET_PROJECT_NAME",
+      payload: { projectName: titleCase(requestedName) }
+    });
+
+    if (input.activeElementId) {
+      actions.push({
+        type: "MODIFY_ELEMENT",
+        payload: {
+          elementId: input.activeElementId,
+          property: "content",
+          value: titleCase(requestedName),
+          mode: "replace"
+        }
+      });
+    }
+
+    return actions;
+  }
 
   if (Object.keys(theme).length > 0) {
     actions.push({
       type: "SET_GLOBAL_THEME",
       payload: compactThemePayload(theme)
     });
+  }
+
+  if (hasAny(text, ["redo", "redo that", "bring it back"])) {
+    actions.push({ type: "REDO", payload: {} });
+    return actions;
+  }
+
+  if (hasAny(text, ["undo", "undo that", "go back"])) {
+    actions.push({ type: "UNDO", payload: {} });
+    return actions;
   }
 
   if (input.referenceImage && hasAny(text, ["reference", "image", "screenshot", "palette"])) {

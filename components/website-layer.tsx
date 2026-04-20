@@ -1768,7 +1768,7 @@ export function WebsiteLayer() {
       ) : (
         <div
           data-yiiya-publish-root
-          className="pointer-events-auto mx-auto min-h-full w-full max-w-5xl overflow-hidden rounded-[18px] border border-white/10 bg-white/5"
+          className="pointer-events-auto mx-auto min-h-full w-full max-w-none overflow-hidden border-y border-white/10 bg-[#050505]/72 backdrop-blur-[1px]"
           onClick={() => setSelectedElementId(null)}
           onMouseDown={(event) => {
             if (!closestYiiyaElement(event.target as Element)) {

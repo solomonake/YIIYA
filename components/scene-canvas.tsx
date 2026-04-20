@@ -138,7 +138,7 @@ function LoadedMeshObject({
   );
 }
 
-function DefaultBlob() {
+function DefaultBlob({ subdued }: { subdued: boolean }) {
   const meshRef = useRef<Mesh>(null);
   const materialRef = useRef<ElementRef<typeof MeshDistortMaterial>>(null);
   const blobState = useYiiyaStore((state) => state.blobState);
@@ -172,7 +172,13 @@ function DefaultBlob() {
   const materialPreset = materialPresets[blobState.material] ?? materialPresets.carbon;
 
   return (
-    <mesh ref={meshRef} scale={scale as [number, number, number]}>
+    <mesh
+      ref={meshRef}
+      position={subdued ? [2.25, 0.25, -1.4] : [0, 0, 0]}
+      scale={(subdued
+        ? scale.map((value) => value * 0.62)
+        : scale) as [number, number, number]}
+    >
       <sphereGeometry args={[1.2, 64, 64]} />
       <MeshDistortMaterial
         ref={materialRef}
@@ -181,6 +187,8 @@ function DefaultBlob() {
         speed={0}
         roughness={typeof materialPreset.roughness === "number" ? materialPreset.roughness : 0.1}
         metalness={typeof materialPreset.metalness === "number" ? materialPreset.metalness : 0.4}
+        transparent
+        opacity={subdued ? 0.42 : 1}
       />
     </mesh>
   );
@@ -188,10 +196,12 @@ function DefaultBlob() {
 
 function StarterScene({
   objects,
-  anchors
+  anchors,
+  subduedBlob
 }: {
   objects: SceneObject[];
   anchors: SpatialAnchor[];
+  subduedBlob: boolean;
 }) {
   const anchorMap = useMemo(
     () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
@@ -201,7 +211,7 @@ function StarterScene({
   return (
     <>
       {objects.length === 0 ? (
-        <DefaultBlob />
+        <DefaultBlob subdued={subduedBlob} />
       ) : null}
 
       {objects.map((object) =>
@@ -241,6 +251,7 @@ export function SceneCanvas() {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
+  const hasSections = useYiiyaStore((state) => state.sections.length > 0);
 
   useEffect(() => {
     window.dispatchEvent(new Event("resize"));
@@ -248,13 +259,13 @@ export function SceneCanvas() {
 
   return (
     <div
-      className="absolute inset-0 z-20 transition-opacity"
+      className="absolute inset-0 z-0 transition-opacity"
       style={{
         position: "absolute",
         inset: 0,
         width: "100%",
         height: "100%",
-        opacity: canvasMode === "WEB" ? 0 : 1,
+        opacity: canvasMode === "WEB" ? 0 : canvasMode === "HYBRID" ? 0.48 : 1,
         pointerEvents: canvasMode === "3D" ? "auto" : "none"
       }}
     >
@@ -275,7 +286,11 @@ export function SceneCanvas() {
         <ambientLight intensity={0.9} />
         <directionalLight position={[3, 4, 5]} intensity={2.2} color="#fff6df" />
         <pointLight position={[-3, 2.4, 3]} intensity={1.4} color="#EF9F27" />
-        <StarterScene objects={sceneObjects} anchors={spatialAnchors} />
+        <StarterScene
+          objects={sceneObjects}
+          anchors={spatialAnchors}
+          subduedBlob={canvasMode === "HYBRID" && hasSections}
+        />
         <OrbitControls
           enabled={canvasMode === "3D"}
           enablePan={false}

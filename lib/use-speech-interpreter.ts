@@ -499,7 +499,16 @@ export function useSpeechInterpreter() {
       if (event.code !== "Space" || event.repeat || isTextInputTarget(event.target)) {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
           event.preventDefault();
-          useYiiyaStore.getState().popUndo();
+          if (event.shiftKey) {
+            useYiiyaStore.getState().popRedo();
+          } else {
+            useYiiyaStore.getState().popUndo();
+          }
+        }
+
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "y") {
+          event.preventDefault();
+          useYiiyaStore.getState().popRedo();
         }
         return;
       }

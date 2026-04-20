@@ -212,6 +212,10 @@ export type YiiyaAction =
       };
     }
   | {
+      type: "SET_PROJECT_NAME";
+      payload: { projectName: unknown };
+    }
+  | {
       type: "CHANGE_THEME";
       payload: { property: unknown; value: unknown };
     }
@@ -255,6 +259,10 @@ export type YiiyaAction =
   | {
       type: "UNDO";
       payload: Record<string, never>;
+    }
+  | {
+      type: "REDO";
+      payload: Record<string, never>;
     };
 
 export type CanvasMode = "WEB" | "3D" | "HYBRID";
@@ -277,10 +285,13 @@ export type SavedProjectState = {
 };
 
 type UndoSnapshot = {
+  projectName: string;
   sections: YiiyaSection[];
   sceneObjects: SceneObject[];
   layers: Layer[];
   themeState: YiiyaTheme;
+  blobState: BlobState;
+  spatialAnchors: SpatialAnchor[];
 };
 
 type YiiyaState = {
@@ -313,8 +324,10 @@ type YiiyaState = {
   logs: LogEntry[];
   conversationHistory: YiiyaMessage[];
   undoStack: UndoSnapshot[];
+  redoStack: UndoSnapshot[];
   setCurrentProjectId: (currentProjectId: string) => void;
   setProjectName: (projectName: string) => void;
+  renameProject: (projectName: string) => void;
   setGuest: (isGuest: boolean) => void;
   setPro: (isPro: boolean) => void;
   setCanvasMode: (canvasMode: CanvasMode) => void;
@@ -338,6 +351,7 @@ type YiiyaState = {
     theme?: unknown;
     content?: unknown;
   }) => YiiyaSection;
+  removeSection: (sectionId: string) => void;
   addSceneObject: (object: {
     shape?: unknown;
     material?: unknown;
@@ -357,6 +371,8 @@ type YiiyaState = {
   ) => void;
   removeSceneObject: (objectId: string) => void;
   popUndo: () => void;
+  popRedo: () => void;
+  updateElementContent: (elementId: string, value: string) => void;
   addLog: (label: string) => void;
   addActionLogs: (actions: YiiyaAction[]) => void;
   addMessage: (message: YiiyaMessage) => void;
@@ -377,12 +393,102 @@ function pushUndoSnapshot(state: YiiyaState) {
   return [
     ...state.undoStack,
     {
+      projectName: state.projectName,
       sections: state.sections,
       sceneObjects: state.sceneObjects,
       layers: state.layers,
-      themeState: state.themeState
+      themeState: state.themeState,
+      blobState: state.blobState,
+      spatialAnchors: state.spatialAnchors
     }
   ].slice(-20);
+}
+
+function snapshotFromState(state: YiiyaState): UndoSnapshot {
+  return {
+    projectName: state.projectName,
+    sections: state.sections,
+    sceneObjects: state.sceneObjects,
+    layers: state.layers,
+    themeState: state.themeState,
+    blobState: state.blobState,
+    spatialAnchors: state.spatialAnchors
+  };
+}
+
+function replaceKnownBrandValues(
+  content: SectionContent,
+  oldName: string,
+  nextName: string,
+  forceKeys: string[] = []
+) {
+  const nextContent: SectionContent = {};
+
+  for (const [key, value] of Object.entries(content)) {
+    if (typeof value === "string") {
+      nextContent[key] =
+        forceKeys.includes(key) || value.includes(oldName)
+          ? value.replaceAll(oldName, nextName)
+          : value;
+    } else {
+      nextContent[key] = value;
+    }
+  }
+
+  for (const key of forceKeys) {
+    if (typeof nextContent[key] !== "string") {
+      nextContent[key] = nextName;
+    }
+  }
+
+  return nextContent;
+}
+
+function contentKeyFromElementId(elementId: string) {
+  if (elementId.includes("brand")) {
+    return "brand";
+  }
+
+  if (elementId.includes("title") || elementId.includes("heading")) {
+    return "heading";
+  }
+
+  if (elementId.includes("subtext") || elementId.includes("description")) {
+    return "subtext";
+  }
+
+  if (elementId.includes("cta") || elementId.includes("submit")) {
+    return "cta";
+  }
+
+  if (elementId.includes("quote")) {
+    return "quote";
+  }
+
+  if (elementId.includes("name")) {
+    return "name";
+  }
+
+  if (elementId.includes("role")) {
+    return "role";
+  }
+
+  if (elementId.includes("price")) {
+    return "price";
+  }
+
+  if (elementId.includes("label")) {
+    return "label";
+  }
+
+  return null;
+}
+
+function sectionIndexFromElementId(elementId: string) {
+  const match = elementId.match(/-(\d+)(?:-\d+)?$/);
+  const parsed = match ? Number.parseInt(match[1], 10) : Number.NaN;
+
+  return Number.isFinite(parsed) ? parsed - 1 : -1;
 }
 
 function createProjectId() {
@@ -518,6 +624,14 @@ function describeAction(action: YiiyaAction) {
 
   if (action.type === "UNDO") {
     return "[EXECUTE]: Reverting last change.";
+  }
+
+  if (action.type === "REDO") {
+    return "[EXECUTE]: Reapplying reverted change.";
+  }
+
+  if (action.type === "SET_PROJECT_NAME") {
+    return `[EXECUTE]: Renaming project to ${String(action.payload.projectName)}.`;
   }
 
   return "[EXECUTE]: Generating public artifact.";
@@ -681,8 +795,55 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   logs: initialLogs,
   conversationHistory: [],
   undoStack: [],
+  redoStack: [],
   setCurrentProjectId: (currentProjectId) => set({ currentProjectId }),
   setProjectName: (projectName) => set({ projectName }),
+  renameProject: (projectName) =>
+    set((state) => {
+      const nextName = projectName.trim() || defaultProjectName;
+      const oldName = state.projectName;
+
+      return {
+        undoStack: pushUndoSnapshot(state),
+        redoStack: [],
+        projectName: nextName,
+        sections: state.sections.map((section) => {
+          if (section.sectionType === "NAVBAR") {
+            return {
+              ...section,
+              content: replaceKnownBrandValues(section.content, oldName, nextName, [
+                "brand"
+              ])
+            };
+          }
+
+          if (section.sectionType === "HERO") {
+            return {
+              ...section,
+              content: replaceKnownBrandValues(section.content, oldName, nextName, [
+                "heading",
+                "title"
+              ])
+            };
+          }
+
+          if (section.sectionType === "FOOTER") {
+            return {
+              ...section,
+              content: replaceKnownBrandValues(section.content, oldName, nextName, [
+                "brand"
+              ])
+            };
+          }
+
+          return {
+            ...section,
+            content: replaceKnownBrandValues(section.content, oldName, nextName)
+          };
+        }),
+        logs: [...state.logs, createLog(`[CONTEXT]: Project renamed to ${nextName}.`)].slice(-40)
+      };
+    }),
   setGuest: (isGuest) => set({ isGuest }),
   setPro: (isPro) => set({ isPro }),
   setCanvasMode: (canvasMode) => set({ canvasMode }),
@@ -705,6 +866,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     }),
   setThemeState: (themeState) =>
     set((state) => ({
+      undoStack: pushUndoSnapshot(state),
+      redoStack: [],
       themeState: mergeYiiyaTheme(state.themeState, themeState)
     })),
   addSection: (section) => {
@@ -720,6 +883,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
 
     set((state) => ({
       undoStack: pushUndoSnapshot(state),
+      redoStack: [],
       sections: [...state.sections, nextSection],
       layers: [
         ...state.layers,
@@ -733,6 +897,16 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
 
     return nextSection;
   },
+  removeSection: (sectionId) =>
+    set((state) => ({
+      undoStack: pushUndoSnapshot(state),
+      redoStack: [],
+      sections: state.sections.filter((section) => section.id !== sectionId),
+      layers: state.layers.filter((layer) => layer.id !== sectionId),
+      selectedElementId: null,
+      selectedElements: [],
+      logs: [...state.logs, createLog(`[CONTEXT]: Removed section ${sectionId}.`)].slice(-40)
+    })),
   addSceneObject: (object) => {
     const id = `object-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextObject: SceneObject = {
@@ -752,6 +926,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
 
     set((state) => ({
       undoStack: pushUndoSnapshot(state),
+      redoStack: [],
       sceneObjects: [...state.sceneObjects, nextObject],
       layers: [
         ...state.layers,
@@ -802,6 +977,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
 
       return {
         undoStack: pushUndoSnapshot(state),
+        redoStack: [],
         sceneObjects: state.sceneObjects.map((object) =>
           object.id === targetId
             ? {
@@ -833,6 +1009,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
 
       return {
         undoStack: pushUndoSnapshot(state),
+        redoStack: [],
         sceneObjects,
         layers: state.layers.filter((layer) =>
           objectId === "*" ? layer.type !== "mesh" : layer.id !== targetId
@@ -850,15 +1027,70 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       }
 
       return {
+        projectName: snapshot.projectName,
         sections: snapshot.sections,
         sceneObjects: snapshot.sceneObjects,
         layers: snapshot.layers,
         themeState: snapshot.themeState,
+        blobState: snapshot.blobState,
+        spatialAnchors: snapshot.spatialAnchors,
         selectedElementId: null,
         selectedElements: [],
         hoveredElementId: null,
+        redoStack: [...state.redoStack, snapshotFromState(state)].slice(-20),
         undoStack: state.undoStack.slice(0, -1),
         logs: [...state.logs, createLog("[SYSTEM]: Undo restored previous state.")].slice(-40)
+      };
+    }),
+  popRedo: () =>
+    set((state) => {
+      const snapshot = state.redoStack[state.redoStack.length - 1];
+
+      if (!snapshot) {
+        return {
+          logs: [...state.logs, createLog("[SYSTEM]: Nothing to redo.")].slice(-40)
+        };
+      }
+
+      return {
+        projectName: snapshot.projectName,
+        sections: snapshot.sections,
+        sceneObjects: snapshot.sceneObjects,
+        layers: snapshot.layers,
+        themeState: snapshot.themeState,
+        blobState: snapshot.blobState,
+        spatialAnchors: snapshot.spatialAnchors,
+        selectedElementId: null,
+        selectedElements: [],
+        hoveredElementId: null,
+        undoStack: [...state.undoStack, snapshotFromState(state)].slice(-20),
+        redoStack: state.redoStack.slice(0, -1),
+        logs: [...state.logs, createLog("[SYSTEM]: Redo restored next state.")].slice(-40)
+      };
+    }),
+  updateElementContent: (elementId, value) =>
+    set((state) => {
+      const sectionIndex = sectionIndexFromElementId(elementId);
+      const key = contentKeyFromElementId(elementId);
+
+      if (sectionIndex < 0 || !key) {
+        return state;
+      }
+
+      return {
+        undoStack: pushUndoSnapshot(state),
+        redoStack: [],
+        sections: state.sections.map((section, index) =>
+          index === sectionIndex
+            ? {
+                ...section,
+                content: {
+                  ...section.content,
+                  [key]: value
+                }
+              }
+            : section
+        )
       };
     }),
   addLog: (label) =>
@@ -921,7 +1153,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         themeState: mergeYiiyaTheme(defaultYiiyaTheme, theme ?? {}),
         logs: project.logLabel
           ? [...state.logs, createLog(project.logLabel)].slice(-40)
-          : state.logs
+          : state.logs,
+        undoStack: [],
+        redoStack: []
       };
     }),
   resetProject: () =>
@@ -957,7 +1191,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       layers: [],
       logs: [...state.logs, createLog("SYSTEM: New project initialized.")].slice(-40),
       conversationHistory: [],
-      undoStack: []
+      undoStack: [],
+      redoStack: []
     })),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed }))

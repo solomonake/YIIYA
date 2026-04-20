@@ -10,6 +10,7 @@ import { ProjectDrawer } from "@/components/project-drawer";
 import { useYiiyaStore } from "@/lib/store";
 import { RightSidebar } from "@/components/right-sidebar";
 import { ReferenceImageDropzone } from "@/components/reference-image-dropzone";
+import { SpatialControlPanel } from "@/components/spatial-control-panel";
 import { Toast } from "@/components/toast";
 import { VoiceBar } from "@/components/voice-bar";
 import { WebsiteLayer } from "@/components/website-layer";
@@ -196,6 +197,7 @@ export function YiiyaWorkspace() {
             <WebsiteLayer />
           </Suspense>
           <CanvasModeToggle />
+          <SpatialControlPanel />
           <VoiceBar />
         </div>
         <RightSidebar />
