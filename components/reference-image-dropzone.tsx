@@ -277,6 +277,7 @@ export function ReferenceImageDropzone() {
     referenceImage: ReferenceImage,
     imageMode: "web" | "3d"
   ) => {
+    const { previewUrl: _previewUrl, ...serverReferenceImage } = referenceImage;
     const transcript =
       imageMode === "web"
         ? "Generate a full landing page inspired by this reference image."
@@ -291,7 +292,7 @@ export function ReferenceImageDropzone() {
         currentScene: currentCanvasJson,
         current_canvas_json: currentCanvasJson,
         history: useYiiyaStore.getState().conversationHistory.slice(-5),
-        referenceImage: { ...referenceImage, imageMode },
+        referenceImage: { ...serverReferenceImage, imageMode },
         image_mode: imageMode
       })
     });
@@ -332,6 +333,7 @@ export function ReferenceImageDropzone() {
       base64: referenceImage.base64,
       mediaType: referenceImage.mediaType,
       name: referenceImage.name,
+      previewUrl: referenceImage.dataUrl,
       ...extractedPalette,
       imageMode: mode === "3D" ? "3d" : mode === "WEB" ? "web" : "hybrid"
     };

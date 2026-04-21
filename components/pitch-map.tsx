@@ -9,7 +9,7 @@ import {
   type NodeMouseHandler
 } from "@xyflow/react";
 import { type FormEvent, useMemo, useState } from "react";
-import { useYiiyaStore } from "@/lib/store";
+import { useYiiyaStore, type YiiyaSection } from "@/lib/store";
 
 type PitchNodeData = {
   label: string;
@@ -57,6 +57,66 @@ function primaryElementId(sectionType: string, index: number) {
   return `${lower}-title-${index}`;
 }
 
+function strategyNodes(projectName: string, sections: YiiyaSection[]) {
+  const hero = sections.find((section) => section.sectionType === "HERO");
+  const offer = sections.find((section) =>
+    ["SERVICES", "FEATURES", "PRICING"].includes(section.sectionType)
+  );
+  const proof = sections.find((section) =>
+    ["TESTIMONIALS", "METRICS", "LOGO_STRIP"].includes(section.sectionType)
+  );
+  const contact = sections.find((section) => section.sectionType === "CONTACT");
+  const editableData = (section?: YiiyaSection) =>
+    section
+      ? {
+          sectionId: section.id,
+          elementId: primaryElementId(section.sectionType, sections.indexOf(section) + 1)
+        }
+      : undefined;
+
+  return [
+    node("audience", "Audience", `Who ${projectName} must win in the first scan`, 20, 70),
+    node(
+      "offer",
+      "Offer",
+      String(offer?.content.heading ?? offer?.content.title ?? "Make the main promise concrete"),
+      260,
+      70,
+      editableData(offer)
+    ),
+    node(
+      "proof",
+      "Proof",
+      String(proof?.content.heading ?? proof?.content.title ?? "Add trust, numbers, or customer evidence"),
+      500,
+      70,
+      editableData(proof)
+    ),
+    node(
+      "cta",
+      "CTA",
+      String(contact?.content.heading ?? hero?.content.cta ?? "Give the visitor one obvious next step"),
+      740,
+      70,
+      editableData(contact)
+    ),
+    node(
+      "objections",
+      "Objections",
+      "Answer price, trust, timeline, and fit before hesitation starts",
+      380,
+      245
+    ),
+    node(
+      "growth",
+      "First 3 growth moves",
+      "Capture demand, retarget interest, and publish proof every week",
+      620,
+      245
+    )
+  ];
+}
+
 export function PitchMap({
   open,
   onClose
@@ -87,43 +147,40 @@ export function PitchMap({
       return node(
         section.id,
         `${section.sectionType}: ${label}`,
-        "Click to select and edit this canvas moment",
-        280 + index * 230,
-        index % 2 === 0 ? 80 : 235,
+        "Editable canvas section",
+        90 + index * 220,
+        420 + (index % 2) * 115,
         {
           sectionId: section.id,
           elementId: primaryElementId(section.sectionType, number)
         }
       );
     });
-    const journeyNodes = [
-      node("visitor", "Visitor Intent", "What the founder needs the page to catch", 20, 150),
-      node(
-        "cta",
-        "Conversion Moment",
-        "Main action should be obvious in first scan",
-        280 + sectionNodes.length * 230,
-        150
-      ),
-      node(
-        "roadmap",
-        "Scale Roadmap",
-        "Content, ads, proof: first three growth moves",
-        540 + sectionNodes.length * 230,
-        150
-      )
-    ];
-    const allNodes = [journeyNodes[0], ...sectionNodes, journeyNodes[1], journeyNodes[2]];
-    const allEdges: Edge[] = allNodes.slice(0, -1).map((current, index) => ({
-      id: `${current.id}-${allNodes[index + 1].id}`,
-      source: current.id,
-      target: allNodes[index + 1].id,
+    const strategy = strategyNodes(projectName, sections);
+    const allEdges: Edge[] = [
+      ["audience", "offer"],
+      ["offer", "proof"],
+      ["proof", "cta"],
+      ["offer", "objections"],
+      ["objections", "cta"],
+      ["cta", "growth"]
+    ].map(([source, target]) => ({
+      id: `${source}-${target}`,
+      source,
+      target,
       animated: true,
       style: { stroke: "#EF9F27" }
     }));
+    const sectionEdges: Edge[] = sectionNodes.slice(0, -1).map((current, index) => ({
+      id: `${current.id}-${sectionNodes[index + 1].id}`,
+      source: current.id,
+      target: sectionNodes[index + 1].id,
+      animated: false,
+      style: { stroke: "rgba(237,237,237,0.2)" }
+    }));
 
-    return { nodes: allNodes, edges: allEdges };
-  }, [sections]);
+    return { nodes: [...strategy, ...sectionNodes], edges: [...allEdges, ...sectionEdges] };
+  }, [projectName, sections]);
 
   const handleNodeClick: NodeMouseHandler<Node<PitchNodeData>> = (_event, clickedNode) => {
     setActiveNode(clickedNode);
@@ -160,7 +217,7 @@ export function PitchMap({
               Pitch Map
             </h2>
             <p className="mt-1 text-[11px] text-white/42">
-              Select sections, edit the story, and keep outputs specific.
+              Audience, offer, proof, CTA, objections, and first growth moves.
             </p>
           </div>
           <button
@@ -174,7 +231,7 @@ export function PitchMap({
         <div className="h-[calc(100%-56px)] border border-terminalBorder bg-[#050505]">
           {sections.length === 0 ? (
             <div className="grid h-full place-items-center text-xs text-white/38">
-              Generate a page to build the founder journey.
+              Generate a page to build the founder strategy.
             </div>
           ) : (
             <ReactFlow
@@ -228,9 +285,9 @@ export function PitchMap({
           </form>
         ) : (
           <div className="mt-4 grid gap-3 text-[11px] leading-relaxed text-white/42">
-            <p>Click a section node to select its canvas text.</p>
-            <p>Use this map to keep the page specific: offer, proof, CTA, objections.</p>
-            <p>Voice edits still work after selection.</p>
+            <p>Click any section node to select and edit its canvas text.</p>
+            <p>Use strategy nodes to check buyer, offer, proof, CTA, objection handling, and growth path.</p>
+            <p>Voice edits still work after selection: say “make this sharper” or “change this to Coca.”</p>
           </div>
         )}
       </section>

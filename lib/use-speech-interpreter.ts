@@ -114,6 +114,16 @@ function summarizeActions(actions: YiiyaAction[]) {
   const objectCount = actions.filter(
     (action) => action.type === "ADD_3D_OBJECT" || action.type === "ADD_SPATIAL_OBJECT"
   ).length;
+  const moldCount = actions.filter(
+    (action) =>
+      action.type === "MOLD_BLOB" ||
+      action.type === "MORPH_BLOB" ||
+      action.type === "SET_BLOB_FORMATION" ||
+      action.type === "SET_MATERIAL" ||
+      action.type === "MOVE_OBJECT" ||
+      action.type === "SET_OBJECT_TRANSFORM" ||
+      action.type === "SET_OBJECT_ANIMATION"
+  ).length;
   const editCount = actions.filter((action) => action.type === "MODIFY_ELEMENT").length;
 
   if (sectionCount > 0 && objectCount > 0) {
@@ -126,6 +136,10 @@ function summarizeActions(actions: YiiyaAction[]) {
 
   if (objectCount > 0) {
     return `Added ${objectCount} 3D object(s).`;
+  }
+
+  if (moldCount > 0) {
+    return `Molded ${moldCount} spatial parameter(s).`;
   }
 
   if (editCount > 0) {
@@ -173,6 +187,14 @@ async function interpretTranscript(
     themeState: state.themeState,
     layers: state.layers
   };
+  const referenceImage = state.referenceImage
+    ? (() => {
+        const { previewUrl: _previewUrl, ...serverReferenceImage } =
+          state.referenceImage;
+
+        return serverReferenceImage;
+      })()
+    : null;
 
   const requestPayload = {
     transcript,
@@ -180,7 +202,7 @@ async function interpretTranscript(
     currentScene: currentCanvasJson,
     current_canvas_json: currentCanvasJson,
     history: history.slice(-5),
-    referenceImage: state.referenceImage,
+    referenceImage,
     strategyMode: state.strategyMode,
     partial
   };

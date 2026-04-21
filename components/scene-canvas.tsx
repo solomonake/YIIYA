@@ -11,7 +11,7 @@ import {
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import type { ElementRef } from "react";
-import type { Group, Mesh } from "three";
+import type { Group, Mesh, Points } from "three";
 import { materialPresets } from "@/lib/materials";
 import { useYiiyaStore, type SceneObject, type SpatialAnchor } from "@/lib/store";
 
@@ -140,14 +140,102 @@ function LoadedMeshObject({
 
 function DefaultBlob({ subdued }: { subdued: boolean }) {
   const meshRef = useRef<Mesh>(null);
+  const pointsRef = useRef<Points>(null);
   const materialRef = useRef<ElementRef<typeof MeshDistortMaterial>>(null);
   const blobState = useYiiyaStore((state) => state.blobState);
   const currentDistortRef = useRef(0.5);
   const currentSpeedRef = useRef(1.8);
+  const particles = useMemo(() => {
+    const count = Math.floor(Math.max(1000, Math.min(22000, blobState.particleDensity)));
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const golden = Math.PI * (3 - Math.sqrt(5));
+
+    for (let index = 0; index < count; index += 1) {
+      const t = count <= 1 ? 0 : index / (count - 1);
+      let x = 0;
+      let y = 0;
+      let z = 0;
+
+      if (blobState.formation === "helix") {
+        const angle = index * 0.16;
+        const radius = 0.72 + Math.sin(t * Math.PI * 6) * 0.08;
+        x = Math.cos(angle) * radius;
+        z = Math.sin(angle) * radius;
+        y = (t - 0.5) * 2.8;
+      } else if (blobState.formation === "torus") {
+        const angle = index * golden;
+        const ring = Math.floor(index / Math.max(1, Math.sqrt(count)));
+        const tubeAngle = ring * 0.27;
+        const major = 0.92;
+        const minor = 0.22;
+        x = (major + minor * Math.cos(tubeAngle)) * Math.cos(angle);
+        z = (major + minor * Math.cos(tubeAngle)) * Math.sin(angle);
+        y = minor * Math.sin(tubeAngle);
+      } else if (blobState.formation === "bottle") {
+        const angle = index * golden;
+        const height = (t - 0.5) * 2.7;
+        const neck = t > 0.68 ? 0.34 : 0.72;
+        const shoulder = t > 0.58 && t <= 0.68 ? 0.72 - (t - 0.58) * 3.8 : neck;
+        const radius = Math.max(0.22, shoulder + Math.sin(t * Math.PI) * 0.1);
+        x = Math.cos(angle) * radius;
+        z = Math.sin(angle) * radius;
+        y = height;
+      } else if (blobState.formation === "capsule") {
+        const angle = index * golden;
+        const radius = 0.48 + Math.sin(t * Math.PI) * 0.16;
+        x = Math.cos(angle) * radius;
+        z = Math.sin(angle) * radius;
+        y = (t - 0.5) * 2.2;
+      } else if (blobState.formation === "cube") {
+        const side = Math.ceil(Math.cbrt(count));
+        const xi = (index % side) / side - 0.5;
+        const yi = (Math.floor(index / side) % side) / side - 0.5;
+        const zi = (Math.floor(index / (side * side)) % side) / side - 0.5;
+        x = xi * 1.8;
+        y = yi * 1.8;
+        z = zi * 1.8;
+      } else if (blobState.formation === "wave") {
+        const cols = Math.ceil(Math.sqrt(count));
+        x = ((index % cols) / cols - 0.5) * 2.8;
+        z = (Math.floor(index / cols) / cols - 0.5) * 2.2;
+        y = Math.sin(x * 4 + z * 2) * 0.28;
+      } else {
+        const yPos = 1 - 2 * t;
+        const radius = Math.sqrt(Math.max(0, 1 - yPos * yPos));
+        const theta = golden * index;
+        x = Math.cos(theta) * radius;
+        y = yPos;
+        z = Math.sin(theta) * radius;
+      }
+
+      const chaos = blobState.chaos * 0.12;
+      positions[index * 3] = x + Math.sin(index * 12.9898) * chaos;
+      positions[index * 3 + 1] = y * Math.max(0.55, blobState.aspectRatio) + Math.cos(index * 4.1414) * chaos;
+      positions[index * 3 + 2] = z + Math.sin(index * 7.777) * chaos;
+      colors[index * 3] = 0.8 + t * 0.2;
+      colors[index * 3 + 1] = 0.42 + (1 - t) * 0.34;
+      colors[index * 3 + 2] = 0.12 + blobState.glow * 0.24;
+    }
+
+    return { positions, colors };
+  }, [
+    blobState.aspectRatio,
+    blobState.chaos,
+    blobState.formation,
+    blobState.glow,
+    blobState.particleDensity
+  ]);
 
   useFrame((_state, delta) => {
     if (meshRef.current) {
       meshRef.current.rotation.y += 0.003;
+      meshRef.current.rotation.z = Math.sin(_state.clock.elapsedTime * 0.35) * blobState.twist * 0.08;
+    }
+
+    if (pointsRef.current) {
+      pointsRef.current.rotation.y += 0.0018 + blobState.speed * 0.0008;
+      pointsRef.current.rotation.z = Math.sin(_state.clock.elapsedTime * 0.24) * blobState.twist * 0.08;
     }
 
     currentDistortRef.current += (blobState.distort - currentDistortRef.current) * 0.18;
@@ -168,29 +256,50 @@ function DefaultBlob({ subdued }: { subdued: boolean }) {
           ? [0.86, 1.35, 0.86]
           : blobState.targetShape === "organic"
             ? [1.15, 0.92, 1.05]
+          : blobState.formation === "helix"
+            ? [0.72, 1.45, 0.72]
+            : blobState.formation === "torus"
+              ? [1.1, 0.72, 1.1]
       : [1, 1, 1];
   const materialPreset = materialPresets[blobState.material] ?? materialPresets.carbon;
 
   return (
-    <mesh
-      ref={meshRef}
-      position={subdued ? [2.25, 0.25, -1.4] : [0, 0, 0]}
-      scale={(subdued
-        ? scale.map((value) => value * 0.62)
-        : scale) as [number, number, number]}
-    >
-      <sphereGeometry args={[1.2, 64, 64]} />
-      <MeshDistortMaterial
-        ref={materialRef}
-        color={"color" in materialPreset && typeof materialPreset.color === "string" ? materialPreset.color : "#1a1a1a"}
-        distort={currentDistortRef.current}
-        speed={0}
-        roughness={typeof materialPreset.roughness === "number" ? materialPreset.roughness : 0.1}
-        metalness={typeof materialPreset.metalness === "number" ? materialPreset.metalness : 0.4}
-        transparent
-        opacity={subdued ? 0.42 : 1}
-      />
-    </mesh>
+    <group position={subdued ? [2.35, 0.1, -1.65] : [0, 0, 0]}>
+      <points ref={pointsRef} scale={subdued ? 0.48 : 0.82}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[particles.positions, 3]}
+          />
+          <bufferAttribute attach="attributes-color" args={[particles.colors, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          vertexColors
+          size={subdued ? 0.012 : 0.017}
+          transparent
+          opacity={subdued ? 0.28 : 0.56 + blobState.glow * 0.22}
+          depthWrite={false}
+        />
+      </points>
+      <mesh
+        ref={meshRef}
+        scale={(subdued
+          ? scale.map((value) => value * 0.5)
+          : scale) as [number, number, number]}
+      >
+        <sphereGeometry args={[1.2, 64, 64]} />
+        <MeshDistortMaterial
+          ref={materialRef}
+          color={"color" in materialPreset && typeof materialPreset.color === "string" ? materialPreset.color : "#1a1a1a"}
+          distort={currentDistortRef.current}
+          speed={0}
+          roughness={typeof materialPreset.roughness === "number" ? materialPreset.roughness : 0.1}
+          metalness={typeof materialPreset.metalness === "number" ? materialPreset.metalness : 0.4}
+          transparent
+          opacity={subdued ? 0.22 : Math.min(0.92, 0.5 + blobState.glow * 0.22)}
+        />
+      </mesh>
+    </group>
   );
 }
 

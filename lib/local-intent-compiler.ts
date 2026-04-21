@@ -12,6 +12,17 @@ type LocalCompilerInput = {
     base64: string;
     mediaType: string;
     name: string;
+    previewUrl?: string;
+    dominantColor?: string;
+    accentCandidate?: string;
+    extractedMode?: "dark" | "light";
+    aspectRatio?: number;
+    silhouette?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
     imageMode?: "web" | "3d" | "hybrid";
   } | null;
   image_mode?: "web" | "3d" | "hybrid";
@@ -36,6 +47,13 @@ const colorMap: Record<string, string> = {
   white: "#EDEDED",
   yellow: "#FACC15"
 };
+
+type CreativeArchetype =
+  | "brand-poster"
+  | "service-business"
+  | "creative-portfolio"
+  | "interactive-concept"
+  | "reference-rebuild";
 
 function hasAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(term));
@@ -85,6 +103,142 @@ function inferBrandSubject(text: string) {
   return "New Venture";
 }
 
+function inferCreativeArchetype(text: string, input: LocalCompilerInput): CreativeArchetype {
+  if (input.referenceImage && (input.image_mode === "web" || input.image_mode === "hybrid" || input.referenceImage.imageMode === "web" || input.referenceImage.imageMode === "hybrid")) {
+    return "reference-rebuild";
+  }
+
+  if (
+    hasAny(text, [
+      "interactive",
+      "crazy",
+      "concept",
+      "game",
+      "configurator",
+      "calculator",
+      "playlist",
+      "experience",
+      "microsite"
+    ])
+  ) {
+    return "interactive-concept";
+  }
+
+  if (
+    hasAny(text, [
+      "portfolio",
+      "photography",
+      "studio",
+      "agency",
+      "artist",
+      "designer",
+      "music",
+      "fashion",
+      "architecture"
+    ])
+  ) {
+    return "creative-portfolio";
+  }
+
+  if (
+    hasAny(text, [
+      "plumbing",
+      "dental",
+      "law",
+      "restaurant",
+      "cafe",
+      "salon",
+      "gym",
+      "real estate",
+      "service",
+      "contractor"
+    ])
+  ) {
+    return "service-business";
+  }
+
+  return "brand-poster";
+}
+
+function cityFromText(text: string) {
+  const match = text.match(/\bin\s+([a-z\s]{3,28})$/i)?.[1]?.trim();
+
+  return match ? titleCase(match) : "a major city";
+}
+
+function inferIndustry(text: string) {
+  const industries = [
+    "luxury watch",
+    "watch",
+    "plumbing",
+    "restaurant",
+    "photography",
+    "studio",
+    "agency",
+    "fashion",
+    "architecture",
+    "music",
+    "dental",
+    "law",
+    "real estate",
+    "salon",
+    "gym",
+    "startup",
+    "portfolio"
+  ];
+
+  return industries.find((industry) => text.includes(industry)) ?? "venture";
+}
+
+function visualToken(input: LocalCompilerInput, text: string) {
+  const reference = input.referenceImage;
+
+  if (reference?.previewUrl) {
+    return {
+      source: "reference-image",
+      imageUrl: reference.previewUrl,
+      crop: reference.aspectRatio && reference.aspectRatio > 1.25 ? "portrait-focus" : "full-bleed",
+      placement: text.includes("split") ? "right" : "background",
+      overlay: reference.extractedMode === "light" ? 0.46 : 0.68,
+      fidelity: "mirror-composition"
+    };
+  }
+
+  if (hasAny(text, ["watch", "product", "bottle", "chair", "fashion"])) {
+    return {
+      source: "generated-product-plane",
+      placement: "right",
+      crop: "hero-object",
+      overlay: 0.5,
+      fidelity: "object-forward"
+    };
+  }
+
+  return {
+    source: "spatial-canvas",
+    placement: "ambient",
+    crop: "wide",
+    overlay: 0.38,
+    fidelity: "brand-atmosphere"
+  };
+}
+
+function designDNA(archetype: CreativeArchetype, text: string, input: LocalCompilerInput) {
+  return {
+    archetype,
+    mood: hasAny(text, ["luxury", "premium", "watch"])
+      ? "quiet luxury"
+      : hasAny(text, ["crazy", "interactive", "experimental"])
+        ? "computational spectacle"
+        : hasAny(text, ["emergency", "service", "plumbing"])
+          ? "urgent trust"
+          : "editorial institutional",
+    density: archetype === "brand-poster" ? "spacious" : "balanced",
+    motion: archetype === "interactive-concept" ? "kinetic spring" : "subtle editorial",
+    referenceFidelity: input.referenceImage ? "high" : "none"
+  };
+}
+
 function inferRequestedName(rawTranscript: string) {
   const patterns = [
     /\b(?:change|rename|set)\s+(?:the\s+)?(?:project\s+)?name\s+(?:to|as)\s+(.+)$/i,
@@ -106,81 +260,141 @@ function inferRequestedName(rawTranscript: string) {
   return null;
 }
 
-function sectionContent(sectionType: string, subject: string) {
+function sectionContent(
+  sectionType: string,
+  subject: string,
+  text: string,
+  archetype: CreativeArchetype,
+  input: LocalCompilerInput
+) {
+  const industry = inferIndustry(text);
+  const city = cityFromText(input.transcript);
+  const visual = visualToken(input, text);
+  const dna = designDNA(archetype, text, input);
+  const isLuxury = hasAny(text, ["luxury", "watch", "premium"]);
+  const isService = archetype === "service-business";
+  const isCreative = archetype === "creative-portfolio";
+
   if (sectionType === "NAVBAR") {
     return {
       brand: subject,
-      links: ["Work", "About", "Contact"],
-      cta: "Start"
+      links: isService ? ["Services", "Proof", "Book"] : ["Work", "Story", "Contact"],
+      cta: isService ? "Book now" : "Start",
+      designDNA: dna
     };
   }
 
   if (sectionType === "HERO") {
     return {
-      heading: subject,
+      heading:
+        isLuxury
+          ? `${subject} in motion`
+          : isService
+            ? `${subject} you can trust today`
+            : isCreative
+              ? `${subject} without the expected frame`
+              : subject,
+      eyebrow:
+        archetype === "reference-rebuild"
+          ? "Reference matched"
+          : isService
+            ? `Serving ${city}`
+            : "Yiiya live canvas",
       subtext:
-        "A sharp, conversion-ready digital presence generated from plain language.",
-      cta: "Start now"
+        isService
+          ? `Clear pricing, fast response, and real proof for ${industry} customers in ${city}.`
+          : isCreative
+            ? "A visual-first digital presence shaped around mood, proof, and a memorable first interaction."
+            : isLuxury
+              ? "A restrained product story with tactile detail, scarcity, and a premium conversion path."
+              : "A sharp digital surface that feels built for the idea, not stamped from a template.",
+      cta: isService ? "Request service" : isLuxury ? "View collection" : "Start now",
+      visual,
+      designDNA: dna
     };
   }
 
   if (sectionType === "ABOUT") {
     return {
-      heading: `Built around ${subject}`,
+      heading: isCreative ? "Direction before decoration" : `Built around ${subject}`,
       subtext:
-        "A focused brand story with clear hierarchy, concise copy, and room for visual direction."
+        isService
+          ? "Every section answers a buyer question: what you do, why it is reliable, how fast they can act, and what happens next."
+          : "The page uses one strong composition, short copy, and a visual rhythm that can keep adapting as the idea gets sharper.",
+      visual,
+      designDNA: dna
     };
   }
 
   if (sectionType === "FEATURES") {
     return {
-      heading: "What stands out",
+      heading:
+        isService
+          ? "Why people choose this"
+          : isCreative
+            ? "Creative system"
+            : "What makes it feel alive",
       features: [
         {
-          heading: "Fast launch",
-          subtext: "Move from rough intent to a usable page in minutes."
+          heading: isService ? "Fast response" : "Reference-aware",
+          subtext: isService
+            ? "The offer makes timing, service area, and next steps obvious."
+            : "Uploaded imagery controls palette, density, and visual direction immediately."
         },
         {
-          heading: "Design system driven",
-          subtext: "Global tokens keep spacing, radius, color, and density aligned."
+          heading: isCreative ? "Editorial rhythm" : "Design system driven",
+          subtext: "Layout, type, spacing, and color stay tokenized so edits remain clean."
         },
         {
-          heading: "Spatial layer",
-          subtext: "Add 3D objects into the same canvas without a separate tool."
+          heading: "Molded 3D",
+          subtext: "Speak objects, materials, and motion into the same canvas."
         }
-      ]
+      ],
+      interaction:
+        archetype === "interactive-concept"
+          ? { type: "configurator", label: "Concept tuner" }
+          : undefined,
+      designDNA: dna
     };
   }
 
   if (sectionType === "SERVICES") {
     return {
-      heading: "Services built for momentum",
+      heading: isService ? "Services people actually search for" : "Services built for momentum",
       services: [
         {
-          heading: "Launch strategy",
-          subtext: "Position the offer, audience, and page structure before build."
+          heading: isService ? "Urgent requests" : "Launch strategy",
+          subtext: isService
+            ? "Same-day priority intake with direct CTA language."
+            : "Position the offer, audience, and page structure before build."
         },
         {
-          heading: "Visual system",
-          subtext: "Translate the brand mood into tokens, sections, and reusable patterns."
+          heading: isService ? "Transparent scope" : "Visual system",
+          subtext: isService
+            ? "Simple service descriptions reduce friction before contact."
+            : "Translate the brand mood into tokens, sections, and reusable patterns."
         },
         {
-          heading: "Conversion page",
-          subtext: "Ship a focused landing page with clear proof and next steps."
+          heading: isService ? "Proof-ready follow up" : "Conversion page",
+          subtext: isService
+            ? "Testimonials, FAQs, and contact fields support real sales calls."
+            : "Ship a focused landing page with clear proof and next steps."
         }
-      ]
+      ],
+      designDNA: dna
     };
   }
 
   if (sectionType === "METRICS") {
     return {
-      heading: "Operating signals",
+      heading: isService ? "Signals that build trust" : "Operating signals",
       metrics: [
-        { value: "2,400+", label: "Projects created" },
-        { value: "18k", label: "Voice edits" },
-        { value: "96%", label: "Faster drafts" },
-        { value: "11", label: "Section types" }
-      ]
+        { value: isService ? "24/7" : "4x", label: isService ? "Response window" : "Faster drafts" },
+        { value: isLuxury ? "42" : "96%", label: isLuxury ? "Limited pieces" : "Clearer first pass" },
+        { value: "3", label: "Primary actions" },
+        { value: "1", label: "Strong visual thesis" }
+      ],
+      designDNA: dna
     };
   }
 
@@ -270,24 +484,41 @@ function sectionContent(sectionType: string, subject: string) {
   if (sectionType === "FOOTER") {
     return {
       brand: subject,
-      subtext: "Built with Yiiya.",
-      links: ["Work", "About", "Services", "Pricing", "Contact"]
+      subtext: isService
+        ? `Built for real ${industry} demand in ${city}.`
+        : "Built with Yiiya.",
+      links: isService
+        ? ["Services", "Reviews", "Coverage", "FAQ", "Book"]
+        : ["Work", "Story", "Services", "Proof", "Contact"],
+      designDNA: dna
     };
   }
 
   return {
-    heading: "Start the conversation",
-    subtext: "Use this section to collect high-intent leads.",
-    cta: "Send request"
+    heading: isService ? "Start with the problem" : "Start the conversation",
+    subtext: isService
+      ? "Tell us what is happening and when you need help. The next step should feel obvious."
+      : "Use this section to turn interest into a real next step.",
+    cta: isService ? "Request help" : "Send request",
+    interaction: { type: isService ? "booking" : "quote-builder" },
+    designDNA: dna
   };
 }
 
-function inferHeroLayoutVariant(text: string) {
+function inferHeroLayoutVariant(text: string, archetype: CreativeArchetype) {
+  if (archetype === "reference-rebuild") {
+    return "EDITORIAL_SPLIT";
+  }
+
+  if (archetype === "interactive-concept") {
+    return "BENTO_GRID";
+  }
+
   if (hasAny(text, ["product", "startup", "data", "dashboard", "bento"])) {
     return "BENTO_GRID";
   }
 
-  if (hasAny(text, ["agency", "portfolio", "professional", "service"])) {
+  if (hasAny(text, ["agency", "portfolio", "professional", "service"]) || archetype === "creative-portfolio") {
     return "EDITORIAL_SPLIT";
   }
 
@@ -302,10 +533,17 @@ function inferFeaturesLayoutVariant(text: string) {
   return "FEATURES_GRID";
 }
 
-function addSection(actions: LocalAction[], sectionType: string, subject: string, text: string) {
+function addSection(
+  actions: LocalAction[],
+  sectionType: string,
+  subject: string,
+  text: string,
+  archetype: CreativeArchetype,
+  input: LocalCompilerInput
+) {
   const layoutVariant =
     sectionType === "HERO"
-      ? inferHeroLayoutVariant(text)
+      ? inferHeroLayoutVariant(text, archetype)
       : sectionType === "FEATURES"
         ? inferFeaturesLayoutVariant(text)
         : undefined;
@@ -316,7 +554,7 @@ function addSection(actions: LocalAction[], sectionType: string, subject: string
       sectionType,
       layoutVariant,
       theme: {},
-      content: sectionContent(sectionType, subject)
+      content: sectionContent(sectionType, subject, text, archetype, input)
     }
   });
 }
@@ -474,6 +712,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const text = input.transcript.toLowerCase();
   const actions: LocalAction[] = [];
   const subject = inferBrandSubject(text);
+  const archetype = inferCreativeArchetype(text, input);
   const requestedName = inferRequestedName(input.transcript);
   const theme = themeFromVibe(text);
   const modifications = compileElementModification(input, text);
@@ -579,6 +818,17 @@ export function compileLocalIntent(input: LocalCompilerInput) {
       "cone",
       "capsule",
       "blob",
+      "mold",
+      "mould",
+      "helix",
+      "donut",
+      "bottle",
+      "taller",
+      "wider",
+      "left",
+      "right",
+      "up",
+      "down",
       "floating"
     ])
   ) {
@@ -596,6 +846,101 @@ export function compileLocalIntent(input: LocalCompilerInput) {
       return actions;
     }
 
+    if (hasAny(text, ["clear the mold", "clear mold", "reset mold"])) {
+      actions.push({
+        type: "REMOVE_OBJECT",
+        payload: { objectId: "*" }
+      });
+      actions.push({
+        type: "MOLD_BLOB",
+        payload: {
+          targetShape: "sphere",
+          formation: "sphere",
+          material: "carbon",
+          distort: 0.5,
+          speed: 1.8,
+          glow: 0.35,
+          chaos: 0.22,
+          twist: 0
+        }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["move it left", "move left", "shift left"])) {
+      actions.push({
+        type: "MOVE_OBJECT",
+        payload: { objectId: "latest", delta: [-0.45, 0, 0] }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["move it right", "move right", "shift right"])) {
+      actions.push({
+        type: "MOVE_OBJECT",
+        payload: { objectId: "latest", delta: [0.45, 0, 0] }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["move it up", "move up", "raise it"])) {
+      actions.push({
+        type: "MOVE_OBJECT",
+        payload: { objectId: "latest", delta: [0, 0.38, 0] }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["move it down", "move down", "lower it"])) {
+      actions.push({
+        type: "MOVE_OBJECT",
+        payload: { objectId: "latest", delta: [0, -0.38, 0] }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["make it taller", "taller", "stretch it"])) {
+      actions.push({
+        type: "RESHAPE_OBJECT",
+        payload: { objectId: "latest", scaleY: 1.55 }
+      });
+      actions.push({
+        type: "MOLD_BLOB",
+        payload: {
+          targetShape: "bottle",
+          formation: "bottle",
+          aspectRatio: 1.8,
+          distort: 0.28,
+          speed: 1.05
+        }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["make it wider", "wider"])) {
+      actions.push({
+        type: "RESHAPE_OBJECT",
+        payload: { objectId: "latest", scaleX: 1.45, scaleZ: 1.18 }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["spin slower", "rotate slower", "slower spin"])) {
+      actions.push({
+        type: "SET_OBJECT_ANIMATION",
+        payload: { objectId: "latest", animation: "rotate", intensity: 0.35 }
+      });
+      return actions;
+    }
+
+    if (hasAny(text, ["spin faster", "rotate faster", "faster spin"])) {
+      actions.push({
+        type: "SET_OBJECT_ANIMATION",
+        payload: { objectId: "latest", animation: "rotate", intensity: 1.6 }
+      });
+      return actions;
+    }
+
     if (hasAny(text, ["remove everything", "clear objects", "delete objects"])) {
       actions.push({
         type: "REMOVE_OBJECT",
@@ -604,9 +949,20 @@ export function compileLocalIntent(input: LocalCompilerInput) {
       return actions;
     }
 
-    if (hasAny(text, ["blob", "morph", "look like a bottle", "like a bottle"])) {
+    if (hasAny(text, ["blob", "morph", "mold", "mould", "look like a bottle", "like a bottle", "helix", "donut", "torus"])) {
+      const formation = text.includes("helix")
+        ? "helix"
+        : text.includes("torus") || text.includes("donut")
+          ? "torus"
+          : text.includes("bottle")
+            ? "bottle"
+            : text.includes("cube")
+              ? "cube"
+              : text.includes("capsule")
+                ? "capsule"
+                : "sphere";
       actions.push({
-        type: "MORPH_BLOB",
+        type: "MOLD_BLOB",
         payload: {
           targetShape: text.includes("bottle")
             ? "bottle"
@@ -617,10 +973,28 @@ export function compileLocalIntent(input: LocalCompilerInput) {
                 : text.includes("organic")
                   ? "organic"
                   : "sphere",
+          formation,
+          material: inferMaterial(text),
           distort: text.includes("bottle") ? 0.3 : 0.5,
-          speed: text.includes("bottle") ? 1 : 1.8
+          speed: text.includes("bottle") ? 1 : text.includes("helix") ? 2.2 : 1.8,
+          glow: text.includes("glass") || text.includes("holographic") ? 0.72 : 0.42,
+          chaos: hasAny(text, ["organic", "crazy", "chaotic"]) ? 0.82 : 0.28,
+          twist: text.includes("helix") ? 1.35 : 0
         }
       });
+
+      if (hasAny(text, ["gold", "glass", "chrome", "carbon", "holographic"])) {
+        actions.push({
+          type: "SET_MATERIAL",
+          payload: {
+            objectId: "latest",
+            material: inferMaterial(text),
+            metalness: text.includes("gold") ? 1 : undefined,
+            roughness: text.includes("gold") ? 0.2 : undefined,
+            color: text.includes("gold") ? "#FFD700" : undefined
+          }
+        });
+      }
       return actions;
     }
 
@@ -636,6 +1010,21 @@ export function compileLocalIntent(input: LocalCompilerInput) {
         intensity: text.includes("slow") ? 0.45 : 1
       }
     });
+
+    if (hasAny(text, ["mold", "mould", "gold bottle", "glass bottle"])) {
+      actions.push({
+        type: "MOLD_BLOB",
+        payload: {
+          targetShape: text.includes("bottle") ? "bottle" : "organic",
+          formation: text.includes("bottle") ? "bottle" : "sphere",
+          material: inferMaterial(text),
+          aspectRatio: text.includes("bottle") ? 1.75 : 1,
+          distort: 0.34,
+          speed: 1.2,
+          glow: text.includes("glass") ? 0.88 : 0.45
+        }
+      });
+    }
   }
 
   const wantsSite =
@@ -680,6 +1069,35 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const wantsFooter = hasAny(text, ["footer"]);
   const wantsLogoStrip = hasAny(text, ["logo strip", "logo cloud", "logos", "brand strip"]);
 
+  if (hasAny(text, ["more organic", "more glass", "more dramatic", "more glow", "more chaotic"])) {
+    const isGlass = text.includes("glass");
+    const property = isGlass || text.includes("glow") ? "glow" : text.includes("chaotic") || text.includes("organic") ? "chaos" : "distort";
+    const label = isGlass ? "Glass refraction" : property === "chaos" ? "Organic chaos" : "Drama";
+    actions.push({
+      type: "SPAWN_CONTROL",
+      payload: {
+        id: `lab-${property}`,
+        label,
+        min: 0,
+        max: 1.6,
+        step: 0.01,
+        value: property === "glow" ? 0.82 : property === "chaos" ? 0.72 : 0.9,
+        target: "blob",
+        property
+      }
+    });
+    actions.push({
+      type: "MOLD_BLOB",
+      payload: {
+        formation: "sphere",
+        targetShape: "organic",
+        material: isGlass ? "glass" : "carbon",
+        [property]: property === "glow" ? 0.82 : property === "chaos" ? 0.72 : 0.9,
+        speed: 2.1
+      }
+    });
+  }
+
   if (
     wantsSite ||
     wantsNavbar ||
@@ -694,53 +1112,34 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     wantsContactSection ||
     wantsLogoStrip
   ) {
-    if (wantsSite || wantsNavbar) {
-      addSection(actions, "NAVBAR", subject, text);
-    }
+    const archetypeSections: Record<CreativeArchetype, string[]> = {
+      "brand-poster": ["NAVBAR", "HERO", "METRICS", "FEATURES", "CONTACT"],
+      "service-business": ["NAVBAR", "HERO", "SERVICES", "TESTIMONIALS", "FAQ", "CONTACT", "FOOTER"],
+      "creative-portfolio": ["NAVBAR", "HERO", "LOGO_STRIP", "ABOUT", "FEATURES", "CONTACT"],
+      "interactive-concept": ["NAVBAR", "HERO", "FEATURES", "METRICS", "CONTACT"],
+      "reference-rebuild": ["NAVBAR", "HERO", "ABOUT", "FEATURES", "CONTACT"]
+    };
+    const requestedSections = [
+      wantsNavbar ? "NAVBAR" : null,
+      wantsHeroSection ? "HERO" : null,
+      wantsAboutSection ? "ABOUT" : null,
+      wantsServices ? "SERVICES" : null,
+      wantsFeaturesSection ? "FEATURES" : null,
+      wantsMetrics ? "METRICS" : null,
+      wantsLogoStrip ? "LOGO_STRIP" : null,
+      wantsTestimonials ? "TESTIMONIALS" : null,
+      wantsPricing ? "PRICING" : null,
+      wantsFaq ? "FAQ" : null,
+      wantsContactSection ? "CONTACT" : null,
+      wantsFooter ? "FOOTER" : null
+    ].filter((item): item is string => Boolean(item));
+    const sequence = wantsSite
+      ? archetypeSections[archetype]
+      : requestedSections;
 
-    if (wantsSite || wantsHeroSection) {
-      addSection(actions, "HERO", subject, text);
-    }
-
-    if (wantsSite || wantsAboutSection) {
-      addSection(actions, "ABOUT", subject, text);
-    }
-
-    if (wantsServices) {
-      addSection(actions, "SERVICES", subject, text);
-    }
-
-    if (wantsSite || wantsFeaturesSection) {
-      addSection(actions, "FEATURES", subject, text);
-    }
-
-    if (wantsMetrics) {
-      addSection(actions, "METRICS", subject, text);
-    }
-
-    if (wantsLogoStrip) {
-      addSection(actions, "LOGO_STRIP", subject, text);
-    }
-
-    if (wantsTestimonials) {
-      addSection(actions, "TESTIMONIALS", subject, text);
-    }
-
-    if (wantsPricing) {
-      addSection(actions, "PRICING", subject, text);
-    }
-
-    if (wantsFaq) {
-      addSection(actions, "FAQ", subject, text);
-    }
-
-    if (wantsSite || wantsContactSection) {
-      addSection(actions, "CONTACT", subject, text);
-    }
-
-    if (wantsSite || wantsFooter) {
-      addSection(actions, "FOOTER", subject, text);
-    }
+    sequence.forEach((sectionType) =>
+      addSection(actions, sectionType, subject, text, archetype, input)
+    );
   }
 
   if (text.includes("publish")) {

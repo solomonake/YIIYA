@@ -65,6 +65,25 @@ function hexToRgba(color: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function colorBrightness(color: string) {
+  const hex = color.trim();
+  const normalized =
+    hex.length === 4
+      ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+      : hex;
+
+  if (!/^#[0-9a-f]{6}$/i.test(normalized)) {
+    return null;
+  }
+
+  const value = Number.parseInt(normalized.slice(1), 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+
+  return r * 0.299 + g * 0.587 + b * 0.114;
+}
+
 function textFrom(content: Record<string, unknown>, keys: string[], fallback: string) {
   for (const key of keys) {
     const value = content[key];
@@ -148,6 +167,21 @@ function recordsFrom(
         : null
     )
     .filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
+function objectFrom(content: SectionContent, key: string) {
+  const value = content[key];
+
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function visualImageUrl(content: SectionContent, fallback?: string) {
+  const visual = objectFrom(content, "visual");
+  const imageUrl = visual.imageUrl;
+
+  return typeof imageUrl === "string" && imageUrl.length > 0 ? imageUrl : fallback;
 }
 
 function Selectable({
@@ -239,7 +273,26 @@ function sectionTheme(section: YiiyaSection, themeState: YiiyaTheme) {
     sectionOverrides.primaryAccent = accent;
   }
 
-  return compileYiiyaTheme(mergeYiiyaTheme(themeState, sectionOverrides));
+  const compiled = compileYiiyaTheme(mergeYiiyaTheme(themeState, sectionOverrides));
+  const backgroundBrightness = colorBrightness(compiled.background);
+  const foregroundBrightness = colorBrightness(compiled.foreground);
+
+  if (
+    backgroundBrightness !== null &&
+    foregroundBrightness !== null &&
+    Math.abs(backgroundBrightness - foregroundBrightness) < 92
+  ) {
+    return {
+      ...compiled,
+      foreground: backgroundBrightness < 128 ? "#F7F2E8" : "#050505",
+      mutedForeground:
+        backgroundBrightness < 128
+          ? "rgba(247, 242, 232, 0.68)"
+          : "rgba(5, 5, 5, 0.64)"
+    };
+  }
+
+  return compiled;
 }
 
 function sectionShellStyle(theme: CompiledYiiyaTheme): CSSProperties {
@@ -301,6 +354,84 @@ function ButtonLike({
       }}
     >
       {children}
+    </Selectable>
+  );
+}
+
+function InteractiveBlock({
+  id,
+  content,
+  theme
+}: {
+  id: string;
+  content: SectionContent;
+  theme: CompiledYiiyaTheme;
+}) {
+  const interaction = objectFrom(content, "interaction");
+  const type = typeof interaction.type === "string" ? interaction.type : "";
+  const [value, setValue] = useState(56);
+
+  if (!type) {
+    return null;
+  }
+
+  const label =
+    typeof interaction.label === "string"
+      ? interaction.label
+      : type === "booking"
+        ? "Availability"
+        : type === "quote-builder"
+          ? "Quote builder"
+          : "Concept tuner";
+
+  return (
+    <Selectable
+      id={`${id}-interaction`}
+      className="mt-8 border"
+      style={{
+        borderColor: theme.border,
+        backgroundColor: theme.surface,
+        padding: theme.spacing.md
+      }}
+    >
+      <Selectable
+        id={`${id}-interaction-label`}
+        className="uppercase"
+        style={{
+          color: theme.primaryAccent,
+          fontSize: fluid(11, 1, 13),
+          letterSpacing: "0.16em"
+        }}
+      >
+        {label}
+      </Selectable>
+      <div className="mt-4 grid gap-3">
+        <div className="flex items-center justify-between gap-4 text-sm text-white/64">
+          <span>{type === "booking" ? "Priority" : "Intensity"}</span>
+          <span style={{ color: theme.foreground }}>{value}%</span>
+        </div>
+        <input
+          aria-label={label}
+          type="range"
+          min={0}
+          max={100}
+          value={value}
+          onChange={(event) => setValue(Number(event.target.value))}
+          className="accent-amber"
+        />
+        <div className="grid grid-cols-3 gap-2">
+          {["Calm", "Sharp", "Wild"].map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setValue(option === "Calm" ? 24 : option === "Sharp" ? 62 : 92)}
+              className="h-8 border border-terminalBorder text-[11px] uppercase tracking-[0.12em] text-white/55 transition hover:border-amber/70 hover:text-amber"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
     </Selectable>
   );
 }
@@ -370,7 +501,9 @@ function HeroSection({
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
+  const referencePreviewUrl = useYiiyaStore((state) => state.referenceImage?.previewUrl);
   const heading = textFrom(section.content, ["heading", "title"], "Build by speaking.");
+  const eyebrow = textFrom(section.content, ["eyebrow", "kicker"], "");
   const subtext = textFrom(
     section.content,
     ["subtext", "subtitle", "body", "description"],
@@ -378,6 +511,17 @@ function HeroSection({
   );
   const cta = textFrom(section.content, ["cta", "button", "buttonText"], "Start creating");
   const variant = section.layoutVariant ?? "CENTERED_IMPACT";
+  const imageUrl = visualImageUrl(section.content, referencePreviewUrl);
+  const visual = objectFrom(section.content, "visual");
+  const overlay =
+    typeof visual.overlay === "number" ? Math.max(0.25, Math.min(0.82, visual.overlay)) : 0.58;
+  const heroBackground = imageUrl
+    ? {
+        backgroundImage: `linear-gradient(90deg, rgba(5,5,5,${overlay}) 0%, rgba(5,5,5,${Math.max(0.28, overlay - 0.22)}) 45%, rgba(5,5,5,0.18) 100%), url(${imageUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center"
+      }
+    : { background: "var(--yiiya-bg)" };
 
   if (variant === "EDITORIAL_SPLIT") {
     return (
@@ -387,12 +531,26 @@ function HeroSection({
         className="yiiya-section grid items-center md:grid-cols-[58%_42%]"
         style={{
           ...sectionShellStyle(theme),
+          ...heroBackground,
           gap: 80,
           paddingTop: 120,
           paddingBottom: 80
         }}
       >
         <Selectable id={`hero-copy-${index}`} className="self-center">
+          {eyebrow ? (
+            <Selectable
+              id={`hero-eyebrow-${index}`}
+              className="mb-5 uppercase"
+              style={{
+                color: "var(--yiiya-accent)",
+                fontSize: fluid(11, 1, 13),
+                letterSpacing: "0.16em"
+              }}
+            >
+              {eyebrow}
+            </Selectable>
+          ) : null}
           <Selectable
             as="h1"
             id={`hero-title-${index}`}
@@ -433,14 +591,23 @@ function HeroSection({
         </Selectable>
         <Selectable
           id={`hero-visual-${index}`}
-          className="grid min-h-[480px] place-items-center border"
+          className="grid min-h-[480px] place-items-center overflow-hidden border"
           style={{
             borderColor: "var(--yiiya-border)",
             color: "var(--yiiya-muted)",
-            fontSize: fluid(13, 1.2, 15)
+            fontSize: fluid(13, 1.2, 15),
+            backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
+            backgroundSize: "cover",
+            backgroundPosition: "center"
           }}
         >
-          [ VISUAL ]
+          {imageUrl ? (
+            <span className="bg-black/45 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-white/70 backdrop-blur">
+              Reference
+            </span>
+          ) : (
+            "[ VISUAL ]"
+          )}
         </Selectable>
       </Selectable>
     );
@@ -454,6 +621,7 @@ function HeroSection({
         className="yiiya-section grid min-h-[86svh]"
         style={{
           ...sectionShellStyle(theme),
+          ...heroBackground,
           display: "grid",
           gridTemplateAreas:
             '"headline headline visual" "stat1 stat2 visual" "cta cta visual"',
@@ -525,16 +693,19 @@ function HeroSection({
         ))}
         <Selectable
           id={`hero-visual-${index}`}
-          className="grid place-items-center border"
+          className="grid place-items-center overflow-hidden border"
           style={{
             gridArea: "visual",
             minHeight: 520,
             borderColor: "var(--yiiya-border)",
             color: "var(--yiiya-muted)",
-            fontSize: fluid(13, 1.2, 15)
+            fontSize: fluid(13, 1.2, 15),
+            backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
+            backgroundSize: "cover",
+            backgroundPosition: "center"
           }}
         >
-          [ VISUAL ]
+          {imageUrl ? "" : "[ VISUAL ]"}
         </Selectable>
         <Selectable
           id={`hero-cta-cell-${index}`}
@@ -573,9 +744,22 @@ function HeroSection({
       as="section"
       id={`hero-section-${index}`}
       className="yiiya-section flex min-h-screen flex-col items-center justify-center text-center"
-      style={{ ...sectionShellStyle(theme), background: "var(--yiiya-bg)" }}
+      style={{ ...sectionShellStyle(theme), ...heroBackground }}
     >
       <Selectable id={`hero-copy-${index}`} className="mx-auto max-w-4xl">
+        {eyebrow ? (
+          <Selectable
+            id={`hero-eyebrow-${index}`}
+            className="mb-5 uppercase"
+            style={{
+              color: "var(--yiiya-accent)",
+              fontSize: fluid(11, 1, 13),
+              letterSpacing: "0.16em"
+            }}
+          >
+            {eyebrow}
+          </Selectable>
+        ) : null}
         <Selectable
           as="h1"
           id={`hero-title-${index}`}
@@ -595,7 +779,7 @@ function HeroSection({
           style={{
             marginTop: 24,
             color: "var(--yiiya-muted)",
-            fontSize: 18,
+            fontSize: fluid(16, 1.5, 20),
             fontWeight: 300,
             maxWidth: 480
           }}
@@ -751,6 +935,7 @@ function FeaturesSection({
           </Selectable>
         ))}
       </Selectable>
+      <InteractiveBlock id={`features-${index}`} content={section.content} theme={theme} />
     </Selectable>
   );
 }
@@ -1391,6 +1576,7 @@ function ContactSection({
           Send
         </ButtonLike>
       </Selectable>
+      <InteractiveBlock id={`contact-${index}`} content={section.content} theme={theme} />
     </Selectable>
   );
 }

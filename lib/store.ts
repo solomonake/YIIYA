@@ -76,11 +76,17 @@ export type SceneObject = {
 
 export type BlobState = {
   targetShape: "sphere" | "bottle" | "cube" | "organic" | "crystal";
+  formation: "sphere" | "helix" | "torus" | "bottle" | "capsule" | "cube" | "wave";
   distort: number;
   speed: number;
   aspectRatio: number;
   morphProgress: number;
   material: SpatialMaterial;
+  glow: number;
+  chaos: number;
+  twist: number;
+  particleDensity: number;
+  controlledByHand: boolean;
   silhouette?: {
     x: number;
     y: number;
@@ -100,10 +106,23 @@ export type ReferenceImage = {
   base64: string;
   mediaType: string;
   name: string;
+  previewUrl?: string;
   dominantColor?: string;
   accentCandidate?: string;
   extractedMode?: "dark" | "light";
   imageMode?: "web" | "3d" | "hybrid";
+};
+
+export type LabControl = {
+  id: string;
+  label: string;
+  kind: "range";
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  target: "blob" | "theme" | "section" | "object";
+  property: string;
 };
 
 export type YiiyaMessage = {
@@ -149,12 +168,41 @@ export type YiiyaAction =
       type: "MORPH_BLOB";
       payload: {
         targetShape: unknown;
+        formation?: unknown;
         distort: unknown;
         speed: unknown;
         aspectRatio?: unknown;
         morphProgress?: unknown;
         material?: unknown;
+        glow?: unknown;
+        chaos?: unknown;
+        twist?: unknown;
+        particleDensity?: unknown;
         silhouette?: unknown;
+      };
+    }
+  | {
+      type: "MOLD_BLOB";
+      payload: {
+        targetShape?: unknown;
+        formation?: unknown;
+        material?: unknown;
+        distort?: unknown;
+        speed?: unknown;
+        aspectRatio?: unknown;
+        glow?: unknown;
+        chaos?: unknown;
+        twist?: unknown;
+        particleDensity?: unknown;
+        silhouette?: unknown;
+      };
+    }
+  | {
+      type: "SET_BLOB_FORMATION";
+      payload: {
+        formation: unknown;
+        targetShape?: unknown;
+        aspectRatio?: unknown;
       };
     }
   | {
@@ -190,8 +238,53 @@ export type YiiyaAction =
       };
     }
   | {
+      type: "SET_OBJECT_TRANSFORM";
+      payload: {
+        objectId: unknown;
+        position?: unknown;
+        scale?: unknown;
+        rotation?: unknown;
+      };
+    }
+  | {
+      type: "SET_OBJECT_ANIMATION";
+      payload: {
+        objectId: unknown;
+        animation: unknown;
+        intensity?: unknown;
+      };
+    }
+  | {
+      type: "MOVE_OBJECT";
+      payload: {
+        objectId: unknown;
+        delta?: unknown;
+        position?: unknown;
+      };
+    }
+  | {
       type: "REMOVE_OBJECT";
       payload: { objectId: unknown };
+    }
+  | {
+      type: "SPAWN_CONTROL";
+      payload: {
+        id: unknown;
+        label: unknown;
+        min: unknown;
+        max: unknown;
+        step?: unknown;
+        value: unknown;
+        target: unknown;
+        property: unknown;
+      };
+    }
+  | {
+      type: "SET_CONTROL_VALUE";
+      payload: {
+        id: unknown;
+        value: unknown;
+      };
     }
   | {
       type: "ADD_LIGHT";
@@ -292,6 +385,7 @@ type UndoSnapshot = {
   themeState: YiiyaTheme;
   blobState: BlobState;
   spatialAnchors: SpatialAnchor[];
+  labControls: LabControl[];
 };
 
 type YiiyaState = {
@@ -320,6 +414,7 @@ type YiiyaState = {
   sceneObjects: SceneObject[];
   blobState: BlobState;
   spatialAnchors: SpatialAnchor[];
+  labControls: LabControl[];
   layers: Layer[];
   logs: LogEntry[];
   conversationHistory: YiiyaMessage[];
@@ -364,6 +459,8 @@ type YiiyaState = {
     anchorSection?: unknown;
   }) => SceneObject;
   morphBlob: (blobState: Partial<BlobState>) => void;
+  spawnControl: (control: Omit<LabControl, "kind"> & { kind?: "range" }) => void;
+  setControlValue: (id: string, value: number) => void;
   addSpatialAnchor: (anchor: SpatialAnchor) => void;
   updateSceneObject: (
     objectId: string,
@@ -399,7 +496,8 @@ function pushUndoSnapshot(state: YiiyaState) {
       layers: state.layers,
       themeState: state.themeState,
       blobState: state.blobState,
-      spatialAnchors: state.spatialAnchors
+      spatialAnchors: state.spatialAnchors,
+      labControls: state.labControls
     }
   ].slice(-20);
 }
@@ -412,7 +510,8 @@ function snapshotFromState(state: YiiyaState): UndoSnapshot {
     layers: state.layers,
     themeState: state.themeState,
     blobState: state.blobState,
-    spatialAnchors: state.spatialAnchors
+    spatialAnchors: state.spatialAnchors,
+    labControls: state.labControls
   };
 }
 
@@ -554,12 +653,36 @@ function describeAction(action: YiiyaAction) {
     return `[EXECUTE]: Morphing blob to ${String(action.payload.targetShape)}.`;
   }
 
+  if (action.type === "MOLD_BLOB") {
+    return `[MOLD]: Shaping clay as ${String(action.payload.formation ?? action.payload.targetShape ?? "organic")}.`;
+  }
+
+  if (action.type === "SET_BLOB_FORMATION") {
+    return `[MOLD]: Formation set to ${String(action.payload.formation)}.`;
+  }
+
   if (action.type === "SET_MATERIAL") {
     return `[EXECUTE]: Applying ${String(action.payload.material)} material.`;
   }
 
   if (action.type === "RESHAPE_OBJECT") {
     return "[EXECUTE]: Reshaping spatial object.";
+  }
+
+  if (action.type === "MOVE_OBJECT" || action.type === "SET_OBJECT_TRANSFORM") {
+    return "[MOLD]: Spatial object moved.";
+  }
+
+  if (action.type === "SET_OBJECT_ANIMATION") {
+    return `[MOLD]: Object animation set to ${String(action.payload.animation)}.`;
+  }
+
+  if (action.type === "SPAWN_CONTROL") {
+    return `[LAB]: Control spawned — ${String(action.payload.label)}.`;
+  }
+
+  if (action.type === "SET_CONTROL_VALUE") {
+    return `[LAB]: Control ${String(action.payload.id)} updated.`;
   }
 
   if (action.type === "REMOVE_OBJECT") {
@@ -744,6 +867,43 @@ function normalizeBlobTarget(value: unknown): BlobState["targetShape"] {
   return "sphere";
 }
 
+function normalizeBlobFormation(value: unknown): BlobState["formation"] {
+  if (
+    value === "sphere" ||
+    value === "helix" ||
+    value === "torus" ||
+    value === "bottle" ||
+    value === "capsule" ||
+    value === "cube" ||
+    value === "wave"
+  ) {
+    return value;
+  }
+
+  return "sphere";
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function defaultBlobState(): BlobState {
+  return {
+    targetShape: "sphere",
+    formation: "sphere",
+    distort: 0.5,
+    speed: 1.8,
+    aspectRatio: 1,
+    morphProgress: 0,
+    material: "carbon",
+    glow: 0.35,
+    chaos: 0.22,
+    twist: 0,
+    particleDensity: 9000,
+    controlledByHand: false
+  };
+}
+
 function normalizeSilhouette(value: unknown): BlobState["silhouette"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -782,15 +942,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   sidebarCollapsed: false,
   sections: [],
   sceneObjects: [],
-  blobState: {
-    targetShape: "sphere",
-    distort: 0.5,
-    speed: 1.8,
-    aspectRatio: 1,
-    morphProgress: 0,
-    material: "carbon"
-  },
+  blobState: defaultBlobState(),
   spatialAnchors: [],
+  labControls: [],
   layers: initialLayers,
   logs: initialLogs,
   conversationHistory: [],
@@ -942,8 +1096,11 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   },
   morphBlob: (blobState) =>
     set((state) => ({
+      undoStack: pushUndoSnapshot(state),
+      redoStack: [],
       blobState: {
         targetShape: normalizeBlobTarget(blobState.targetShape ?? state.blobState.targetShape),
+        formation: normalizeBlobFormation(blobState.formation ?? state.blobState.formation),
         distort: normalizeNumber(blobState.distort, state.blobState.distort),
         speed: normalizeNumber(blobState.speed, state.blobState.speed),
         aspectRatio: normalizeNumber(blobState.aspectRatio, state.blobState.aspectRatio),
@@ -954,9 +1111,84 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         material: blobState.material
           ? normalizeSpatialMaterial(blobState.material)
           : state.blobState.material,
+        glow: clampNumber(normalizeNumber(blobState.glow, state.blobState.glow), 0, 2),
+        chaos: clampNumber(normalizeNumber(blobState.chaos, state.blobState.chaos), 0, 2),
+        twist: clampNumber(normalizeNumber(blobState.twist, state.blobState.twist), -4, 4),
+        particleDensity: clampNumber(
+          normalizeNumber(blobState.particleDensity, state.blobState.particleDensity),
+          1000,
+          22000
+        ),
+        controlledByHand:
+          typeof blobState.controlledByHand === "boolean"
+            ? blobState.controlledByHand
+            : state.blobState.controlledByHand,
         silhouette: normalizeSilhouette(blobState.silhouette) ?? state.blobState.silhouette
       }
     })),
+  spawnControl: (control) =>
+    set((state) => {
+      const normalizedControl: LabControl = {
+        id: control.id,
+        label: control.label,
+        kind: control.kind ?? "range",
+        min: control.min,
+        max: control.max,
+        step: control.step,
+        value: control.value,
+        target: control.target,
+        property: control.property
+      };
+
+      return {
+        labControls: [
+          ...state.labControls.filter((item) => item.id !== normalizedControl.id),
+          normalizedControl
+        ].slice(-8),
+        logs: [...state.logs, createLog(`[LAB]: ${normalizedControl.label} ready.`)].slice(-40)
+      };
+    }),
+  setControlValue: (id, value) =>
+    set((state) => {
+      const control = state.labControls.find((item) => item.id === id);
+
+      if (!control) {
+        return state;
+      }
+
+      const nextValue = clampNumber(value, control.min, control.max);
+      const nextControls = state.labControls.map((item) =>
+        item.id === id ? { ...item, value: nextValue } : item
+      );
+      const nextState: Partial<YiiyaState> = {
+        labControls: nextControls
+      };
+
+      if (control.target === "blob") {
+        nextState.blobState = {
+          ...state.blobState,
+          [control.property]: nextValue
+        };
+      }
+
+      if (control.target === "theme" && control.property === "fontScale") {
+        nextState.themeState = mergeYiiyaTheme(state.themeState, {
+          fontScale: nextValue
+        });
+      }
+
+      if (control.target === "theme" && control.property === "spacingMultiplier") {
+        nextState.themeState = mergeYiiyaTheme(state.themeState, {
+          spacingMultiplier: nextValue
+        });
+      }
+
+      return {
+        ...nextState,
+        undoStack: pushUndoSnapshot(state),
+        redoStack: []
+      };
+    }),
   addSpatialAnchor: (anchor) =>
     set((state) => ({
       spatialAnchors: [
@@ -1034,6 +1266,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         themeState: snapshot.themeState,
         blobState: snapshot.blobState,
         spatialAnchors: snapshot.spatialAnchors,
+        labControls: snapshot.labControls,
         selectedElementId: null,
         selectedElements: [],
         hoveredElementId: null,
@@ -1060,6 +1293,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         themeState: snapshot.themeState,
         blobState: snapshot.blobState,
         spatialAnchors: snapshot.spatialAnchors,
+        labControls: snapshot.labControls,
         selectedElementId: null,
         selectedElements: [],
         hoveredElementId: null,
@@ -1137,15 +1371,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         sections,
         sceneObjects,
         layers,
-        blobState: {
-          targetShape: "sphere",
-          distort: 0.5,
-          speed: 1.8,
-          aspectRatio: 1,
-          morphProgress: 0,
-          material: "carbon"
-        },
+        blobState: defaultBlobState(),
         spatialAnchors: [],
+        labControls: [],
         selectedElementId: null,
         selectedElements: [],
         hoveredElementId: null,
@@ -1179,15 +1407,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       themeState: defaultYiiyaTheme,
       sections: [],
       sceneObjects: [],
-      blobState: {
-        targetShape: "sphere",
-        distort: 0.5,
-        speed: 1.8,
-        aspectRatio: 1,
-        morphProgress: 0,
-        material: "carbon"
-      },
+      blobState: defaultBlobState(),
       spatialAnchors: [],
+      labControls: [],
       layers: [],
       logs: [...state.logs, createLog("SYSTEM: New project initialized.")].slice(-40),
       conversationHistory: [],

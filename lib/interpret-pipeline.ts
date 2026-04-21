@@ -57,6 +57,10 @@ const ARCHITECT_PROMPT = `You are the Architect agent for Yiiya.
 Return raw JSON array only. Never return HTML.
 Yiiya compiles human intent into semantic section actions and layout tokens.
 Aesthetic: SRL institutional, #050505, #1A1A1A borders, amber accent, JetBrains Mono, editorial art direction.
+Do not use a fixed template recipe. Choose an archetype that fits the prompt: brand-poster, service-business, creative-portfolio, interactive-concept, or reference-rebuild.
+Every section content payload may include visual, interaction, and designDNA tokens. Use these tokens to make the renderer adapt instead of repeating the same page.
+If a reference image is present, mirror its composition, crop, visual density, palette, and image role. Include visual.source="reference-image" and visual.fidelity="mirror-composition" where useful.
+Never use "New Venture", "Company Name", Lorem Ipsum, or placeholder image services unless the user literally requested those words.
 Supported actions:
 ADD_SECTION payload { sectionType, layoutVariant, theme, content }
 MODIFY_ELEMENT payload { elementId, property, value, mode? }
@@ -80,10 +84,14 @@ If selectedElementId is present and the user says this, it, or that, target that
 const ALCHEMIST_PROMPT = `You are the 3D Alchemist for Yiiya.
 Return raw JSON array only.
 Supported actions:
-MORPH_BLOB payload { targetShape: 'sphere'|'bottle'|'cube'|'organic'|'crystal', distort: number, speed: number, aspectRatio?: number, silhouette?: object, material?: string }
+MOLD_BLOB payload { targetShape?: 'sphere'|'bottle'|'cube'|'organic'|'crystal', formation?: 'sphere'|'helix'|'torus'|'bottle'|'capsule'|'cube'|'wave', distort?: number, speed?: number, aspectRatio?: number, glow?: number, chaos?: number, twist?: number, particleDensity?: number, material?: string }
+MORPH_BLOB payload { targetShape: 'sphere'|'bottle'|'cube'|'organic'|'crystal', formation?: 'sphere'|'helix'|'torus'|'bottle'|'capsule'|'cube'|'wave', distort: number, speed: number, aspectRatio?: number, silhouette?: object, material?: string }
 SET_MATERIAL payload { objectId: string, material: string, metalness?: number, roughness?: number, color?: string, transmission?: number, emissive?: string }
 ADD_3D_OBJECT payload { shape: 'sphere'|'box'|'torus'|'cylinder'|'cone'|'capsule', material: 'glass'|'chrome'|'gold'|'matte'|'carbon'|'holographic', color?: string, scale?: [number,number,number], position?: [number,number,number], animation?: 'rotate'|'float'|'pulse'|'spin', intensity?: number, anchorSection?: string }
 LOAD_3D_MESH payload { url: string, material?: string, color?: string, scale?: [number,number,number], position?: [number,number,number], anchorSection?: string }
+MOVE_OBJECT payload { objectId: string, delta?: [number,number,number], position?: [number,number,number] }
+SET_OBJECT_ANIMATION payload { objectId: string, animation: 'rotate'|'float'|'pulse'|'spin'|'static', intensity?: number }
+SPAWN_CONTROL payload { id: string, label: string, min: number, max: number, step?: number, value: number, target: 'blob'|'theme'|'section'|'object', property: string }
 REMOVE_OBJECT payload { objectId: string }
 Map "make it gold" directly to SET_MATERIAL with metalness 1, roughness 0.2, color "#FFD700".`;
 
@@ -442,10 +450,24 @@ export async function classifyIntent(transcript: string): Promise<IntentType> {
       "cube",
       "box",
       "blob",
+      "mold",
+      "mould",
       "mesh",
       "3d",
       "torus",
-      "cylinder"
+      "cylinder",
+      "helix",
+      "bottle",
+      "move it left",
+      "move it right",
+      "move it up",
+      "move it down",
+      "spin slower",
+      "spin faster",
+      "organic",
+      "glow",
+      "dramatic",
+      "chaos"
     ].some((term) => normalizedTranscript.includes(term))
   ) {
     return "SPATIAL";
@@ -612,6 +634,12 @@ async function runAlchemist(body: InterpretRequestBody) {
       action.type === "ADD_3D_OBJECT" ||
       action.type === "SET_MATERIAL" ||
       action.type === "MORPH_BLOB" ||
+      action.type === "MOLD_BLOB" ||
+      action.type === "SET_BLOB_FORMATION" ||
+      action.type === "MOVE_OBJECT" ||
+      action.type === "SET_OBJECT_TRANSFORM" ||
+      action.type === "SET_OBJECT_ANIMATION" ||
+      action.type === "SPAWN_CONTROL" ||
       action.type === "REMOVE_OBJECT"
   );
 
@@ -711,15 +739,25 @@ export async function* runInterpretPipeline(
 
     yield { type: "router", intent, model: modelForIntent(intent), log: routerLog };
 
-    const researchPromise =
-      intent === "LAYOUT" ? runResearcher(body) : Promise.resolve(null);
-    const researchBrief = await researchPromise;
+    let researchBrief: ResearchBrief | null = null;
+    let researchError: string | null = null;
+
+    if (intent === "LAYOUT") {
+      try {
+        researchBrief = await runResearcher(body);
+      } catch (error) {
+        researchError =
+          error instanceof Error ? error.message : "Researcher unavailable";
+      }
+    }
 
     if (intent === "LAYOUT") {
       yield {
         type: "research",
         brief: researchBrief,
-        log: researchBrief
+        log: researchError
+          ? `[RESEARCH]: Skipped — ${researchError}`
+          : researchBrief
           ? `[RESEARCH]: Grounded ${researchBrief.industry} with ${researchBrief.usps.length} USP(s).`
           : "[RESEARCH]: No grounding category detected."
       };
@@ -746,13 +784,6 @@ export async function* runInterpretPipeline(
       try {
         criticOutput = await runCritic(body, directActions);
       } catch (criticError) {
-        const message =
-          criticError instanceof Error ? criticError.message : "Critic unavailable";
-
-        if (intent === "LAYOUT" && message.includes("Missing required")) {
-          throw criticError;
-        }
-
         criticOutput = {
           actions: directActions,
           qa_log: [
@@ -774,11 +805,13 @@ export async function* runInterpretPipeline(
       error instanceof Error ? error.message : "Interpret pipeline failed";
     const fallbackActions = compileLocalYiiyaIntent(body);
 
-    if (fallbackActions.length > 0 && !message.includes("Missing required")) {
+    if (fallbackActions.length > 0) {
       yield {
         type: "actions",
         actions: fallbackActions,
-        log: "[INTERPRET]: Deterministic recovery compiler used."
+        log: message.includes("Missing required")
+          ? `[INTERPRET]: Deterministic recovery compiler used — ${message}`
+          : "[INTERPRET]: Deterministic recovery compiler used."
       };
       yield {
         type: "done",

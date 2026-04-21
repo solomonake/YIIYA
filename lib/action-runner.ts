@@ -213,6 +213,21 @@ function numericOverride(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function normalizeVector(
+  value: unknown,
+  fallback: [number, number, number]
+): [number, number, number] {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  return [
+    numericOverride(value[0]) ?? fallback[0],
+    numericOverride(value[1]) ?? fallback[1],
+    numericOverride(value[2]) ?? fallback[2]
+  ];
+}
+
 function blobTargetFromValue(value: unknown) {
   if (
     value === "sphere" ||
@@ -220,6 +235,22 @@ function blobTargetFromValue(value: unknown) {
     value === "cube" ||
     value === "organic" ||
     value === "crystal"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function blobFormationFromValue(value: unknown) {
+  if (
+    value === "sphere" ||
+    value === "helix" ||
+    value === "torus" ||
+    value === "bottle" ||
+    value === "capsule" ||
+    value === "cube" ||
+    value === "wave"
   ) {
     return value;
   }
@@ -243,21 +274,40 @@ function silhouetteFromValue(value: unknown) {
 }
 
 function applyMorphBlob(action: YiiyaAction) {
-  if (action.type !== "MORPH_BLOB") {
+  if (action.type !== "MORPH_BLOB" && action.type !== "MOLD_BLOB") {
+    return;
+  }
+  const payload = action.payload as Record<string, unknown>;
+
+  useYiiyaStore.getState().morphBlob({
+    targetShape: blobTargetFromValue(payload.targetShape),
+    formation: blobFormationFromValue(payload.formation),
+    distort: numericOverride(payload.distort),
+    speed: numericOverride(payload.speed),
+    aspectRatio: numericOverride(payload.aspectRatio),
+    morphProgress: numericOverride(payload.morphProgress),
+    material:
+      typeof payload.material === "string"
+        ? normalizeSpatialMaterial(payload.material)
+        : undefined,
+    glow: numericOverride(payload.glow),
+    chaos: numericOverride(payload.chaos),
+    twist: numericOverride(payload.twist),
+    particleDensity: numericOverride(payload.particleDensity),
+    silhouette: silhouetteFromValue(payload.silhouette)
+  });
+}
+
+function applySetBlobFormation(action: YiiyaAction) {
+  if (action.type !== "SET_BLOB_FORMATION") {
     return;
   }
 
   useYiiyaStore.getState().morphBlob({
+    formation: blobFormationFromValue(action.payload.formation),
     targetShape: blobTargetFromValue(action.payload.targetShape),
-    distort: numericOverride(action.payload.distort),
-    speed: numericOverride(action.payload.speed),
     aspectRatio: numericOverride(action.payload.aspectRatio),
-    morphProgress: numericOverride(action.payload.morphProgress),
-    material:
-      typeof action.payload.material === "string"
-        ? normalizeSpatialMaterial(action.payload.material)
-        : undefined,
-    silhouette: silhouetteFromValue(action.payload.silhouette)
+    morphProgress: 1
   });
 }
 
@@ -360,6 +410,117 @@ function applyReshapeObject(action: YiiyaAction) {
       numericOverride(action.payload.scaleZ) ?? currentObject.scale[2]
     ]
   });
+}
+
+function applyObjectTransform(action: YiiyaAction) {
+  if (action.type !== "SET_OBJECT_TRANSFORM" && action.type !== "MOVE_OBJECT") {
+    return;
+  }
+
+  const store = useYiiyaStore.getState();
+  const objectId = objectIdFromValue(action.payload.objectId);
+  const currentObject =
+    objectId === "latest"
+      ? store.sceneObjects.at(-1)
+      : store.sceneObjects.find((object) => object.id === objectId);
+
+  if (!currentObject) {
+    store.addLog("[MOLD]: No spatial object selected.");
+    return;
+  }
+
+  const payload = action.payload as Record<string, unknown>;
+  const delta = Array.isArray(payload.delta)
+    ? normalizeVector(payload.delta, [0, 0, 0])
+    : undefined;
+  const position = Array.isArray(payload.position)
+    ? normalizeVector(payload.position, currentObject.position)
+    : delta
+      ? [
+          currentObject.position[0] + delta[0],
+          currentObject.position[1] + delta[1],
+          currentObject.position[2] + delta[2]
+        ] satisfies [number, number, number]
+      : currentObject.position;
+  const scale = Array.isArray(payload.scale)
+    ? normalizeVector(payload.scale, currentObject.scale)
+    : currentObject.scale;
+
+  store.updateSceneObject(objectId, {
+    position,
+    scale
+  });
+}
+
+function applyObjectAnimation(action: YiiyaAction) {
+  if (action.type !== "SET_OBJECT_ANIMATION") {
+    return;
+  }
+
+  const updates: { animation?: string; intensity?: number } = {};
+
+  if (typeof action.payload.animation === "string") {
+    updates.animation = action.payload.animation;
+  }
+
+  updates.intensity = numericOverride(action.payload.intensity);
+  useYiiyaStore.getState().updateSceneObject(objectIdFromValue(action.payload.objectId), updates);
+}
+
+function normalizeLabTarget(value: unknown) {
+  if (value === "blob" || value === "theme" || value === "section" || value === "object") {
+    return value;
+  }
+
+  return "blob";
+}
+
+function applySpawnControl(action: YiiyaAction) {
+  if (action.type !== "SPAWN_CONTROL") {
+    return;
+  }
+
+  const id =
+    typeof action.payload.id === "string"
+      ? action.payload.id
+      : `control-${Date.now().toString(36)}`;
+  const label = typeof action.payload.label === "string" ? action.payload.label : "Control";
+  const min = numericOverride(action.payload.min) ?? 0;
+  const max = numericOverride(action.payload.max) ?? 1;
+  const value = numericOverride(action.payload.value) ?? min;
+  const step = numericOverride(action.payload.step) ?? (max - min) / 100;
+  const property =
+    typeof action.payload.property === "string" ? action.payload.property : "distort";
+
+  useYiiyaStore.getState().spawnControl({
+    id,
+    label,
+    min,
+    max,
+    step,
+    value,
+    target: normalizeLabTarget(action.payload.target),
+    property
+  });
+  useYiiyaStore.getState().setControlValue(id, value);
+}
+
+function applySetControlValue(action: YiiyaAction) {
+  if (action.type !== "SET_CONTROL_VALUE") {
+    return;
+  }
+
+  if (typeof action.payload.id !== "string") {
+    return;
+  }
+
+  const value = numericOverride(action.payload.value);
+
+  if (value === undefined) {
+    return;
+  }
+
+  useYiiyaStore.getState().setControlValue(action.payload.id, value);
 }
 
 function applyRemoveObject(action: YiiyaAction) {
@@ -584,6 +745,14 @@ export function runYiiyaActions(actions: YiiyaAction[]) {
       applyMorphBlob(action);
     }
 
+    if (action.type === "MOLD_BLOB") {
+      applyMorphBlob(action);
+    }
+
+    if (action.type === "SET_BLOB_FORMATION") {
+      applySetBlobFormation(action);
+    }
+
     if (action.type === "LOAD_3D_MESH") {
       applyLoad3DMesh(action);
     }
@@ -596,8 +765,24 @@ export function runYiiyaActions(actions: YiiyaAction[]) {
       applyReshapeObject(action);
     }
 
+    if (action.type === "MOVE_OBJECT" || action.type === "SET_OBJECT_TRANSFORM") {
+      applyObjectTransform(action);
+    }
+
+    if (action.type === "SET_OBJECT_ANIMATION") {
+      applyObjectAnimation(action);
+    }
+
     if (action.type === "REMOVE_OBJECT") {
       applyRemoveObject(action);
+    }
+
+    if (action.type === "SPAWN_CONTROL") {
+      applySpawnControl(action);
+    }
+
+    if (action.type === "SET_CONTROL_VALUE") {
+      applySetControlValue(action);
     }
 
     if (action.type === "SET_GLOBAL_THEME") {
