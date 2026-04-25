@@ -173,10 +173,14 @@ function SemanticMockup({
 
 function SceneObjectMesh({
   object,
-  anchor
+  anchor,
+  dockedPosition,
+  dockedScale
 }: {
   object: SceneObject;
   anchor?: SpatialAnchor;
+  dockedPosition?: [number, number, number];
+  dockedScale?: [number, number, number];
 }) {
   const meshRef = useRef<Group>(null);
   const materialPreset = {
@@ -238,9 +242,9 @@ function SceneObjectMesh({
   const mesh = (
     <group
       ref={meshRef}
-      position={anchor?.worldPosition ?? object.position}
+      position={anchor?.worldPosition ?? dockedPosition ?? object.position}
       rotation={[0.22, 0.7, 0.08]}
-      scale={object.scale}
+      scale={dockedScale ?? object.scale}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -271,10 +275,14 @@ function SceneObjectMesh({
 
 function LoadedMeshObject({
   object,
-  anchor
+  anchor,
+  dockedPosition,
+  dockedScale
 }: {
   object: SceneObject;
   anchor?: SpatialAnchor;
+  dockedPosition?: [number, number, number];
+  dockedScale?: [number, number, number];
 }) {
   const groupRef = useRef<Group>(null);
   const gltf = useGLTF(object.meshUrl ?? "");
@@ -294,7 +302,7 @@ function LoadedMeshObject({
 
     groupRef.current.rotation.y += 0.004 * object.intensity;
     groupRef.current.position.y =
-      (anchor?.worldPosition[1] ?? object.position[1]) +
+      (anchor?.worldPosition[1] ?? dockedPosition?.[1] ?? object.position[1]) +
       Math.sin(state.clock.elapsedTime * 1.2) * 0.05;
   });
 
@@ -302,8 +310,8 @@ function LoadedMeshObject({
     <primitive
       ref={groupRef}
       object={gltf.scene}
-      position={anchor?.worldPosition ?? object.position}
-      scale={object.scale}
+      position={anchor?.worldPosition ?? dockedPosition ?? object.position}
+      scale={dockedScale ?? object.scale}
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
         event.stopPropagation();
         draggingRef.current = true;
@@ -508,41 +516,65 @@ function StarterScene({
     () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
     [anchors]
   );
+  const hybridDock = (index: number) => {
+    const placements: Array<[number, number, number]> = [
+      [2.9, 0.1, -2.2],
+      [2.25, -0.95, -2.7],
+      [2.85, 1.0, -2.95]
+    ];
+
+    return placements[index % placements.length];
+  };
+  const dockScale = (scale: [number, number, number]): [number, number, number] => [
+    scale[0] * 0.68,
+    scale[1] * 0.68,
+    scale[2] * 0.68
+  ];
 
   return (
     <>
-      {objects.length === 0 ? (
+      {objects.length === 0 && !subduedBlob ? (
         <DefaultBlob subdued={subduedBlob} />
       ) : null}
 
-      {objects.map((object) =>
-        object.meshUrl ? (
+      {objects.map((object, index) => {
+        const anchor = anchorMap.get(object.id);
+        const dockedPosition = !anchor && subduedBlob ? hybridDock(index) : undefined;
+        const dockedScale = !anchor && subduedBlob ? dockScale(object.scale) : undefined;
+
+        return object.meshUrl ? (
           <LoadedMeshObject
             key={object.id}
             object={object}
-            anchor={anchorMap.get(object.id)}
+            anchor={anchor}
+            dockedPosition={dockedPosition}
+            dockedScale={dockedScale}
           />
         ) : (
           <SceneObjectMesh
             key={object.id}
             object={object}
-            anchor={anchorMap.get(object.id)}
+            anchor={anchor}
+            dockedPosition={dockedPosition}
+            dockedScale={dockedScale}
           />
-        )
-      )}
+        );
+      })}
 
-      <Grid
-        position={[0, -0.02, 0]}
-        args={[12, 12]}
-        cellSize={0.6}
-        cellThickness={0.5}
-        cellColor="#2a2a2a"
-        sectionSize={2.4}
-        sectionThickness={0.9}
-        sectionColor="#EF9F27"
-        fadeDistance={18}
-        fadeStrength={1.6}
-      />
+      {!subduedBlob ? (
+        <Grid
+          position={[0, -0.02, 0]}
+          args={[12, 12]}
+          cellSize={0.6}
+          cellThickness={0.5}
+          cellColor="#2a2a2a"
+          sectionSize={2.4}
+          sectionThickness={0.9}
+          sectionColor="#EF9F27"
+          fadeDistance={18}
+          fadeStrength={1.6}
+        />
+      ) : null}
       <Environment preset="city" />
     </>
   );
@@ -565,6 +597,10 @@ export function SceneCanvas() {
     return () => registerExportRoot(null);
   }, []);
 
+  if (canvasMode === "WEB") {
+    return null;
+  }
+
   return (
     <div
       className="absolute inset-0 z-0 transition-opacity"
@@ -573,7 +609,7 @@ export function SceneCanvas() {
         inset: 0,
         width: "100%",
         height: "100%",
-        opacity: canvasMode === "WEB" ? 0 : canvasMode === "HYBRID" ? 0.48 : 1,
+        opacity: canvasMode === "HYBRID" ? 0.48 : 1,
         pointerEvents: canvasMode === "3D" ? "auto" : "none"
       }}
     >

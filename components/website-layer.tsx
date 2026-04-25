@@ -1928,12 +1928,16 @@ export function WebsiteLayer() {
     addLog(`[CONTEXT]: ${selected.length} elements selected`);
   };
 
+  if (canvasMode === "3D") {
+    return null;
+  }
+
   return (
     <div
       className="absolute inset-0 z-10 overflow-auto px-5 pb-28 pt-6 transition-opacity sm:px-8"
       style={{
-        opacity: canvasMode === "3D" ? 0 : 1,
-        pointerEvents: canvasMode === "3D" ? "none" : "auto"
+        opacity: 1,
+        pointerEvents: "auto"
       }}
       onMouseMove={handleMouseMove}
       onMouseDown={handleMouseDown}
@@ -1948,13 +1952,15 @@ export function WebsiteLayer() {
       {sections.length === 0 ? (
         <div className="grid h-full place-items-center">
           <p className="text-sm font-medium text-white/42">
-            Start speaking to begin
+            {canvasMode === "HYBRID"
+              ? "Speak the site and hero object together"
+              : "Speak a landing page idea or upload a website screenshot"}
           </p>
         </div>
       ) : (
         <div
           data-yiiya-publish-root
-          className="pointer-events-auto mx-auto min-h-full w-full max-w-none overflow-hidden border-y border-white/10 bg-[#050505]/72 backdrop-blur-[1px]"
+          className="pointer-events-auto mx-auto min-h-full w-full max-w-[1480px] overflow-hidden rounded-[22px] border border-white/10 bg-[#050505]/76 shadow-[0_30px_120px_rgba(0,0,0,0.42)] backdrop-blur-[1px]"
           onClick={() => setSelectedElementId(null)}
           onMouseDown={(event) => {
             if (!closestYiiyaElement(event.target as Element)) {

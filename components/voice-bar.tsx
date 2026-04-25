@@ -12,6 +12,11 @@ export function VoiceBar() {
   const isInterpreting = useYiiyaStore((state) => state.isInterpreting);
   const interimTranscript = useYiiyaStore((state) => state.interimTranscript);
   const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
+  const canvasMode = useYiiyaStore((state) => state.canvasMode);
+  const sections = useYiiyaStore((state) => state.sections);
+  const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
+  const timelineSnapshots = useYiiyaStore((state) => state.timelineSnapshots);
+  const referenceImage = useYiiyaStore((state) => state.referenceImage);
   const publishResult = useYiiyaStore((state) => state.publishResult);
   const setPublishResult = useYiiyaStore((state) => state.setPublishResult);
   const setToastMessage = useYiiyaStore((state) => state.setToastMessage);
@@ -40,7 +45,11 @@ export function VoiceBar() {
     interimTranscript ||
     (selectedElementId
       ? `// ${selectedElementId} selected — speak to modify`
-      : "Hold Space or click mic to speak");
+      : canvasMode === "WEB"
+        ? "Speak a website direction or upload a landing-page screenshot"
+        : canvasMode === "3D"
+          ? "Speak an object or start a phone scan"
+          : "Speak the website and hero object together");
   const shellStateClass = isInterpreting
     ? "border-signalAmber/70 shadow-[0_0_34px_rgba(255,177,0,0.26),0_20px_70px_rgba(0,0,0,0.6)]"
     : isListening
@@ -53,6 +62,18 @@ export function VoiceBar() {
       : "bg-white/20";
   const canSubmitManualCommand =
     manualCommand.trim().length > 0 && !isInterpreting;
+  const showPathways =
+    sections.length === 0 &&
+    sceneObjects.length === 0 &&
+    timelineSnapshots.length === 0 &&
+    !referenceImage;
+  const modeLabel = canvasMode === "HYBRID" ? "POWER" : canvasMode;
+  const modeHint =
+    canvasMode === "WEB"
+      ? "Website only · screenshot upload"
+      : canvasMode === "3D"
+        ? "3D only · speech or phone scan"
+        : "Web + 3D · execution mode";
 
   const handleManualSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -117,9 +138,39 @@ export function VoiceBar() {
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-7 z-10 flex justify-center px-3 sm:px-6">
-      <div
-        className={`pointer-events-auto flex min-h-16 w-[min(760px,calc(100vw-24px))] items-center justify-center gap-3 rounded-full border bg-[#070707]/94 px-4 py-2 backdrop-blur-xl transition-[border-color,box-shadow] duration-200 sm:gap-4 sm:px-5 ${shellStateClass}`}
-      >
+      <div className="pointer-events-auto flex w-[min(820px,calc(100vw-24px))] flex-col gap-3">
+        {showPathways ? (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {creationPathways.map((pathway) => (
+              <button
+                key={pathway.id}
+                type="button"
+                onClick={() => {
+                  setCreationGoal(pathway.creationGoal);
+                  setCanvasMode(pathway.mode);
+                  setStarterPromptId(pathway.id);
+                  void submitManualTranscript(pathway.prompt);
+                }}
+                className="border border-terminalBorder bg-[#070707]/92 px-3 py-2 text-left font-mono transition hover:border-amber/70"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber">
+                  {pathway.label}
+                </p>
+                <p className="mt-1 text-[11px] text-white/60">{pathway.subtitle}</p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center">
+            <div className="border border-terminalBorder bg-[#070707]/92 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-white/46 backdrop-blur-xl">
+              {modeLabel} · {modeHint}
+            </div>
+          </div>
+        )}
+
+        <div
+          className={`flex min-h-16 items-center justify-center gap-3 rounded-full border bg-[#070707]/94 px-4 py-2 backdrop-blur-xl transition-[border-color,box-shadow] duration-200 sm:gap-4 sm:px-5 ${shellStateClass}`}
+        >
         <button
           aria-label={isListening ? "Stop voice input" : "Start voice input"}
           title={isListening ? "Stop voice input" : "Start voice input"}
@@ -160,7 +211,7 @@ export function VoiceBar() {
 
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <span className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />
-          <div className="flex min-w-0 max-w-[96px] items-baseline gap-2 whitespace-nowrap text-[11px] sm:max-w-[180px] sm:text-xs lg:max-w-[260px]">
+          <div className="flex min-w-0 max-w-[110px] items-baseline gap-2 whitespace-nowrap text-[11px] sm:max-w-[220px] sm:text-xs lg:max-w-[300px]">
             <span className="font-bold uppercase tracking-[0.12em] text-bone">
               {status}
             </span>
@@ -209,27 +260,6 @@ export function VoiceBar() {
             </svg>
           </button>
         </form>
-      </div>
-      <div className="pointer-events-auto absolute inset-x-0 -top-14 flex justify-center px-2">
-        <div className="flex w-[min(760px,calc(100vw-24px))] gap-2 overflow-x-auto">
-          {creationPathways.map((pathway) => (
-            <button
-              key={pathway.id}
-              type="button"
-              onClick={() => {
-                setCreationGoal(pathway.creationGoal);
-                setCanvasMode(pathway.mode);
-                setStarterPromptId(pathway.id);
-                void submitManualTranscript(pathway.prompt);
-              }}
-              className="shrink-0 border border-terminalBorder bg-[#070707]/92 px-3 py-2 text-left font-mono transition hover:border-amber/70"
-            >
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber">
-                {pathway.label}
-              </p>
-              <p className="mt-1 text-[11px] text-white/72">{pathway.subtitle}</p>
-            </button>
-          ))}
         </div>
       </div>
     </div>

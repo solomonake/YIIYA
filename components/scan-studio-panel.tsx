@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runTranscriptThroughYiiya } from "@/lib/use-speech-interpreter";
 import { useYiiyaStore } from "@/lib/store";
-import { coverageConfidence, emptyCoverage, type CoverageCell } from "@/lib/scan-coverage";
+import { emptyCoverage, surfaceCoverageConfidence, type CoverageCell } from "@/lib/scan-coverage";
 
 function parseDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:(.+);base64,(.+)$/);
@@ -21,6 +21,8 @@ function parseDataUrl(dataUrl: string) {
 
 export function ScanStudioPanel() {
   const searchParams = useSearchParams();
+  const canvasMode = useYiiyaStore((state) => state.canvasMode);
+  const creationGoal = useYiiyaStore((state) => state.creationGoal);
   const scanSession = useYiiyaStore((state) => state.scanSession);
   const setScanSession = useYiiyaStore((state) => state.setScanSession);
   const setReferenceImage = useYiiyaStore((state) => state.setReferenceImage);
@@ -28,6 +30,12 @@ export function ScanStudioPanel() {
   const addLog = useYiiyaStore((state) => state.addLog);
   const [open, setOpen] = useState(false);
   const [isStarting, setStarting] = useState(false);
+
+  useEffect(() => {
+    if (canvasMode !== "3D" && creationGoal !== "scan") {
+      setOpen(false);
+    }
+  }, [canvasMode, creationGoal]);
 
   useEffect(() => {
     const sessionId = searchParams.get("scanSession");
@@ -74,7 +82,11 @@ export function ScanStudioPanel() {
     () => scanSession?.coverage ?? emptyCoverage(),
     [scanSession]
   );
-  const overallCoverage = coverageConfidence(coverage);
+  const overallCoverage = surfaceCoverageConfidence(coverage);
+
+  if (canvasMode === "WEB" && creationGoal !== "scan") {
+    return null;
+  }
 
   const startScan = async () => {
     setStarting(true);
@@ -125,7 +137,7 @@ export function ScanStudioPanel() {
   };
 
   return (
-    <div className="pointer-events-auto absolute bottom-28 left-5 z-30 w-[260px] border border-terminalBorder bg-[#050505]/94 p-3 font-mono text-white/62 backdrop-blur-xl">
+    <div className="pointer-events-auto absolute bottom-28 left-5 z-30 w-[240px] border border-terminalBorder bg-[#050505]/94 p-3 font-mono text-white/62 backdrop-blur-xl">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber">
@@ -145,14 +157,19 @@ export function ScanStudioPanel() {
       </div>
 
       {!open ? (
-        <button
-          type="button"
-          onClick={() => void startScan()}
-          disabled={isStarting}
-          className="mt-3 h-9 w-full border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:opacity-50"
-        >
-          {isStarting ? "Starting..." : "Start Scan"}
-        </button>
+        <div className="mt-3 grid gap-2">
+          <p className="text-[10px] leading-relaxed text-white/40">
+            Use this only in 3D mode when you want phone capture. Website references should come through screenshot upload.
+          </p>
+          <button
+            type="button"
+            onClick={() => void startScan()}
+            disabled={isStarting}
+            className="h-9 w-full border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:opacity-50"
+          >
+            {isStarting ? "Starting..." : "Start Scan"}
+          </button>
+        </div>
       ) : (
         <div className="mt-3 grid gap-3">
           {!scanSession ? (
@@ -180,8 +197,8 @@ export function ScanStudioPanel() {
                   }}
                 />
               ) : null}
-              <div className="grid grid-cols-4 gap-2">
-                {coverage.map((cell) => (
+              <div className="grid grid-cols-3 gap-2">
+                {coverage.slice(0, 9).map((cell) => (
                   <div
                     key={cell.id}
                     className="h-8 border"
@@ -195,9 +212,28 @@ export function ScanStudioPanel() {
                   />
                 ))}
               </div>
+              <div className="grid grid-cols-3 gap-2 text-[10px] uppercase tracking-[0.14em]">
+                {coverage.slice(9).map((cell) => (
+                  <div
+                    key={cell.id}
+                    className="border px-2 py-2 text-center"
+                    style={{
+                      borderColor: cell.covered ? "rgba(239,159,39,0.35)" : "#1A1A1A",
+                      color: cell.covered ? "#EF9F27" : "rgba(255,255,255,0.32)"
+                    }}
+                  >
+                    {cell.label.replace("-depth", "")}
+                  </div>
+                ))}
+              </div>
               <p className="text-[11px] text-white/44">
-                Coverage {Math.round(overallCoverage * 100)}% · {scanSession.status}
+                Surface {Math.round(overallCoverage * 100)}% · Depth {Math.round((scanSession.latestFrame?.depthScore ?? 0) * 100)}% · {scanSession.status}
               </p>
+              {scanSession.latestFrame?.guidance ? (
+                <p className="text-[10px] leading-relaxed text-white/38">
+                  {scanSession.latestFrame.guidance}
+                </p>
+              ) : null}
               <div className="grid gap-2">
                 <button
                   type="button"

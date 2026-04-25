@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { Suspense, useEffect, useState } from "react";
 import { AccountIndicator } from "@/components/account-indicator";
 import { AuthOverlay } from "@/components/auth-overlay";
-import { CanvasModeToggle } from "@/components/canvas-mode-toggle";
 import { EvolutionRail } from "@/components/evolution-rail";
 import { PitchMap } from "@/components/pitch-map";
 import { ProjectDrawer } from "@/components/project-drawer";
@@ -16,6 +15,7 @@ import { SpatialControlPanel } from "@/components/spatial-control-panel";
 import { Toast } from "@/components/toast";
 import { VoiceBar } from "@/components/voice-bar";
 import { WebsiteLayer } from "@/components/website-layer";
+import { WorkspaceNavigation } from "@/components/workspace-navigation";
 import { publishCurrentProject } from "@/lib/publish-project";
 import { useProjectAutosave } from "@/lib/use-project-autosave";
 
@@ -40,8 +40,6 @@ export function YiiyaWorkspace() {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const saveStatus = useYiiyaStore((state) => state.saveStatus);
   const lastSavedAt = useYiiyaStore((state) => state.lastSavedAt);
-  const strategyMode = useYiiyaStore((state) => state.strategyMode);
-  const setStrategyMode = useYiiyaStore((state) => state.setStrategyMode);
   const addLog = useYiiyaStore((state) => state.addLog);
   const resetProject = useYiiyaStore((state) => state.resetProject);
 
@@ -107,48 +105,6 @@ export function YiiyaWorkspace() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            aria-label="Open projects"
-            title="Open projects"
-            onClick={() => setProjectDrawerOpen((open) => !open)}
-            className="grid h-8 w-8 place-items-center border border-terminalBorder text-white/65 transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-            >
-              <path d="M4 4h7v7H4z" />
-              <path d="M13 4h7v7h-7z" />
-              <path d="M4 13h7v7H4z" />
-              <path d="M13 13h7v7h-7z" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            title="Open founder pitch map"
-            onClick={() => setPitchMapOpen((open) => !open)}
-            className="h-8 border border-terminalBorder px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-white/60 transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber"
-          >
-            Map
-          </button>
-          <button
-            type="button"
-            title="Strategy mode adds business rationale to new generations"
-            onClick={() => setStrategyMode(!strategyMode)}
-            className="h-8 border px-3 text-[11px] font-bold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-1 focus:ring-amber"
-            style={{
-              borderColor: strategyMode ? "#EF9F27" : "#1A1A1A",
-              color: strategyMode ? "#EF9F27" : "rgba(255,255,255,0.55)"
-            }}
-          >
-            Strategy
-          </button>
           {showNewConfirmation ? (
             <div className="flex h-8 items-center gap-2 border border-terminalBorder px-2 text-[11px] text-white/55">
               <span>Clear canvas and start fresh?</span>
@@ -167,15 +123,7 @@ export function YiiyaWorkspace() {
                 Cancel
               </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleNewProject}
-              className="h-8 border border-terminalBorder px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-white/65 transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber"
-            >
-              New
-            </button>
-          )}
+          ) : null}
           <button
             onClick={handlePublish}
             className="h-8 border border-amber/60 bg-amber px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-ink transition hover:bg-signalAmber focus:outline-none focus:ring-1 focus:ring-amber"
@@ -190,7 +138,7 @@ export function YiiyaWorkspace() {
         <div
           className="relative min-w-0 flex-1 canvas-grid"
           style={{
-            marginRight: sidebarCollapsed ? 44 : 220,
+            marginRight: sidebarCollapsed ? 44 : 260,
             transition: "margin-right 220ms ease"
           }}
         >
@@ -198,8 +146,12 @@ export function YiiyaWorkspace() {
             <SceneCanvas />
             <WebsiteLayer />
           </Suspense>
+          <WorkspaceNavigation
+            onToggleProjects={() => setProjectDrawerOpen((open) => !open)}
+            onToggleMap={() => setPitchMapOpen((open) => !open)}
+            onNewProject={handleNewProject}
+          />
           <EvolutionRail />
-          <CanvasModeToggle />
           <SpatialControlPanel />
           <Suspense fallback={null}>
             <ScanStudioPanel />

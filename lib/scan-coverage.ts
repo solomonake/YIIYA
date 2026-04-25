@@ -5,23 +5,37 @@ export type CoverageCell = {
   confidence: number;
 };
 
+export type CoverageSilhouette = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type CoverageFrame = {
   coverage: CoverageCell[];
   confidence: number;
   previewDataUrl?: string;
   objectHint?: string;
   updatedAt: string;
+  depthScore?: number;
+  guidance?: string;
+  silhouette?: CoverageSilhouette;
 };
 
 const coverageLabels = [
-  "front",
-  "front-right",
-  "right",
-  "back-right",
-  "back",
-  "back-left",
-  "left",
-  "front-left"
+  "top-left",
+  "top-center",
+  "top-right",
+  "mid-left",
+  "mid-center",
+  "mid-right",
+  "bottom-left",
+  "bottom-center",
+  "bottom-right",
+  "front-depth",
+  "mid-depth",
+  "rear-depth"
 ];
 
 export function emptyCoverage(): CoverageCell[] {
@@ -55,4 +69,28 @@ export function mergeCoverage(
 export function coverageConfidence(cells: CoverageCell[]) {
   const filled = cells.filter((cell) => cell.covered).length;
   return Number((filled / Math.max(1, cells.length)).toFixed(2));
+}
+
+export function surfaceCoverageConfidence(cells: CoverageCell[]) {
+  return coverageConfidence(cells.slice(0, 9));
+}
+
+export function clippedEdges(silhouette?: CoverageSilhouette | null) {
+  if (!silhouette) {
+    return {
+      left: false,
+      right: false,
+      top: false,
+      bottom: false
+    };
+  }
+
+  const margin = 0.06;
+
+  return {
+    left: silhouette.x <= margin,
+    right: silhouette.x + silhouette.width >= 1 - margin,
+    top: silhouette.y <= margin,
+    bottom: silhouette.y + silhouette.height >= 1 - margin
+  };
 }

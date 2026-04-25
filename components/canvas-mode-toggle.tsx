@@ -3,6 +3,11 @@
 import { useYiiyaStore, type CanvasMode } from "@/lib/store";
 
 const modes: CanvasMode[] = ["WEB", "3D", "HYBRID"];
+const labels: Record<CanvasMode, string> = {
+  WEB: "WEB",
+  "3D": "3D",
+  HYBRID: "POWER"
+};
 
 export function CanvasModeToggle() {
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
@@ -24,7 +29,7 @@ export function CanvasModeToggle() {
             color: canvasMode === mode ? "#EF9F27" : undefined
           }}
         >
-          {mode}
+          {labels[mode]}
         </button>
       ))}
     </div>

@@ -249,6 +249,12 @@ export function ReferenceImageDropzone() {
   const creationGoal = useYiiyaStore((state) => state.creationGoal);
   const starterPromptId = useYiiyaStore((state) => state.starterPromptId);
   const scanSession = useYiiyaStore((state) => state.scanSession);
+  const triggerLabel =
+    canvasMode === "WEB"
+      ? "↑ Website Shot"
+      : canvasMode === "3D"
+        ? "↑ Object Image"
+        : "↑ Reference";
 
   const applyPalette = useCallback((extractedPalette: ExtractedPalette) => {
     const foreground =
@@ -518,7 +524,7 @@ export function ReferenceImageDropzone() {
         onClick={() => inputRef.current?.click()}
         className="fixed bottom-5 left-5 z-30 rounded-full border border-terminalBorder bg-[#070707]/88 px-3 py-1.5 font-mono text-[11px] font-bold tracking-[0.08em] text-white/65 backdrop-blur transition hover:border-amber/70 hover:text-amber focus:outline-none focus:ring-1 focus:ring-amber"
       >
-        ↑ Reference
+        {triggerLabel}
       </button>
       <input
         ref={inputRef}

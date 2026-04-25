@@ -31,8 +31,15 @@ export function SpatialControlPanel() {
   const setExportTarget = useYiiyaStore((state) => state.setExportTarget);
   const [handEnabled, setHandEnabled] = useState(false);
   const [handStatus, setHandStatus] = useState<"idle" | "loading" | "active" | "error">("idle");
+  const [open, setOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const handRuntimeRef = useRef<HandRuntime | null>(null);
+
+  useEffect(() => {
+    if (canvasMode === "WEB") {
+      setOpen(false);
+    }
+  }, [canvasMode]);
 
   useEffect(() => {
     if (!handEnabled) {
@@ -192,7 +199,7 @@ export function SpatialControlPanel() {
     };
   }, [addLog, canvasMode, handEnabled, morphBlob, sceneObjects.length, updateSceneObject]);
 
-  if (canvasMode === "WEB" && labControls.length === 0) {
+  if (canvasMode === "WEB") {
     return null;
   }
 
@@ -242,6 +249,18 @@ export function SpatialControlPanel() {
     });
   };
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="pointer-events-auto absolute left-5 top-16 z-30 border border-terminalBorder bg-[#050505]/90 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/62 backdrop-blur-xl transition hover:border-amber/70 hover:text-amber"
+      >
+        Mold Lab
+      </button>
+    );
+  }
+
   return (
     <div className="pointer-events-auto absolute left-5 top-16 z-30 w-[244px] border border-terminalBorder bg-[#050505]/90 p-2 font-mono text-white/62 backdrop-blur-xl">
       <video ref={videoRef} className="hidden" playsInline muted />
@@ -250,20 +269,30 @@ export function SpatialControlPanel() {
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber">
             Mold Lab
           </p>
-          <p className="mt-1 text-[10px] text-white/36">voice, hand, sliders</p>
+          <p className="mt-1 text-[10px] text-white/36">3D only: voice, hand, sliders</p>
         </div>
-        <button
-          type="button"
-          title="Enable hand tracking to select or move objects"
-          onClick={() => setHandEnabled((enabled) => !enabled)}
-          className="h-8 border px-2 text-[10px] font-bold uppercase tracking-[0.12em] transition hover:border-amber/70 hover:text-amber"
-          style={{
-            borderColor: handEnabled ? "#EF9F27" : "#1A1A1A",
-            color: handEnabled ? "#EF9F27" : "rgba(255,255,255,0.55)"
-          }}
-        >
-          Hand
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            title="Enable hand tracking to select or move objects"
+            onClick={() => setHandEnabled((enabled) => !enabled)}
+            className="h-8 border px-2 text-[10px] font-bold uppercase tracking-[0.12em] transition hover:border-amber/70 hover:text-amber"
+            style={{
+              borderColor: handEnabled ? "#EF9F27" : "#1A1A1A",
+              color: handEnabled ? "#EF9F27" : "rgba(255,255,255,0.55)"
+            }}
+          >
+            Hand
+          </button>
+          <button
+            type="button"
+            title="Hide Mold Lab"
+            onClick={() => setOpen(false)}
+            className="h-8 border border-terminalBorder px-2 text-[10px] uppercase tracking-[0.12em] text-white/45 transition hover:border-white/20 hover:text-bone"
+          >
+            Hide
+          </button>
+        </div>
       </div>
 
       {handStatus === "loading" ? (

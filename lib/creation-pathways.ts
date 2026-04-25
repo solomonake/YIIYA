@@ -11,9 +11,9 @@ export const creationPathways: CreationPathway[] = [
   {
     id: "path-web-hotel",
     label: "Web",
-    mode: "HYBRID",
-    subtitle: "Turn one rough sentence into a strong landing page.",
-    prompt: "Build a sleek obsidian landing page for a boutique hotel in Tokyo with one sculptural 3D hero object.",
+    mode: "WEB",
+    subtitle: "URL, screenshot, or one rough sentence into a strong landing page.",
+    prompt: "Build a sleek obsidian landing page for a boutique hotel in Tokyo with a premium editorial layout and no 3D object.",
     creationGoal: "web"
   },
   {
@@ -31,6 +31,14 @@ export const creationPathways: CreationPathway[] = [
     subtitle: "Use your phone to capture a real object, then polish it into the studio.",
     prompt: "Scan an object from my desk and turn it into a polished 3D mockup.",
     creationGoal: "scan"
+  },
+  {
+    id: "path-power-watch",
+    label: "Power",
+    mode: "HYBRID",
+    subtitle: "Merge a kinetic website with a live 3D hero.",
+    prompt: "Build a kinetic luxury product page with a floating matte-black watch hero, scroll-reactive sections, and dramatic studio lighting.",
+    creationGoal: "web"
   }
 ];
 
@@ -39,5 +47,6 @@ export const rotatingStarterPrompts = [
   "Try: create a chrome laptop mockup",
   "Try: make a glass bottle and export it",
   "Try: scan my desk object from phone",
-  "Try: build a cinematic portfolio with one floating object"
+  "Try: build a cinematic portfolio with one floating object",
+  "Try: build a luxury watch page with a moving 3D hero"
 ];
