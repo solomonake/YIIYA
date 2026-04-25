@@ -201,7 +201,9 @@ export function YiiyaWorkspace() {
           <EvolutionRail />
           <CanvasModeToggle />
           <SpatialControlPanel />
-          <ScanStudioPanel />
+          <Suspense fallback={null}>
+            <ScanStudioPanel />
+          </Suspense>
           <VoiceBar />
         </div>
         <RightSidebar />
