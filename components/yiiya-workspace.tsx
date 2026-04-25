@@ -5,8 +5,10 @@ import { Suspense, useEffect, useState } from "react";
 import { AccountIndicator } from "@/components/account-indicator";
 import { AuthOverlay } from "@/components/auth-overlay";
 import { CanvasModeToggle } from "@/components/canvas-mode-toggle";
+import { EvolutionRail } from "@/components/evolution-rail";
 import { PitchMap } from "@/components/pitch-map";
 import { ProjectDrawer } from "@/components/project-drawer";
+import { ScanStudioPanel } from "@/components/scan-studio-panel";
 import { useYiiyaStore } from "@/lib/store";
 import { RightSidebar } from "@/components/right-sidebar";
 import { ReferenceImageDropzone } from "@/components/reference-image-dropzone";
@@ -196,8 +198,10 @@ export function YiiyaWorkspace() {
             <SceneCanvas />
             <WebsiteLayer />
           </Suspense>
+          <EvolutionRail />
           <CanvasModeToggle />
           <SpatialControlPanel />
+          <ScanStudioPanel />
           <VoiceBar />
         </div>
         <RightSidebar />

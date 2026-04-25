@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { captureTimelineSnapshot } from "@/lib/timeline-snapshots";
 import { useYiiyaStore, type YiiyaAction } from "@/lib/store";
 import { runYiiyaActions } from "@/lib/action-runner";
+import type { CreativeBrief } from "@/lib/creative-brief";
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -180,6 +182,10 @@ async function interpretTranscript(
     projectSlug: state.currentProjectSlug,
     projectId: state.currentProjectId,
     projectName: state.projectName,
+    creationGoal: state.creationGoal,
+    starterPromptId: state.starterPromptId,
+    canvasMode: state.canvasMode,
+    scanSessionId: state.scanSession?.id ?? null,
     selectedElementId: state.selectedElementId,
     activeElement: getSelectedElementSnapshot(state.selectedElementId),
     sections: state.sections,
@@ -203,6 +209,10 @@ async function interpretTranscript(
     current_canvas_json: currentCanvasJson,
     history: history.slice(-5),
     referenceImage,
+    creationGoal: state.creationGoal,
+    canvasMode: state.canvasMode,
+    starterPromptId: state.starterPromptId,
+    scanSessionId: state.scanSession?.id ?? null,
     strategyMode: state.strategyMode,
     partial
   };
@@ -227,6 +237,9 @@ async function interpretTranscript(
   let buffer = "";
   let actions: YiiyaAction[] = [];
   const qaLog: string[] = [];
+  let brief: CreativeBrief | null = null;
+  let confidence = 0;
+  let fallbackPath: string | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -260,6 +273,9 @@ async function interpretTranscript(
         message?: string;
         actions?: unknown;
         qa_log?: unknown;
+        brief?: CreativeBrief | null;
+        confidence?: number;
+        fallbackPath?: string | null;
       };
 
       if (record.type === "error") {
@@ -268,6 +284,18 @@ async function interpretTranscript(
 
       if (record.log) {
         onPipelineLog?.(record.log);
+      }
+
+      if (record.brief) {
+        brief = record.brief;
+      }
+
+      if (typeof record.confidence === "number") {
+        confidence = record.confidence;
+      }
+
+      if (typeof record.fallbackPath === "string") {
+        fallbackPath = record.fallbackPath;
       }
 
       if ((record.type === "actions" || record.type === "done") && isYiiyaActionArray(record.actions)) {
@@ -280,7 +308,63 @@ async function interpretTranscript(
     }
   }
 
-  return { actions, qaLog, interpreter: "stream" };
+  return { actions, qaLog, interpreter: "stream", brief, confidence, fallbackPath };
+}
+
+export async function runTranscriptThroughYiiya(transcript: string) {
+  const normalizedTranscript = transcript.trim();
+
+  if (!normalizedTranscript) {
+    return;
+  }
+
+  const state = useYiiyaStore.getState();
+  const previousHistory = state.conversationHistory;
+
+  state.setTranscript(normalizedTranscript);
+  state.addMessage({ role: "user", content: normalizedTranscript });
+  state.addLog(`[INTERPRET]: Intent = '${normalizedTranscript.slice(0, 52)}'.`);
+  state.setInterpreting(true);
+
+  try {
+    const { actions, qaLog, interpreter, brief, confidence, fallbackPath } =
+      await interpretTranscript(normalizedTranscript, previousHistory, state.addLog);
+
+    if (interpreter === "stream") {
+      state.addLog("[INTERPRET]: Streaming agent pipeline completed.");
+    }
+
+    state.setActiveBrief(brief, fallbackPath);
+    if (brief) {
+      state.addLog(
+        `[BRIEF]: ${brief.summary} | ${Math.round(confidence * 100)}% | ${fallbackPath ?? brief.fallbackPath}`
+      );
+    }
+
+    runYiiyaActions(actions);
+    state.addActionLogs(actions);
+    qaLog.forEach((log) => state.addLog(log));
+    state.addMessage({
+      role: "assistant",
+      content: summarizeActions(actions)
+    });
+
+    if (actions.length === 0) {
+      state.addLog("[SYSTEM]: No action detected.");
+    } else {
+      await captureTimelineSnapshot(
+        normalizedTranscript.slice(0, 42),
+        brief?.summary ?? summarizeActions(actions)
+      );
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Interpret request failed";
+    state.addLog(`[SYSTEM]: ${message}`);
+  } finally {
+    state.setStarterPromptId(null);
+    state.setInterpreting(false);
+  }
 }
 
 export function useSpeechInterpreter() {
@@ -291,14 +375,10 @@ export function useSpeechInterpreter() {
   const speculativeTranscriptRef = useRef("");
 
   const setListening = useYiiyaStore((state) => state.setListening);
-  const setInterpreting = useYiiyaStore((state) => state.setInterpreting);
-  const setTranscript = useYiiyaStore((state) => state.setTranscript);
   const setInterimTranscript = useYiiyaStore(
     (state) => state.setInterimTranscript
   );
   const addLog = useYiiyaStore((state) => state.addLog);
-  const addActionLogs = useYiiyaStore((state) => state.addActionLogs);
-  const addMessage = useYiiyaStore((state) => state.addMessage);
 
   const submitTranscript = useCallback(
     async (transcript: string, options?: { allowRepeat?: boolean }) => {
@@ -313,44 +393,9 @@ export function useSpeechInterpreter() {
       }
 
       submittedTranscriptRef.current = normalizedTranscript;
-      const previousHistory = useYiiyaStore.getState().conversationHistory;
-
-      setTranscript(normalizedTranscript);
-      addMessage({ role: "user", content: normalizedTranscript });
-      addLog(`[INTERPRET]: Intent = '${normalizedTranscript.slice(0, 52)}'.`);
-      setInterpreting(true);
-
-      try {
-        const { actions, qaLog, interpreter } = await interpretTranscript(
-          normalizedTranscript,
-          previousHistory,
-          addLog
-        );
-
-        if (interpreter === "stream") {
-          addLog("[INTERPRET]: Streaming agent pipeline completed.");
-        }
-
-        runYiiyaActions(actions);
-        addActionLogs(actions);
-        qaLog.forEach((log) => addLog(log));
-        addMessage({
-          role: "assistant",
-          content: summarizeActions(actions)
-        });
-
-        if (actions.length === 0) {
-          addLog("[SYSTEM]: No action detected.");
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Interpret request failed";
-        addLog(`[SYSTEM]: ${message}`);
-      } finally {
-        setInterpreting(false);
-      }
+      await runTranscriptThroughYiiya(normalizedTranscript);
     },
-    [addActionLogs, addLog, addMessage, setInterpreting, setTranscript]
+    []
   );
 
   const submitManualTranscript = useCallback(

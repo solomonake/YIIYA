@@ -19,6 +19,10 @@ export type ProjectRecord = {
     sections: YiiyaSection[];
     sceneObjects: SceneObject[];
     layers: Layer[];
+    meta?: {
+      thumbnailImage?: string | null;
+      briefSummary?: string | null;
+    };
   };
   theme_json: YiiyaTheme;
   updated_at: string;
@@ -26,6 +30,22 @@ export type ProjectRecord = {
 
 function localStorageKey(projectId: string) {
   return `${projectStoragePrefix}${projectId}`;
+}
+
+function getSceneCanvasImage() {
+  const canvas = document.querySelector<HTMLCanvasElement>(
+    "[data-yiiya-scene-canvas='true']"
+  );
+
+  if (!canvas) {
+    return null;
+  }
+
+  try {
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
 }
 
 export function buildProjectRecord(userId: string | null): ProjectRecord {
@@ -38,7 +58,11 @@ export function buildProjectRecord(userId: string | null): ProjectRecord {
     canvas_json: {
       sections: state.sections,
       sceneObjects: state.sceneObjects,
-      layers: state.layers
+      layers: state.layers,
+      meta: {
+        thumbnailImage: state.timelineSnapshots[0]?.htmlCanvasImage ?? getSceneCanvasImage(),
+        briefSummary: state.activeBrief?.summary ?? null
+      }
     },
     theme_json: state.themeState,
     updated_at: new Date().toISOString()

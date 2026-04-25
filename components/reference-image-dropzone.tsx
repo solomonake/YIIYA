@@ -1,8 +1,10 @@
 "use client";
 
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { captureTimelineSnapshot } from "@/lib/timeline-snapshots";
 import { runYiiyaActions } from "@/lib/action-runner";
 import { useYiiyaStore, type ReferenceImage, type YiiyaAction } from "@/lib/store";
+import type { CreativeBrief } from "@/lib/creative-brief";
 
 type ExtractedPalette = {
   dominantColor: string;
@@ -243,6 +245,10 @@ export function ReferenceImageDropzone() {
   const addActionLogs = useYiiyaStore((state) => state.addActionLogs);
   const addMessage = useYiiyaStore((state) => state.addMessage);
   const morphBlob = useYiiyaStore((state) => state.morphBlob);
+  const setActiveBrief = useYiiyaStore((state) => state.setActiveBrief);
+  const creationGoal = useYiiyaStore((state) => state.creationGoal);
+  const starterPromptId = useYiiyaStore((state) => state.starterPromptId);
+  const scanSession = useYiiyaStore((state) => state.scanSession);
 
   const applyPalette = useCallback((extractedPalette: ExtractedPalette) => {
     const foreground =
@@ -293,7 +299,11 @@ export function ReferenceImageDropzone() {
         current_canvas_json: currentCanvasJson,
         history: useYiiyaStore.getState().conversationHistory.slice(-5),
         referenceImage: { ...serverReferenceImage, imageMode },
-        image_mode: imageMode
+        image_mode: imageMode,
+        creationGoal,
+        canvasMode,
+        starterPromptId,
+        scanSessionId: scanSession?.id ?? null
       })
     });
 
@@ -308,6 +318,13 @@ export function ReferenceImageDropzone() {
     }
 
     runYiiyaActions(payload.actions);
+    const briefPayload = payload as {
+      brief?: CreativeBrief | null;
+      fallbackPath?: string | null;
+    };
+    if (briefPayload.brief) {
+      setActiveBrief(briefPayload.brief, briefPayload.fallbackPath ?? null);
+    }
     addActionLogs(payload.actions);
     payload.qa_log?.forEach((log) => addLog(log));
     addMessage({
@@ -317,7 +334,23 @@ export function ReferenceImageDropzone() {
           ? "Generated image-inspired web layout."
           : "Analyzed image geometry for 3D blob."
     });
-  }, [addActionLogs, addLog, addMessage]);
+    await captureTimelineSnapshot(
+      imageMode === "web" ? "reference web" : "reference 3d",
+      briefPayload.brief?.summary ??
+        (imageMode === "web"
+          ? "Generated image-inspired web layout."
+          : "Analyzed image geometry for 3D blob.")
+    );
+  }, [
+    addActionLogs,
+    addLog,
+    addMessage,
+    canvasMode,
+    creationGoal,
+    scanSession,
+    setActiveBrief,
+    starterPromptId
+  ]);
 
   const processImage = useCallback(async (image: File) => {
     setScanning(true);

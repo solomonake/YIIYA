@@ -1,8 +1,9 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useYiiyaStore } from "@/lib/store";
 import { useSpeechInterpreter } from "@/lib/use-speech-interpreter";
+import { rotatingStarterPrompts } from "@/lib/creation-pathways";
 
 const bars = [0, 1, 2, 3, 4];
 
@@ -14,8 +15,21 @@ export function VoiceBar() {
   const publishResult = useYiiyaStore((state) => state.publishResult);
   const setPublishResult = useYiiyaStore((state) => state.setPublishResult);
   const setToastMessage = useYiiyaStore((state) => state.setToastMessage);
+  const creationPathways = useYiiyaStore((state) => state.creationPathways);
+  const setCreationGoal = useYiiyaStore((state) => state.setCreationGoal);
+  const setCanvasMode = useYiiyaStore((state) => state.setCanvasMode);
+  const setStarterPromptId = useYiiyaStore((state) => state.setStarterPromptId);
   const { toggleListening, submitManualTranscript } = useSpeechInterpreter();
   const [manualCommand, setManualCommand] = useState("");
+  const [starterPromptIndex, setStarterPromptIndex] = useState(0);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setStarterPromptIndex((current) => (current + 1) % rotatingStarterPrompts.length);
+    }, 2400);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const status = isInterpreting
     ? "processing..."
@@ -171,7 +185,7 @@ export function VoiceBar() {
             placeholder={
               selectedElementId
                 ? `// ${selectedElementId} selected - type to modify`
-                : "Type a command for demo safety"
+                : rotatingStarterPrompts[starterPromptIndex] ?? "Type a command for demo safety"
             }
             className="min-w-0 flex-1 border-none bg-transparent text-[11px] text-bone outline-none placeholder:text-white/32 disabled:cursor-not-allowed disabled:text-white/35 sm:text-xs"
           />
@@ -195,6 +209,28 @@ export function VoiceBar() {
             </svg>
           </button>
         </form>
+      </div>
+      <div className="pointer-events-auto absolute inset-x-0 -top-14 flex justify-center px-2">
+        <div className="flex w-[min(760px,calc(100vw-24px))] gap-2 overflow-x-auto">
+          {creationPathways.map((pathway) => (
+            <button
+              key={pathway.id}
+              type="button"
+              onClick={() => {
+                setCreationGoal(pathway.creationGoal);
+                setCanvasMode(pathway.mode);
+                setStarterPromptId(pathway.id);
+                void submitManualTranscript(pathway.prompt);
+              }}
+              className="shrink-0 border border-terminalBorder bg-[#070707]/92 px-3 py-2 text-left font-mono transition hover:border-amber/70"
+            >
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber">
+                {pathway.label}
+              </p>
+              <p className="mt-1 text-[11px] text-white/72">{pathway.subtitle}</p>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

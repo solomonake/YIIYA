@@ -6,14 +6,45 @@ import {
   mergeYiiyaTheme,
   type YiiyaTheme
 } from "@/lib/designSystem";
+import type { CreativeBrief } from "@/lib/creative-brief";
+import { creationPathways, type CreationPathway } from "@/lib/creation-pathways";
 import { normalizeSpatialMaterial, type SpatialMaterial } from "@/lib/materials";
+import type { CoverageCell, CoverageFrame } from "@/lib/scan-coverage";
 import type { PublishedProject } from "@/lib/published-project-types";
 import { createProjectSlug } from "@/lib/project-slug";
+import type { ExportTarget } from "@/lib/spatial-export";
 
 export type Layer = {
   id: string;
   name: string;
   type: "site" | "scene" | "mesh" | "light" | "section";
+};
+
+export type TimelineSnapshot = {
+  id: string;
+  label: string;
+  createdAt: string;
+  summary: string;
+  sections: YiiyaSection[];
+  sceneObjects: SceneObject[];
+  layers: Layer[];
+  themeState: YiiyaTheme;
+  blobState: BlobState;
+  canvasMode: CanvasMode;
+  brief: CreativeBrief | null;
+  htmlCanvasImage?: string;
+  sceneCanvasImage?: string | null;
+};
+
+export type ScanSessionState = {
+  id: string;
+  status: "waiting" | "capturing" | "ready";
+  desktopUrl: string;
+  mobileUrl: string;
+  promptHint?: string;
+  objectHint?: string;
+  coverage: CoverageCell[];
+  latestFrame?: CoverageFrame;
 };
 
 export type LogEntry = {
@@ -62,6 +93,7 @@ export type YiiyaSection = {
 export type SceneObject = {
   id: string;
   shape: string;
+  semanticFamily?: string;
   material: SpatialMaterial;
   color: string;
   animation: string;
@@ -144,6 +176,7 @@ export type YiiyaAction =
       type: "ADD_3D_OBJECT";
       payload: {
         shape: unknown;
+        semanticFamily?: unknown;
         material?: unknown;
         color?: unknown;
         animation?: unknown;
@@ -157,6 +190,7 @@ export type YiiyaAction =
       type: "ADD_SPATIAL_OBJECT";
       payload: {
         shape: unknown;
+        semanticFamily?: unknown;
         material: unknown;
         color: unknown;
         animation: unknown;
@@ -394,6 +428,8 @@ type YiiyaState = {
   projectName: string;
   isGuest: boolean;
   isPro: boolean;
+  creationGoal: "web" | "spatial" | "scan";
+  starterPromptId: string | null;
   canvasMode: CanvasMode;
   strategyMode: boolean;
   isListening: boolean;
@@ -408,6 +444,12 @@ type YiiyaState = {
   publishResult: PublishedProject | null;
   saveStatus: "idle" | "saving" | "saved";
   lastSavedAt: string | null;
+  activeBrief: CreativeBrief | null;
+  lastFallbackPath: string | null;
+  timelineSnapshots: TimelineSnapshot[];
+  activeTimelineSnapshotId: string | null;
+  creationPathways: CreationPathway[];
+  scanSession: ScanSessionState | null;
   themeState: YiiyaTheme;
   sidebarCollapsed: boolean;
   sections: YiiyaSection[];
@@ -425,6 +467,8 @@ type YiiyaState = {
   renameProject: (projectName: string) => void;
   setGuest: (isGuest: boolean) => void;
   setPro: (isPro: boolean) => void;
+  setCreationGoal: (creationGoal: "web" | "spatial" | "scan") => void;
+  setStarterPromptId: (starterPromptId: string | null) => void;
   setCanvasMode: (canvasMode: CanvasMode) => void;
   setStrategyMode: (strategyMode: boolean) => void;
   setCurrentProjectSlug: (currentProjectSlug: string) => void;
@@ -439,6 +483,10 @@ type YiiyaState = {
   setToastMessage: (toastMessage: string | null) => void;
   setPublishResult: (publishResult: PublishedProject | null) => void;
   setSaveStatus: (status: "idle" | "saving" | "saved", savedAt?: string) => void;
+  setActiveBrief: (brief: CreativeBrief | null, fallbackPath?: string | null) => void;
+  setScanSession: (scanSession: ScanSessionState | null) => void;
+  pushTimelineSnapshot: (snapshot: TimelineSnapshot) => void;
+  restoreTimelineSnapshot: (snapshotId: string) => void;
   setThemeState: (themeState: Partial<YiiyaTheme>) => void;
   addSection: (section: {
     sectionType: unknown;
@@ -449,6 +497,7 @@ type YiiyaState = {
   removeSection: (sectionId: string) => void;
   addSceneObject: (object: {
     shape?: unknown;
+    semanticFamily?: unknown;
     material?: unknown;
     color?: unknown;
     animation?: unknown;
@@ -466,6 +515,10 @@ type YiiyaState = {
     objectId: string,
     updates: Partial<Omit<SceneObject, "material">> & { material?: unknown }
   ) => void;
+  updateSceneObjectLive: (
+    objectId: string,
+    updates: Partial<Omit<SceneObject, "material">> & { material?: unknown }
+  ) => void;
   removeSceneObject: (objectId: string) => void;
   popUndo: () => void;
   popRedo: () => void;
@@ -476,6 +529,8 @@ type YiiyaState = {
   loadProject: (project: SavedProjectState) => void;
   resetProject: () => void;
   toggleSidebar: () => void;
+  setExportTarget: (exportTarget: ExportTarget) => void;
+  exportTarget: ExportTarget;
 };
 
 const initialLayers: Layer[] = [];
@@ -924,6 +979,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   projectName: defaultProjectName,
   isGuest: false,
   isPro: false,
+  creationGoal: "web",
+  starterPromptId: null,
   canvasMode: "HYBRID",
   strategyMode: false,
   isListening: false,
@@ -938,8 +995,15 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   publishResult: null,
   saveStatus: "idle",
   lastSavedAt: null,
+  activeBrief: null,
+  lastFallbackPath: null,
+  timelineSnapshots: [],
+  activeTimelineSnapshotId: null,
+  creationPathways,
+  scanSession: null,
   themeState: defaultYiiyaTheme,
   sidebarCollapsed: false,
+  exportTarget: "scene",
   sections: [],
   sceneObjects: [],
   blobState: defaultBlobState(),
@@ -1000,6 +1064,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     }),
   setGuest: (isGuest) => set({ isGuest }),
   setPro: (isPro) => set({ isPro }),
+  setCreationGoal: (creationGoal) => set({ creationGoal }),
+  setStarterPromptId: (starterPromptId) => set({ starterPromptId }),
   setCanvasMode: (canvasMode) => set({ canvasMode }),
   setStrategyMode: (strategyMode) => set({ strategyMode }),
   setCurrentProjectSlug: (currentProjectSlug) => set({ currentProjectSlug }),
@@ -1016,7 +1082,40 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   setSaveStatus: (saveStatus, savedAt) =>
     set({
       saveStatus,
-      lastSavedAt: savedAt ?? (saveStatus === "saving" ? null : undefined)
+        lastSavedAt: savedAt ?? (saveStatus === "saving" ? null : undefined)
+    }),
+  setActiveBrief: (activeBrief, fallbackPath) =>
+    set({
+      activeBrief,
+      lastFallbackPath: fallbackPath ?? null
+    }),
+  setScanSession: (scanSession) => set({ scanSession }),
+  pushTimelineSnapshot: (snapshot) =>
+    set((state) => ({
+      timelineSnapshots: [snapshot, ...state.timelineSnapshots].slice(0, 18),
+      activeTimelineSnapshotId: snapshot.id
+    })),
+  restoreTimelineSnapshot: (snapshotId) =>
+    set((state) => {
+      const snapshot = state.timelineSnapshots.find((item) => item.id === snapshotId);
+
+      if (!snapshot) {
+        return state;
+      }
+
+      return {
+        undoStack: pushUndoSnapshot(state),
+        redoStack: [],
+        sections: snapshot.sections,
+        sceneObjects: snapshot.sceneObjects,
+        layers: snapshot.layers,
+        themeState: snapshot.themeState,
+        blobState: snapshot.blobState,
+        canvasMode: snapshot.canvasMode,
+        activeBrief: snapshot.brief,
+        activeTimelineSnapshotId: snapshot.id,
+        logs: [...state.logs, createLog(`[TIMELINE]: Restored ${snapshot.label}.`)].slice(-40)
+      };
     }),
   setThemeState: (themeState) =>
     set((state) => ({
@@ -1066,6 +1165,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     const nextObject: SceneObject = {
       id,
       shape: typeof object.shape === "string" ? object.shape : "sphere",
+      semanticFamily:
+        typeof object.semanticFamily === "string" ? object.semanticFamily : undefined,
       material: normalizeSpatialMaterial(object.material),
       color: typeof object.color === "string" ? object.color : "#EF9F27",
       animation: typeof object.animation === "string" ? object.animation : "float",
@@ -1228,6 +1329,36 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         )
       };
     }),
+  updateSceneObjectLive: (objectId, updates) =>
+    set((state) => {
+      const targetId =
+        objectId === "latest"
+          ? state.sceneObjects[state.sceneObjects.length - 1]?.id
+          : objectId;
+
+      if (!targetId) {
+        return state;
+      }
+
+      return {
+        sceneObjects: state.sceneObjects.map((object) =>
+          object.id === targetId
+            ? {
+                ...object,
+                ...updates,
+                material: updates.material
+                  ? normalizeSpatialMaterial(updates.material)
+                  : object.material,
+                scale: updates.scale ?? object.scale,
+                materialOverrides: {
+                  ...object.materialOverrides,
+                  ...updates.materialOverrides
+                }
+              }
+            : object
+        )
+      };
+    }),
   removeSceneObject: (objectId) =>
     set((state) => {
       const targetId =
@@ -1371,6 +1502,10 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         sections,
         sceneObjects,
         layers,
+        activeBrief: null,
+        timelineSnapshots: [],
+        activeTimelineSnapshotId: null,
+        scanSession: null,
         blobState: defaultBlobState(),
         spatialAnchors: [],
         labControls: [],
@@ -1393,6 +1528,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       projectName: defaultProjectName,
       isListening: false,
       isInterpreting: false,
+      creationGoal: "web",
+      starterPromptId: null,
       transcript: "",
       interimTranscript: "",
       selectedElementId: null,
@@ -1404,6 +1541,11 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       strategyMode: false,
       saveStatus: "idle",
       lastSavedAt: null,
+      activeBrief: null,
+      lastFallbackPath: null,
+      timelineSnapshots: [],
+      activeTimelineSnapshotId: null,
+      scanSession: null,
       themeState: defaultYiiyaTheme,
       sections: [],
       sceneObjects: [],
@@ -1417,5 +1559,6 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       redoStack: []
     })),
   toggleSidebar: () =>
-    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed }))
+    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  setExportTarget: (exportTarget) => set({ exportTarget })
 }));

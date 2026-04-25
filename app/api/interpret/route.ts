@@ -34,7 +34,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       actions: output.actions,
-      qa_log: output.qa_log
+      qa_log: output.qa_log,
+      brief: output.brief,
+      confidence: output.confidence,
+      fallbackPath: output.fallbackPath
     });
   } catch (error) {
     return NextResponse.json(

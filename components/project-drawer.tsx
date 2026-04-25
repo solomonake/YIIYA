@@ -49,6 +49,7 @@ export function ProjectDrawer({
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -143,6 +144,11 @@ export function ProjectDrawer({
     setEditingId(null);
   };
 
+  const filteredProjects = projects.filter((project) => {
+    const haystack = `${project.project_name} ${project.canvas_json.meta?.briefSummary ?? ""}`.toLowerCase();
+    return haystack.includes(query.trim().toLowerCase());
+  });
+
   return (
     <aside
       className="absolute bottom-0 right-0 top-12 z-40 w-[280px] border-l border-terminalBorder bg-ink/98 p-4 text-bone shadow-[0_30px_120px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-transform duration-200"
@@ -170,17 +176,36 @@ export function ProjectDrawer({
       >
         New project
       </button>
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search projects"
+        className="mb-4 h-9 w-full border border-terminalBorder bg-black px-3 text-xs text-bone outline-none placeholder:text-white/28 focus:border-amber"
+      />
       <div className="yiiya-scrollbar grid max-h-[calc(100%-112px)] gap-2 overflow-y-auto pr-1">
         {status === "loading" ? (
           <p className="text-xs text-white/35">Loading projects...</p>
-        ) : projects.length === 0 ? (
+        ) : filteredProjects.length === 0 ? (
           <p className="text-xs text-white/35">No saved projects yet.</p>
         ) : (
-          projects.map((project) => (
+          filteredProjects.map((project) => (
             <div
               key={project.id}
-              className="border border-terminalBorder bg-white/[0.025] p-2"
+              className="overflow-hidden border border-terminalBorder bg-white/[0.025]"
             >
+              {project.canvas_json.meta?.thumbnailImage ? (
+                <div
+                  className="h-24 w-full border-b border-terminalBorder bg-cover bg-center"
+                  style={{
+                    backgroundImage: `linear-gradient(rgba(5,5,5,0.08), rgba(5,5,5,0.28)), url(${project.canvas_json.meta.thumbnailImage})`
+                  }}
+                />
+              ) : (
+                <div className="grid h-24 w-full place-items-center border-b border-terminalBorder bg-[radial-gradient(circle_at_top,_rgba(239,159,39,0.2),_transparent_55%)] text-[10px] uppercase tracking-[0.18em] text-white/28">
+                  Preview pending
+                </div>
+              )}
+              <div className="p-2">
               {editingId === project.id ? (
                 <form onSubmit={(event) => handleRenameSubmit(event, project)}>
                   <input
@@ -207,6 +232,16 @@ export function ProjectDrawer({
                 {project.canvas_json.sections.length} sections ·{" "}
                 {relativeTime(project.updated_at)}
               </p>
+              <p
+                className="mt-2 overflow-hidden text-[10px] leading-relaxed text-white/46"
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical"
+                }}
+              >
+                {project.canvas_json.meta?.briefSummary ?? "Resume this spatial draft and keep building."}
+              </p>
               <div className="mt-2 flex gap-2">
                 <button
                   type="button"
@@ -222,6 +257,7 @@ export function ProjectDrawer({
                 >
                   Delete
                 </button>
+              </div>
               </div>
             </div>
           ))

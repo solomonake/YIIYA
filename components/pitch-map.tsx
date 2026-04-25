@@ -133,6 +133,7 @@ export function PitchMap({
   const addLog = useYiiyaStore((state) => state.addLog);
   const [activeNode, setActiveNode] = useState<Node<PitchNodeData> | null>(null);
   const [draftLabel, setDraftLabel] = useState("");
+  const [view, setView] = useState<"strategy" | "flow">("strategy");
 
   const { nodes, edges } = useMemo(() => {
     const sectionNodes = sections.slice(0, 8).map((section, index) => {
@@ -157,7 +158,7 @@ export function PitchMap({
       );
     });
     const strategy = strategyNodes(projectName, sections);
-    const allEdges: Edge[] = [
+    const strategyEdges: Edge[] = [
       ["audience", "offer"],
       ["offer", "proof"],
       ["proof", "cta"],
@@ -179,8 +180,12 @@ export function PitchMap({
       style: { stroke: "rgba(237,237,237,0.2)" }
     }));
 
-    return { nodes: [...strategy, ...sectionNodes], edges: [...allEdges, ...sectionEdges] };
-  }, [projectName, sections]);
+    if (view === "flow") {
+      return { nodes: sectionNodes, edges: sectionEdges };
+    }
+
+    return { nodes: [...strategy, ...sectionNodes], edges: [...strategyEdges, ...sectionEdges] };
+  }, [projectName, sections, view]);
 
   const handleNodeClick: NodeMouseHandler<Node<PitchNodeData>> = (_event, clickedNode) => {
     setActiveNode(clickedNode);
@@ -227,6 +232,22 @@ export function PitchMap({
           >
             Close
           </button>
+        </div>
+        <div className="mb-3 flex gap-2">
+          {(["strategy", "flow"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setView(option)}
+              className="h-8 border px-3 text-[11px] font-bold uppercase tracking-[0.12em] transition"
+              style={{
+                borderColor: view === option ? "#EF9F27" : "#1A1A1A",
+                color: view === option ? "#EF9F27" : "rgba(255,255,255,0.55)"
+              }}
+            >
+              {option}
+            </button>
+          ))}
         </div>
         <div className="h-[calc(100%-56px)] border border-terminalBorder bg-[#050505]">
           {sections.length === 0 ? (

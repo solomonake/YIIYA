@@ -32,11 +32,19 @@ export function GET() {
     missing,
     ai: {
       conductor: {
-        model: process.env.GEMINI_FLASH_MODEL ?? "gemini-1.5-flash",
+        model: process.env.GEMINI_FLASH_MODEL ?? "gemini-2.5-flash",
+        configured: env.GEMINI_API_KEY
+      },
+      creativeDirector: {
+        model:
+          process.env.GEMINI_CREATIVE_MODEL ??
+          process.env.GEMINI_3_CREATIVE_MODEL ??
+          process.env.GEMINI_FLASH_MODEL ??
+          "gemini-2.5-flash",
         configured: env.GEMINI_API_KEY
       },
       researcher: {
-        model: process.env.GEMINI_RESEARCH_MODEL ?? "gemini-1.5-pro",
+        model: process.env.GEMINI_RESEARCH_MODEL ?? process.env.GEMINI_FLASH_MODEL ?? "gemini-2.5-flash",
         configured: env.GEMINI_API_KEY
       },
       architect: {

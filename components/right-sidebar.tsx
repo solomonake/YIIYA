@@ -15,6 +15,8 @@ export function RightSidebar() {
   const logs = useYiiyaStore((state) => state.logs);
   const layers = useYiiyaStore((state) => state.layers);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
+  const activeBrief = useYiiyaStore((state) => state.activeBrief);
+  const lastFallbackPath = useYiiyaStore((state) => state.lastFallbackPath);
   const toggleSidebar = useYiiyaStore((state) => state.toggleSidebar);
 
   return (
@@ -32,6 +34,20 @@ export function RightSidebar() {
 
       {collapsed ? null : (
         <div className="flex min-h-0 flex-1 flex-col gap-5 px-3 py-4">
+          {activeBrief ? (
+            <section className="shrink-0">
+              <h2 className="mb-3 border-b border-terminalBorder pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/40">
+                Brief
+              </h2>
+              <div className="border border-terminalBorder bg-white/[0.025] p-2 text-[10px] leading-relaxed text-white/62">
+                <p className="text-white/84">{activeBrief.summary}</p>
+                <p className="mt-2 text-white/45">
+                  {activeBrief.archetype} · {activeBrief.spatialAssetFamily} · {Math.round(activeBrief.confidence * 100)}%
+                </p>
+                <p className="mt-1 text-amber/70">{lastFallbackPath ?? activeBrief.fallbackPath}</p>
+              </div>
+            </section>
+          ) : null}
           <section className="flex min-h-0 flex-[1.15] flex-col">
             <h2 className="mb-3 border-b border-terminalBorder pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/40">
               System Operation Feed

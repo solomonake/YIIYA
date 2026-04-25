@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useYiiyaStore, type LabControl } from "@/lib/store";
+import { exportSpatialTarget } from "@/lib/spatial-export";
 
 type HandRuntime = {
   stop: () => void;
@@ -26,6 +27,8 @@ export function SpatialControlPanel() {
   const labControls = useYiiyaStore((state) => state.labControls);
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const addLog = useYiiyaStore((state) => state.addLog);
+  const exportTarget = useYiiyaStore((state) => state.exportTarget);
+  const setExportTarget = useYiiyaStore((state) => state.setExportTarget);
   const [handEnabled, setHandEnabled] = useState(false);
   const [handStatus, setHandStatus] = useState<"idle" | "loading" | "active" | "error">("idle");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -345,6 +348,45 @@ export function SpatialControlPanel() {
         className="mt-2 h-8 w-full border border-terminalBorder px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition hover:border-amber/70 hover:text-amber"
       >
         Add slider
+      </button>
+
+      <div className="mt-2 grid grid-cols-2 gap-1">
+        {(["scene", "latest"] as const).map((target) => (
+          <button
+            key={target}
+            type="button"
+            onClick={() => setExportTarget(target)}
+            className="h-8 border px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition"
+            style={{
+              borderColor: exportTarget === target ? "#EF9F27" : "#1A1A1A",
+              color: exportTarget === target ? "#EF9F27" : "rgba(255,255,255,0.55)"
+            }}
+          >
+            {target}
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        title="Export spatial output"
+        onClick={() => {
+          try {
+            exportSpatialTarget(exportTarget, sceneObjects.at(-1)?.id);
+            addLog(
+              `[EXPORT]: ${exportTarget === "latest" ? "Latest object" : "Scene"} exported.`
+            );
+          } catch (error) {
+            addLog(
+              `[EXPORT]: ${
+                error instanceof Error ? error.message : "Export unavailable."
+              }`
+            );
+          }
+        }}
+        className="mt-2 h-8 w-full border border-terminalBorder px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition hover:border-amber/70 hover:text-amber"
+      >
+        Export {exportTarget === "latest" ? "Latest" : "Scene"}
       </button>
 
       {labControls.length > 0 ? (

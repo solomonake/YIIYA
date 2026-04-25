@@ -12,8 +12,10 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import type { ElementRef } from "react";
 import type { Group, Mesh, Points } from "three";
+import type { ThreeEvent } from "@react-three/fiber";
 import { materialPresets } from "@/lib/materials";
 import { useYiiyaStore, type SceneObject, type SpatialAnchor } from "@/lib/store";
+import { registerExportObject, registerExportRoot } from "@/lib/spatial-export";
 
 function ObjectGeometry({ shape }: { shape: string }) {
   const normalizedShape = shape.toLowerCase();
@@ -45,6 +47,130 @@ function ObjectGeometry({ shape }: { shape: string }) {
   return <sphereGeometry args={[0.72, 48, 48]} />;
 }
 
+function SemanticMockup({
+  shape,
+  color,
+  materialPreset
+}: {
+  shape: string;
+  color: string;
+  materialPreset: Record<string, any>;
+}) {
+  if (shape === "device-laptop") {
+    return (
+      <group>
+        <mesh position={[0, -0.18, 0]} rotation={[-0.08, 0, 0]}>
+          <boxGeometry args={[1.8, 0.08, 1.18]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+        <mesh position={[0, 0.26, -0.44]} rotation={[-0.9, 0, 0]}>
+          <boxGeometry args={[1.72, 1.02, 0.06]} />
+          <meshPhysicalMaterial color="#171B24" {...materialPreset} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (shape === "vehicle-sedan") {
+    return (
+      <group>
+        <mesh position={[0, 0.05, 0]}>
+          <boxGeometry args={[1.8, 0.42, 0.86]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+        <mesh position={[0.04, 0.34, 0]} scale={[1.15, 0.65, 0.82]}>
+          <sphereGeometry args={[0.48, 32, 32]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+        {[-0.58, 0.58].map((x) => (
+          <mesh key={x} position={[x, -0.22, 0.42]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.16, 0.16, 0.14, 20]} />
+            <meshPhysicalMaterial color="#111111" metalness={0.9} roughness={0.35} />
+          </mesh>
+        ))}
+        {[-0.58, 0.58].map((x) => (
+          <mesh key={`${x}-rear`} position={[x, -0.22, -0.42]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.16, 0.16, 0.14, 20]} />
+            <meshPhysicalMaterial color="#111111" metalness={0.9} roughness={0.35} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  if (shape === "furniture-chair") {
+    return (
+      <group>
+        <mesh position={[0, 0.18, 0]}>
+          <boxGeometry args={[0.96, 0.12, 0.98]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+        <mesh position={[0, 0.88, -0.36]}>
+          <boxGeometry args={[0.96, 1.18, 0.12]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+        {[
+          [-0.36, -0.46, -0.32],
+          [0.36, -0.46, -0.32],
+          [-0.36, -0.46, 0.32],
+          [0.36, -0.46, 0.32]
+        ].map((position, index) => (
+          <mesh key={index} position={position as [number, number, number]}>
+            <cylinderGeometry args={[0.05, 0.05, 0.98, 12]} />
+            <meshPhysicalMaterial color={color} {...materialPreset} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  if (shape === "apparel-shoe") {
+    return (
+      <group rotation={[0, -0.3, 0]}>
+        <mesh position={[0, 0.08, 0]}>
+          <capsuleGeometry args={[0.36, 1.12, 10, 18]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+        <mesh position={[0.28, 0.06, 0.02]} scale={[0.58, 0.44, 0.92]}>
+          <sphereGeometry args={[0.34, 20, 20]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (shape === "portrait-bust") {
+    return (
+      <group>
+        <mesh position={[0, 0.58, 0]}>
+          <sphereGeometry args={[0.42, 28, 28]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+        <mesh position={[0, -0.04, 0]} scale={[0.78, 1.1, 0.62]}>
+          <capsuleGeometry args={[0.34, 0.76, 8, 18]} />
+          <meshPhysicalMaterial color={color} {...materialPreset} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (shape === "pedestal-plinth") {
+    return (
+      <mesh>
+        <cylinderGeometry args={[0.74, 0.94, 0.72, 28]} />
+        <meshPhysicalMaterial color={color} {...materialPreset} />
+      </mesh>
+    );
+  }
+
+  return (
+    <mesh>
+      <ObjectGeometry shape={shape} />
+      <meshPhysicalMaterial color={color} {...materialPreset} />
+    </mesh>
+  );
+}
+
 function SceneObjectMesh({
   object,
   anchor
@@ -52,11 +178,19 @@ function SceneObjectMesh({
   object: SceneObject;
   anchor?: SpatialAnchor;
 }) {
-  const meshRef = useRef<Mesh>(null);
+  const meshRef = useRef<Group>(null);
   const materialPreset = {
     ...materialPresets[object.material],
     ...object.materialOverrides
   };
+  const updateSceneObjectLive = useYiiyaStore((state) => state.updateSceneObjectLive);
+  const draggingRef = useRef(false);
+
+  useEffect(() => {
+    registerExportObject(object.id, meshRef.current);
+
+    return () => registerExportObject(object.id, null);
+  }, [object.id]);
 
   useFrame((state) => {
     if (!meshRef.current) {
@@ -80,16 +214,44 @@ function SceneObjectMesh({
     }
   });
 
+  const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    draggingRef.current = true;
+  };
+
+  const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!draggingRef.current) {
+      return;
+    }
+
+    event.stopPropagation();
+    updateSceneObjectLive(object.id, {
+      position: [event.point.x, event.point.y, event.point.z]
+    });
+  };
+
+  const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    draggingRef.current = false;
+  };
+
   const mesh = (
-    <mesh
+    <group
       ref={meshRef}
       position={anchor?.worldPosition ?? object.position}
       rotation={[0.22, 0.7, 0.08]}
       scale={object.scale}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerOut={handlePointerUp}
     >
-      <ObjectGeometry shape={object.shape} />
-      <meshPhysicalMaterial color={object.color} {...materialPreset} />
-    </mesh>
+      <SemanticMockup
+        shape={object.shape}
+        color={object.color}
+        materialPreset={materialPreset}
+      />
+    </group>
   );
 
   if (
@@ -116,6 +278,14 @@ function LoadedMeshObject({
 }) {
   const groupRef = useRef<Group>(null);
   const gltf = useGLTF(object.meshUrl ?? "");
+  const updateSceneObjectLive = useYiiyaStore((state) => state.updateSceneObjectLive);
+  const draggingRef = useRef(false);
+
+  useEffect(() => {
+    registerExportObject(object.id, groupRef.current);
+
+    return () => registerExportObject(object.id, null);
+  }, [object.id]);
 
   useFrame((state) => {
     if (!groupRef.current) {
@@ -134,6 +304,28 @@ function LoadedMeshObject({
       object={gltf.scene}
       position={anchor?.worldPosition ?? object.position}
       scale={object.scale}
+      onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+        event.stopPropagation();
+        draggingRef.current = true;
+      }}
+      onPointerMove={(event: ThreeEvent<PointerEvent>) => {
+        if (!draggingRef.current) {
+          return;
+        }
+
+        event.stopPropagation();
+        updateSceneObjectLive(object.id, {
+          position: [event.point.x, event.point.y, event.point.z]
+        });
+      }}
+      onPointerUp={(event: ThreeEvent<PointerEvent>) => {
+        event.stopPropagation();
+        draggingRef.current = false;
+      }}
+      onPointerOut={(event: ThreeEvent<PointerEvent>) => {
+        event.stopPropagation();
+        draggingRef.current = false;
+      }}
     />
   );
 }
@@ -361,9 +553,16 @@ export function SceneCanvas() {
   const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const hasSections = useYiiyaStore((state) => state.sections.length > 0);
+  const rootGroupRef = useRef<Group>(null);
 
   useEffect(() => {
     window.dispatchEvent(new Event("resize"));
+  }, []);
+
+  useEffect(() => {
+    registerExportRoot(rootGroupRef.current);
+
+    return () => registerExportRoot(null);
   }, []);
 
   return (
@@ -395,11 +594,13 @@ export function SceneCanvas() {
         <ambientLight intensity={0.9} />
         <directionalLight position={[3, 4, 5]} intensity={2.2} color="#fff6df" />
         <pointLight position={[-3, 2.4, 3]} intensity={1.4} color="#EF9F27" />
-        <StarterScene
-          objects={sceneObjects}
-          anchors={spatialAnchors}
-          subduedBlob={canvasMode === "HYBRID" && hasSections}
-        />
+        <group ref={rootGroupRef}>
+          <StarterScene
+            objects={sceneObjects}
+            anchors={spatialAnchors}
+            subduedBlob={canvasMode === "HYBRID" && hasSections}
+          />
+        </group>
         <OrbitControls
           enabled={canvasMode === "3D"}
           enablePan={false}

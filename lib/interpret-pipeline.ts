@@ -1,5 +1,10 @@
 import { fal } from "@fal-ai/client";
 import OpenAI from "openai";
+import {
+  heuristicCreativeBrief,
+  inferSpatialAssetFamily,
+  type CreativeBrief
+} from "@/lib/creative-brief";
 import { compileLocalIntent } from "@/lib/local-intent-compiler";
 import type { YiiyaAction } from "@/lib/store";
 
@@ -32,6 +37,10 @@ export type InterpretRequestBody = {
   image_mode?: "web" | "3d" | "hybrid";
   partial?: boolean;
   strategyMode?: boolean;
+  creationGoal?: "web" | "spatial" | "scan";
+  canvasMode?: "WEB" | "3D" | "HYBRID";
+  starterPromptId?: string | null;
+  scanSessionId?: string | null;
 };
 
 export type ResearchBrief = {
@@ -46,12 +55,39 @@ export type ResearchBrief = {
 };
 
 export type PipelineEvent =
-  | { type: "router"; intent: IntentType; model: string; log: string }
+  | {
+      type: "router";
+      intent: IntentType;
+      model: string;
+      log: string;
+      brief?: CreativeBrief | null;
+      confidence?: number;
+      fallbackPath?: string | null;
+    }
   | { type: "research"; brief: ResearchBrief | null; log: string }
   | { type: "actions"; actions: YiiyaAction[]; log?: string }
   | { type: "qa"; qa_log: string[] }
-  | { type: "done"; actions: YiiyaAction[]; qa_log: string[] }
+  | {
+      type: "done";
+      actions: YiiyaAction[];
+      qa_log: string[];
+      brief?: CreativeBrief | null;
+      confidence?: number;
+      fallbackPath?: string | null;
+    }
   | { type: "error"; message: string };
+
+function fastGeminiModel() {
+  return process.env.GEMINI_FLASH_MODEL ?? "gemini-2.5-flash";
+}
+
+function creativeGeminiModel() {
+  return process.env.GEMINI_CREATIVE_MODEL ?? process.env.GEMINI_3_CREATIVE_MODEL ?? fastGeminiModel();
+}
+
+function researchGeminiModel() {
+  return process.env.GEMINI_RESEARCH_MODEL ?? fastGeminiModel();
+}
 
 const ARCHITECT_PROMPT = `You are the Architect agent for Yiiya.
 Return raw JSON array only. Never return HTML.
@@ -179,6 +215,10 @@ function buildContext(body: InterpretRequestBody, researchBrief: ResearchBrief |
     {
       previousContext: body.history?.slice(-5) ?? [],
       currentCommand: body.transcript,
+      creationGoal: body.creationGoal ?? "web",
+      canvasMode: body.canvasMode ?? "HYBRID",
+      starterPromptId: body.starterPromptId ?? null,
+      scanSessionId: body.scanSessionId ?? null,
       selectedElement: body.activeElementId ?? "none",
       currentCanvas: body.current_canvas_json ?? body.currentScene,
       imageMode: body.image_mode ?? body.referenceImage?.imageMode ?? "none",
@@ -503,7 +543,7 @@ export async function classifyIntent(transcript: string): Promise<IntentType> {
   const { text } = await callGemini(
     system,
     transcript,
-    process.env.GEMINI_FLASH_MODEL ?? "gemini-1.5-flash"
+    fastGeminiModel()
   );
   const parsed = parseJsonFromText(text);
 
@@ -532,7 +572,7 @@ Use Google Search grounding to make the result specific, realistic, premium, and
   const { text, citations } = await callGemini(
     system,
     `Research premium website positioning for: ${body.transcript}`,
-    process.env.GEMINI_RESEARCH_MODEL ?? "gemini-1.5-pro",
+    researchGeminiModel(),
     true
   );
   const parsed = parseJsonFromText(text);
@@ -584,13 +624,237 @@ async function fetchUnsplashAssets(query: string) {
     .slice(0, 3) ?? [];
 }
 
-async function runArchitect(body: InterpretRequestBody, researchBrief: ResearchBrief | null) {
+function coerceCreativeBrief(value: unknown, fallback: CreativeBrief): CreativeBrief {
+  if (!isRecord(value)) {
+    return fallback;
+  }
+
+  return {
+    archetype:
+      typeof value.archetype === "string"
+        ? (value.archetype as CreativeBrief["archetype"])
+        : fallback.archetype,
+    audience: typeof value.audience === "string" ? value.audience : fallback.audience,
+    palette: Array.isArray(value.palette)
+      ? value.palette.filter((item): item is string => typeof item === "string").slice(0, 4)
+      : fallback.palette,
+    visualTone: typeof value.visualTone === "string" ? value.visualTone : fallback.visualTone,
+    spatialAssetFamily:
+      typeof value.spatialAssetFamily === "string"
+        ? (value.spatialAssetFamily as CreativeBrief["spatialAssetFamily"])
+        : fallback.spatialAssetFamily,
+    confidence:
+      typeof value.confidence === "number" ? value.confidence : fallback.confidence,
+    fallbackPath:
+      value.fallbackPath === "llm" ||
+      value.fallbackPath === "heuristic" ||
+      value.fallbackPath === "local-compiler"
+        ? value.fallbackPath
+        : fallback.fallbackPath,
+    proofPoints: Array.isArray(value.proofPoints)
+      ? value.proofPoints.filter((item): item is string => typeof item === "string")
+      : fallback.proofPoints,
+    cta: typeof value.cta === "string" ? value.cta : fallback.cta,
+    locality: typeof value.locality === "string" ? value.locality : fallback.locality,
+    summary: typeof value.summary === "string" ? value.summary : fallback.summary
+  };
+}
+
+async function runCreativeBrief(
+  body: InterpretRequestBody,
+  intent: IntentType,
+  researchBrief: ResearchBrief | null
+) {
+  const heuristic = heuristicCreativeBrief({
+    transcript: body.transcript,
+    intent,
+    creationGoal: body.creationGoal,
+    starterPromptId: body.starterPromptId,
+    hasReferenceImage: Boolean(body.referenceImage)
+  });
+
+  if (!process.env.GEMINI_API_KEY || intent === "COMMAND") {
+    return {
+      brief: {
+        ...heuristic,
+        fallbackPath: intent === "COMMAND" ? ("local-compiler" as const) : ("heuristic" as const)
+      }
+    };
+  }
+
+  const system = `You are Yiiya's creative director.
+Return raw JSON only matching:
+{
+  "archetype": "brand-poster" | "service-business" | "creative-portfolio" | "interactive-concept" | "reference-rebuild",
+  "audience": string,
+  "palette": string[],
+  "visualTone": string,
+  "spatialAssetFamily": "device" | "bottle" | "vehicle" | "furniture" | "apparel" | "portrait" | "pedestal" | "abstract",
+  "confidence": number,
+  "fallbackPath": "llm",
+  "proofPoints": string[],
+  "cta": string,
+  "locality": string | null,
+  "summary": string
+}
+Turn rough prompts into something commercially strong and spatially specific.
+Do not make the result about Yiiya.`;
+
+  try {
+    const { text } = await callGemini(
+      system,
+      JSON.stringify(
+        {
+          transcript: body.transcript,
+          intent,
+          creationGoal: body.creationGoal ?? "web",
+          starterPromptId: body.starterPromptId ?? null,
+          referenceImage: Boolean(body.referenceImage),
+          researchBrief
+        },
+        null,
+        2
+      ),
+      creativeGeminiModel()
+    );
+    const parsed = parseJsonFromText(text);
+
+    return {
+      brief: coerceCreativeBrief(parsed, {
+        ...heuristic,
+        fallbackPath: "llm" as const
+      })
+    };
+  } catch {
+    return {
+      brief: heuristic
+    };
+  }
+}
+
+function presetSpatialAction(transcript: string, brief: CreativeBrief): YiiyaAction | null {
+  const text = transcript.toLowerCase();
+  const family = inferSpatialAssetFamily(text);
+  const color = brief.palette[2] ?? "#EF9F27";
+  const material = text.includes("glass")
+    ? "glass"
+    : text.includes("gold")
+      ? "gold"
+      : text.includes("chrome")
+        ? "chrome"
+        : "matte";
+
+  if (family === "device") {
+    return {
+      type: "ADD_3D_OBJECT",
+      payload: {
+        shape: "device-laptop",
+        semanticFamily: family,
+        material,
+        color,
+        animation: "float",
+        scale: [1.35, 0.9, 1.05],
+        position: [0, 0.85, 0]
+      }
+    } as YiiyaAction;
+  }
+
+  if (family === "vehicle") {
+    return {
+      type: "ADD_3D_OBJECT",
+      payload: {
+        shape: "vehicle-sedan",
+        semanticFamily: family,
+        material,
+        color,
+        animation: "float",
+        scale: [1.3, 0.9, 1.9],
+        position: [0, 0.7, 0]
+      }
+    } as YiiyaAction;
+  }
+
+  if (family === "furniture") {
+    return {
+      type: "ADD_3D_OBJECT",
+      payload: {
+        shape: "furniture-chair",
+        semanticFamily: family,
+        material,
+        color,
+        animation: "float",
+        scale: [1.05, 1.15, 1.05],
+        position: [0, 0.8, 0]
+      }
+    } as YiiyaAction;
+  }
+
+  if (family === "apparel") {
+    return {
+      type: "ADD_3D_OBJECT",
+      payload: {
+        shape: "apparel-shoe",
+        semanticFamily: family,
+        material,
+        color,
+        animation: "float",
+        scale: [1.18, 0.78, 1.42],
+        position: [0, 0.8, 0]
+      }
+    } as YiiyaAction;
+  }
+
+  if (family === "portrait") {
+    return {
+      type: "ADD_3D_OBJECT",
+      payload: {
+        shape: "portrait-bust",
+        semanticFamily: family,
+        material,
+        color,
+        animation: "pulse",
+        scale: [1.0, 1.3, 1.0],
+        position: [0, 0.95, 0]
+      }
+    } as YiiyaAction;
+  }
+
+  if (family === "pedestal") {
+    return {
+      type: "ADD_3D_OBJECT",
+      payload: {
+        shape: "pedestal-plinth",
+        semanticFamily: family,
+        material,
+        color,
+        animation: "static",
+        scale: [1.2, 0.52, 1.2],
+        position: [0, 0.45, 0]
+      }
+    } as YiiyaAction;
+  }
+
+  return null;
+}
+
+async function runArchitect(
+  body: InterpretRequestBody,
+  researchBrief: ResearchBrief | null,
+  brief: CreativeBrief
+) {
   const prompt = body.strategyMode
     ? `${ARCHITECT_PROMPT}\nStrategy mode is enabled: include realistic business rationale in content.strategyNotes fields and strengthen conversion logic.`
     : ARCHITECT_PROMPT;
   const text = await callAnthropic(
     prompt,
-    buildContext(body, researchBrief),
+    JSON.stringify(
+      {
+        context: JSON.parse(buildContext(body, researchBrief)),
+        creativeBrief: brief
+      },
+      null,
+      2
+    ),
     process.env.ANTHROPIC_ARCHITECT_MODEL ?? "claude-3-5-sonnet-20241022",
     2200
   );
@@ -626,7 +890,7 @@ async function runStyle(body: InterpretRequestBody) {
   return parseActionArray(text);
 }
 
-async function runAlchemist(body: InterpretRequestBody) {
+async function runAlchemist(body: InterpretRequestBody, brief: CreativeBrief) {
   const transcript = body.transcript.toLowerCase();
   const direct = compileLocalYiiyaIntent(body);
   const spatialDirect = direct.filter(
@@ -645,6 +909,14 @@ async function runAlchemist(body: InterpretRequestBody) {
 
   if (!body.referenceImage && spatialDirect.length > 0) {
     return spatialDirect;
+  }
+
+  if (!body.referenceImage) {
+    const preset = presetSpatialAction(transcript, brief);
+
+    if (preset) {
+      return [preset];
+    }
   }
 
   if (!body.referenceImage && transcript.includes("gold")) {
@@ -707,21 +979,22 @@ function bodylessOpenAIModel() {
 async function runActionsForIntent(
   body: InterpretRequestBody,
   intent: IntentType,
-  researchBrief: ResearchBrief | null
+  researchBrief: ResearchBrief | null,
+  brief: CreativeBrief
 ) {
   if (intent === "COMMAND") {
     return commandActions(body.transcript);
   }
 
   if (intent === "SPATIAL") {
-    return runAlchemist(body);
+    return runAlchemist(body, brief);
   }
 
   if (intent === "STYLE") {
     return runStyle(body);
   }
 
-  return runArchitect(body, researchBrief);
+  return runArchitect(body, researchBrief, brief);
 }
 
 export async function* runInterpretPipeline(
@@ -735,10 +1008,6 @@ export async function* runInterpretPipeline(
           ? "SPATIAL"
           : undefined;
     const intent = forcedIntent ?? (await classifyIntent(body.transcript));
-    const routerLog = `[ROUTER]: Intent classified as ${intent} → routing to ${modelForIntent(intent)}`;
-
-    yield { type: "router", intent, model: modelForIntent(intent), log: routerLog };
-
     let researchBrief: ResearchBrief | null = null;
     let researchError: string | null = null;
 
@@ -763,16 +1032,32 @@ export async function* runInterpretPipeline(
       };
     }
 
+    const { brief } = await runCreativeBrief(body, intent, researchBrief);
+    const routerLog = `[ROUTER]: Intent classified as ${intent} → routing to ${modelForIntent(intent)} | brief ${Math.round(brief.confidence * 100)}% ${brief.fallbackPath}.`;
+
+    yield {
+      type: "router",
+      intent,
+      model: modelForIntent(intent),
+      log: routerLog,
+      brief,
+      confidence: brief.confidence,
+      fallbackPath: brief.fallbackPath
+    };
+
     if (body.partial) {
       yield {
         type: "done",
         actions: [],
-        qa_log: ["[CONDUCTOR]: Speculative pass complete."]
+        qa_log: ["[CONDUCTOR]: Speculative pass complete."],
+        brief,
+        confidence: brief.confidence,
+        fallbackPath: brief.fallbackPath
       };
       return;
     }
 
-    const directActions = await runActionsForIntent(body, intent, researchBrief);
+    const directActions = await runActionsForIntent(body, intent, researchBrief, brief);
     yield { type: "actions", actions: directActions };
 
     let criticOutput: { actions: YiiyaAction[]; qa_log: string[] } =
@@ -798,12 +1083,25 @@ export async function* runInterpretPipeline(
     yield {
       type: "done",
       actions: criticOutput.actions,
-      qa_log: criticOutput.qa_log
+      qa_log: criticOutput.qa_log,
+      brief,
+      confidence: brief.confidence,
+      fallbackPath: brief.fallbackPath
     };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Interpret pipeline failed";
     const fallbackActions = compileLocalYiiyaIntent(body);
+    const fallbackBrief = {
+      ...heuristicCreativeBrief({
+        transcript: body.transcript,
+        intent: body.image_mode === "3d" ? "SPATIAL" : "LAYOUT",
+        creationGoal: body.creationGoal,
+        starterPromptId: body.starterPromptId,
+        hasReferenceImage: Boolean(body.referenceImage)
+      }),
+      fallbackPath: "local-compiler" as const
+    };
 
     if (fallbackActions.length > 0) {
       yield {
@@ -816,7 +1114,10 @@ export async function* runInterpretPipeline(
       yield {
         type: "done",
         actions: fallbackActions,
-        qa_log: ["[QA]: Critic skipped — recovery compiler output."]
+        qa_log: ["[QA]: Critic skipped — recovery compiler output."],
+        brief: fallbackBrief,
+        confidence: fallbackBrief.confidence,
+        fallbackPath: fallbackBrief.fallbackPath
       };
       return;
     }
@@ -828,6 +1129,9 @@ export async function* runInterpretPipeline(
 export async function runInterpretOnce(body: InterpretRequestBody) {
   let actions: YiiyaAction[] = [];
   const qa_log: string[] = [];
+  let brief: CreativeBrief | null = null;
+  let confidence = 0;
+  let fallbackPath: string | null = null;
   const events: PipelineEvent[] = [];
 
   for await (const event of runInterpretPipeline(body)) {
@@ -835,6 +1139,9 @@ export async function runInterpretOnce(body: InterpretRequestBody) {
 
     if (event.type === "router") {
       qa_log.push(event.log);
+      brief = event.brief ?? brief;
+      confidence = event.confidence ?? confidence;
+      fallbackPath = event.fallbackPath ?? fallbackPath;
     }
 
     if (event.type === "research") {
@@ -855,6 +1162,9 @@ export async function runInterpretOnce(body: InterpretRequestBody) {
 
     if (event.type === "done") {
       actions = event.actions;
+      brief = event.brief ?? brief;
+      confidence = event.confidence ?? confidence;
+      fallbackPath = event.fallbackPath ?? fallbackPath;
     }
 
     if (event.type === "error") {
@@ -862,5 +1172,5 @@ export async function runInterpretOnce(body: InterpretRequestBody) {
     }
   }
 
-  return { actions, qa_log, events };
+  return { actions, qa_log, events, brief, confidence, fallbackPath };
 }
