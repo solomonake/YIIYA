@@ -7,6 +7,7 @@ import {
 } from "@/lib/creative-brief";
 import { compileLocalIntent } from "@/lib/local-intent-compiler";
 import type { YiiyaAction } from "@/lib/store";
+import type { CursorTarget } from "@/lib/scene/types";
 
 export type IntentType = "LAYOUT" | "SPATIAL" | "STYLE" | "COMMAND";
 
@@ -41,6 +42,7 @@ export type InterpretRequestBody = {
   canvasMode?: "WEB" | "3D" | "HYBRID";
   starterPromptId?: string | null;
   scanSessionId?: string | null;
+  cursorTarget?: CursorTarget | null;
 };
 
 export type ResearchBrief = {
@@ -96,6 +98,7 @@ Aesthetic: SRL institutional, #050505, #1A1A1A borders, amber accent, JetBrains 
 Do not use a fixed template recipe. Choose an archetype that fits the prompt: brand-poster, service-business, creative-portfolio, interactive-concept, or reference-rebuild.
 Every section content payload may include visual, interaction, and designDNA tokens. Use these tokens to make the renderer adapt instead of repeating the same page.
 If a reference image is present, mirror its composition, crop, visual density, palette, and image role. Include visual.source="reference-image" and visual.fidelity="mirror-composition" where useful.
+If cursorTarget is present, resolve words like this, that, here, it, and this one against that target.
 Never use "New Venture", "Company Name", Lorem Ipsum, or placeholder image services unless the user literally requested those words.
 Supported actions:
 ADD_SECTION payload { sectionType, layoutVariant, theme, content }
@@ -103,7 +106,7 @@ MODIFY_ELEMENT payload { elementId, property, value, mode? }
 SET_GLOBAL_THEME payload { spacingMultiplier?, borderRadius?, primaryAccent?, fontScale?, layoutDensity?, palette?, fontWeight? }
 SYNC_BRAND_TO_IMAGE payload { palette, fontWeights, layoutStructure, visualTone }
 ADJUST_DENSITY payload { scale }
-ADD_3D_OBJECT payload { shape, material, color, animation, position, scale?, anchorSection? }
+ADD_3D_OBJECT payload { prompt?, resolvedName?, shape?, modelUrl?, tier?, style?, material, color, animation, position, scale?, anchorSection? }
 PUBLISH payload {}
 Supported sections: NAVBAR, HERO, ABOUT, SERVICES, FEATURES, METRICS, LOGO_STRIP, TESTIMONIALS, PRICING, FAQ, CONTACT, FOOTER.
 Hero layoutVariant must be CENTERED_IMPACT, EDITORIAL_SPLIT, or BENTO_GRID.
@@ -115,7 +118,7 @@ Every page-level generation must include at least one CTA.`;
 const STYLE_PROMPT = `You are the Style agent for Yiiya.
 Return raw JSON array only. Handle only theme, typography, spacing, alignment, and selected element edits.
 Use SRL institutional defaults unless user explicitly asks otherwise.
-If selectedElementId is present and the user says this, it, or that, target that ID.`;
+If selectedElementId or cursorTarget is present and the user says this, it, or that, target that selection.`;
 
 const ALCHEMIST_PROMPT = `You are the 3D Alchemist for Yiiya.
 Return raw JSON array only.
@@ -123,12 +126,14 @@ Supported actions:
 MOLD_BLOB payload { targetShape?: 'sphere'|'bottle'|'cube'|'organic'|'crystal', formation?: 'sphere'|'helix'|'torus'|'bottle'|'capsule'|'cube'|'wave', distort?: number, speed?: number, aspectRatio?: number, glow?: number, chaos?: number, twist?: number, particleDensity?: number, material?: string }
 MORPH_BLOB payload { targetShape: 'sphere'|'bottle'|'cube'|'organic'|'crystal', formation?: 'sphere'|'helix'|'torus'|'bottle'|'capsule'|'cube'|'wave', distort: number, speed: number, aspectRatio?: number, silhouette?: object, material?: string }
 SET_MATERIAL payload { objectId: string, material: string, metalness?: number, roughness?: number, color?: string, transmission?: number, emissive?: string }
-ADD_3D_OBJECT payload { shape: 'sphere'|'box'|'torus'|'cylinder'|'cone'|'capsule', material: 'glass'|'chrome'|'gold'|'matte'|'carbon'|'holographic', color?: string, scale?: [number,number,number], position?: [number,number,number], animation?: 'rotate'|'float'|'pulse'|'spin', intensity?: number, anchorSection?: string }
-LOAD_3D_MESH payload { url: string, material?: string, color?: string, scale?: [number,number,number], position?: [number,number,number], anchorSection?: string }
+ADD_3D_OBJECT payload { prompt?: string, resolvedName?: string, shape?: string, modelUrl?: string, tier?: 'library'|'stylized'|'generated', style?: string, material: 'glass'|'chrome'|'gold'|'matte'|'carbon'|'holographic', color?: string, scale?: [number,number,number], position?: [number,number,number], animation?: 'rotate'|'float'|'pulse'|'spin'|'drift'|'static', intensity?: number, anchorSection?: string }
+LOAD_3D_MESH payload { url: string, prompt?: string, resolvedName?: string, style?: string, tier?: 'generated', material?: string, color?: string, scale?: [number,number,number], position?: [number,number,number], anchorSection?: string }
 MOVE_OBJECT payload { objectId: string, delta?: [number,number,number], position?: [number,number,number] }
 SET_OBJECT_ANIMATION payload { objectId: string, animation: 'rotate'|'float'|'pulse'|'spin'|'static', intensity?: number }
 SPAWN_CONTROL payload { id: string, label: string, min: number, max: number, step?: number, value: number, target: 'blob'|'theme'|'section'|'object', property: string }
 REMOVE_OBJECT payload { objectId: string }
+If cursorTarget.sceneObjectId is present and the user says this object, it, or that, target that object.
+Prefer concrete resolved objects like cup, bottle, laptop, phone, watch, chair, car, shoe, bust, pedestal, camera, bag, or plant before falling back to abstract shapes.
 Map "make it gold" directly to SET_MATERIAL with metalness 1, roughness 0.2, color "#FFD700".`;
 
 const CRITIC_PROMPT = `You are the Critic agent for Yiiya. You receive design action JSON and return raw JSON only in this shape: { "actions": [...], "qa_log": [...] }.
@@ -221,6 +226,7 @@ function buildContext(body: InterpretRequestBody, researchBrief: ResearchBrief |
       scanSessionId: body.scanSessionId ?? null,
       selectedElement: body.activeElementId ?? "none",
       currentCanvas: body.current_canvas_json ?? body.currentScene,
+      cursorTarget: body.cursorTarget ?? null,
       imageMode: body.image_mode ?? body.referenceImage?.imageMode ?? "none",
       referenceImageExtraction: body.referenceImage
         ? {
@@ -748,6 +754,8 @@ function presetSpatialAction(transcript: string, brief: CreativeBrief): YiiyaAct
     return {
       type: "ADD_3D_OBJECT",
       payload: {
+        prompt: transcript,
+        resolvedName: text.includes("phone") ? "phone" : text.includes("watch") ? "watch" : "laptop",
         shape: "device-laptop",
         semanticFamily: family,
         material,
@@ -763,6 +771,8 @@ function presetSpatialAction(transcript: string, brief: CreativeBrief): YiiyaAct
     return {
       type: "ADD_3D_OBJECT",
       payload: {
+        prompt: transcript,
+        resolvedName: "car",
         shape: "vehicle-sedan",
         semanticFamily: family,
         material,
@@ -778,6 +788,8 @@ function presetSpatialAction(transcript: string, brief: CreativeBrief): YiiyaAct
     return {
       type: "ADD_3D_OBJECT",
       payload: {
+        prompt: transcript,
+        resolvedName: text.includes("table") ? "table" : text.includes("lamp") ? "lamp" : "chair",
         shape: "furniture-chair",
         semanticFamily: family,
         material,
@@ -793,6 +805,8 @@ function presetSpatialAction(transcript: string, brief: CreativeBrief): YiiyaAct
     return {
       type: "ADD_3D_OBJECT",
       payload: {
+        prompt: transcript,
+        resolvedName: text.includes("watch") ? "watch" : text.includes("bag") ? "bag" : "shoe",
         shape: "apparel-shoe",
         semanticFamily: family,
         material,
@@ -808,6 +822,8 @@ function presetSpatialAction(transcript: string, brief: CreativeBrief): YiiyaAct
     return {
       type: "ADD_3D_OBJECT",
       payload: {
+        prompt: transcript,
+        resolvedName: "bust",
         shape: "portrait-bust",
         semanticFamily: family,
         material,
@@ -823,6 +839,8 @@ function presetSpatialAction(transcript: string, brief: CreativeBrief): YiiyaAct
     return {
       type: "ADD_3D_OBJECT",
       payload: {
+        prompt: transcript,
+        resolvedName: "pedestal",
         shape: "pedestal-plinth",
         semanticFamily: family,
         material,

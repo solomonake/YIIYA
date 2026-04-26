@@ -193,6 +193,18 @@ async function interpretTranscript(
     themeState: state.themeState,
     layers: state.layers
   };
+  const cursorTarget = state.cursorTarget
+    ? {
+        screenX: state.cursorTarget.screenX,
+        screenY: state.cursorTarget.screenY,
+        domElementId: state.cursorTarget.domElementId,
+        domTextContent: state.cursorTarget.domTextContent,
+        sceneObjectId: state.cursorTarget.sceneObjectId,
+        scenePoint: state.cursorTarget.scenePoint,
+        targetKind: state.cursorTarget.targetKind,
+        description: state.cursorTarget.description
+      }
+    : null;
   const referenceImage = state.referenceImage
     ? (() => {
         const { previewUrl: _previewUrl, ...serverReferenceImage } =
@@ -213,6 +225,7 @@ async function interpretTranscript(
     canvasMode: state.canvasMode,
     starterPromptId: state.starterPromptId,
     scanSessionId: state.scanSession?.id ?? null,
+    cursorTarget,
     strategyMode: state.strategyMode,
     partial
   };

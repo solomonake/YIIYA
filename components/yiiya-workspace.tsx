@@ -16,6 +16,8 @@ import { Toast } from "@/components/toast";
 import { VoiceBar } from "@/components/voice-bar";
 import { WebsiteLayer } from "@/components/website-layer";
 import { WorkspaceNavigation } from "@/components/workspace-navigation";
+import { CursorReticle } from "@/components/cursor-reticle";
+import { useCursorTracker } from "@/lib/cursor/use-cursor-target";
 import { publishCurrentProject } from "@/lib/publish-project";
 import { useProjectAutosave } from "@/lib/use-project-autosave";
 
@@ -29,6 +31,7 @@ const SceneCanvas = dynamic(
 
 export function YiiyaWorkspace() {
   useProjectAutosave();
+  useCursorTracker();
 
   const [showNewConfirmation, setShowNewConfirmation] = useState(false);
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
@@ -157,6 +160,7 @@ export function YiiyaWorkspace() {
             <ScanStudioPanel />
           </Suspense>
           <VoiceBar />
+          <CursorReticle />
         </div>
         <RightSidebar />
         <ProjectDrawer

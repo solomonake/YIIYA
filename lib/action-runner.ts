@@ -9,6 +9,9 @@ import {
   type YiiyaTheme
 } from "@/lib/designSystem";
 import { normalizeSpatialMaterial } from "@/lib/materials";
+import { resolveSceneBlueprint } from "@/lib/scene/object-library";
+import { styleFromMaterial } from "@/lib/scene/styles";
+import type { AnimationPreset } from "@/lib/scene/types";
 
 function numericStyleValue(value: string) {
   const parsed = Number.parseFloat(value);
@@ -191,17 +194,56 @@ function applyAdd3DObject(action: YiiyaAction) {
   }
 
   const store = useYiiyaStore.getState();
+  const payload = action.payload as Record<string, unknown>;
 
   if (store.canvasMode === "WEB") {
     store.setCanvasMode("HYBRID");
     store.addLog("SYSTEM: Mode switched to HYBRID — 3D object detected.");
   }
 
+  const blueprint = resolveSceneBlueprint({
+    prompt:
+      typeof payload.prompt === "string"
+        ? payload.prompt
+        : typeof payload.resolvedName === "string"
+          ? payload.resolvedName
+          : typeof payload.shape === "string"
+            ? payload.shape
+            : typeof payload.semanticFamily === "string"
+              ? payload.semanticFamily
+              : "abstract object",
+    resolvedName:
+      typeof payload.resolvedName === "string" ? payload.resolvedName : undefined,
+    shape: typeof payload.shape === "string" ? payload.shape : undefined,
+    semanticFamily:
+      typeof payload.semanticFamily === "string" ? payload.semanticFamily : undefined,
+    color: typeof payload.color === "string" ? payload.color : undefined,
+    material: payload.material,
+    scale: Array.isArray(payload.scale) ? normalizeVector(payload.scale, [1, 1, 1]) : undefined,
+    animation: typeof payload.animation === "string" ? payload.animation : undefined,
+    modelUrl: typeof payload.modelUrl === "string" ? payload.modelUrl : undefined
+  });
+
   store.addSceneObject({
-    ...action.payload,
+    prompt: blueprint.prompt,
+    resolvedName: blueprint.resolvedName,
+    tier: blueprint.tier,
+    modelUrl: blueprint.modelUrl,
+    style: blueprint.style,
+    generationStatus:
+      payload.generationStatus === "generating" || payload.generationStatus === "failed"
+        ? payload.generationStatus
+        : "ready",
+    shape:
+      typeof payload.shape === "string" ? payload.shape : blueprint.resolvedName,
+    semanticFamily: blueprint.semanticFamily,
+    material: blueprint.material,
+    color: blueprint.color,
+    animation: blueprint.animation,
+    scale: blueprint.scale,
     position:
-      positionFromAnchorSection(action.payload.anchorSection) ??
-      action.payload.position
+      positionFromAnchorSection(payload.anchorSection) ?? payload.position,
+    anchorSection: payload.anchorSection
   });
 }
 
@@ -328,10 +370,29 @@ function applyLoad3DMesh(action: YiiyaAction) {
     store.addLog("SYSTEM: Mode switched to HYBRID — 3D mesh detected.");
   }
 
+  const material = normalizeSpatialMaterial(action.payload.material);
+
   store.addSceneObject({
+    prompt:
+      typeof action.payload.prompt === "string"
+        ? action.payload.prompt
+        : typeof action.payload.resolvedName === "string"
+          ? action.payload.resolvedName
+          : "generated object",
+    resolvedName:
+      typeof action.payload.resolvedName === "string"
+        ? action.payload.resolvedName
+        : "generated object",
+    tier: action.payload.tier === "library" ? "library" : "generated",
+    modelUrl: action.payload.url,
+    style:
+      typeof action.payload.style === "string"
+        ? action.payload.style
+        : styleFromMaterial(material),
+    generationStatus: "ready",
     shape: "mesh",
     meshUrl: action.payload.url,
-    material: action.payload.material,
+    material,
     color: action.payload.color,
     animation: "float",
     position:
@@ -380,6 +441,10 @@ function applySetMaterial(action: YiiyaAction) {
     material:
       typeof action.payload.material === "string"
         ? action.payload.material.toLowerCase()
+        : undefined,
+    style:
+      typeof action.payload.material === "string"
+        ? styleFromMaterial(normalizeSpatialMaterial(action.payload.material))
         : undefined,
     color: typeof action.payload.color === "string" ? action.payload.color : undefined,
     materialOverrides
@@ -457,10 +522,10 @@ function applyObjectAnimation(action: YiiyaAction) {
     return;
   }
 
-  const updates: { animation?: string; intensity?: number } = {};
+  const updates: { animation?: AnimationPreset; intensity?: number } = {};
 
   if (typeof action.payload.animation === "string") {
-    updates.animation = action.payload.animation;
+    updates.animation = action.payload.animation as AnimationPreset;
   }
 
   updates.intensity = numericOverride(action.payload.intensity);

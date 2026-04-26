@@ -9,6 +9,13 @@ import {
 import type { CreativeBrief } from "@/lib/creative-brief";
 import { creationPathways, type CreationPathway } from "@/lib/creation-pathways";
 import { normalizeSpatialMaterial, type SpatialMaterial } from "@/lib/materials";
+import type {
+  AnimationPreset,
+  CursorTarget,
+  GenerationStatus,
+  ResolutionTier,
+  StylePreset
+} from "@/lib/scene/types";
 import type { CoverageCell, CoverageFrame } from "@/lib/scan-coverage";
 import type { PublishedProject } from "@/lib/published-project-types";
 import { createProjectSlug } from "@/lib/project-slug";
@@ -92,11 +99,19 @@ export type YiiyaSection = {
 
 export type SceneObject = {
   id: string;
+  prompt: string;
+  resolvedName: string;
+  tier: ResolutionTier;
+  modelUrl: string;
+  style: StylePreset;
+  generationStatus: GenerationStatus;
+  materializedAt: number;
+  rotation: [number, number, number];
   shape: string;
   semanticFamily?: string;
   material: SpatialMaterial;
   color: string;
-  animation: string;
+  animation: AnimationPreset;
   position: [number, number, number];
   scale: [number, number, number];
   intensity: number;
@@ -175,6 +190,12 @@ export type YiiyaAction =
   | {
       type: "ADD_3D_OBJECT";
       payload: {
+        prompt?: unknown;
+        resolvedName?: unknown;
+        tier?: unknown;
+        modelUrl?: unknown;
+        style?: unknown;
+        generationStatus?: unknown;
         shape: unknown;
         semanticFamily?: unknown;
         material?: unknown;
@@ -189,6 +210,12 @@ export type YiiyaAction =
   | {
       type: "ADD_SPATIAL_OBJECT";
       payload: {
+        prompt?: unknown;
+        resolvedName?: unknown;
+        tier?: unknown;
+        modelUrl?: unknown;
+        style?: unknown;
+        generationStatus?: unknown;
         shape: unknown;
         semanticFamily?: unknown;
         material: unknown;
@@ -243,6 +270,10 @@ export type YiiyaAction =
       type: "LOAD_3D_MESH";
       payload: {
         url: unknown;
+        prompt?: unknown;
+        resolvedName?: unknown;
+        style?: unknown;
+        tier?: unknown;
         material?: unknown;
         color?: unknown;
         scale?: unknown;
@@ -439,6 +470,7 @@ type YiiyaState = {
   selectedElementId: string | null;
   selectedElements: string[];
   hoveredElementId: string | null;
+  cursorTarget: CursorTarget | null;
   referenceImage: ReferenceImage | null;
   toastMessage: string | null;
   publishResult: PublishedProject | null;
@@ -479,6 +511,8 @@ type YiiyaState = {
   setSelectedElementId: (selectedElementId: string | null) => void;
   setSelectedElements: (selectedElements: string[]) => void;
   setHoveredElementId: (hoveredElementId: string | null) => void;
+  setCursorTarget: (cursorTarget: CursorTarget | null) => void;
+  updateCursor3D: (scene: Pick<CursorTarget, "sceneObjectId" | "scenePoint">) => void;
   setReferenceImage: (referenceImage: ReferenceImage | null) => void;
   setToastMessage: (toastMessage: string | null) => void;
   setPublishResult: (publishResult: PublishedProject | null) => void;
@@ -496,6 +530,12 @@ type YiiyaState = {
   }) => YiiyaSection;
   removeSection: (sectionId: string) => void;
   addSceneObject: (object: {
+    prompt?: unknown;
+    resolvedName?: unknown;
+    tier?: unknown;
+    modelUrl?: unknown;
+    style?: unknown;
+    generationStatus?: unknown;
     shape?: unknown;
     semanticFamily?: unknown;
     material?: unknown;
@@ -503,6 +543,7 @@ type YiiyaState = {
     animation?: unknown;
     position?: unknown;
     scale?: unknown;
+    rotation?: unknown;
     intensity?: unknown;
     meshUrl?: unknown;
     anchorSection?: unknown;
@@ -900,6 +941,63 @@ function normalizeVector(value: unknown, fallback: [number, number, number]) {
   ] satisfies [number, number, number];
 }
 
+function normalizeRotation(value: unknown) {
+  return normalizeVector(value, [0, 0, 0]);
+}
+
+function normalizeStylePreset(value: unknown): StylePreset {
+  if (
+    value === "realistic" ||
+    value === "cartoon" ||
+    value === "anime" ||
+    value === "claymation" ||
+    value === "paper" ||
+    value === "sketch" ||
+    value === "lowpoly" ||
+    value === "holographic" ||
+    value === "glass" ||
+    value === "metallic"
+  ) {
+    return value;
+  }
+
+  return "realistic";
+}
+
+function normalizeResolutionTier(value: unknown): ResolutionTier {
+  if (value === "library" || value === "stylized" || value === "generated") {
+    return value;
+  }
+
+  return "stylized";
+}
+
+function normalizeGenerationStatus(value: unknown): GenerationStatus {
+  if (value === "ready" || value === "generating" || value === "failed") {
+    return value;
+  }
+
+  return "ready";
+}
+
+function normalizeAnimationPreset(value: unknown): AnimationPreset {
+  if (
+    value === "none" ||
+    value === "float" ||
+    value === "rotate" ||
+    value === "pulse" ||
+    value === "bounce" ||
+    value === "wobble" ||
+    value === "drift" ||
+    value === "spin" ||
+    value === "static"
+  ) {
+    return value;
+  }
+
+  return "float";
+}
+
 function normalizeNumber(value: unknown, fallback: number) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -973,6 +1071,63 @@ function normalizeSilhouette(value: unknown): BlobState["silhouette"] {
   return { x, y, width, height };
 }
 
+function normalizeSceneObjectRecord(value: unknown): SceneObject | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const shape =
+    typeof record.shape === "string"
+      ? record.shape
+      : typeof record.resolvedName === "string"
+        ? record.resolvedName
+        : "abstract";
+  const resolvedName =
+    typeof record.resolvedName === "string" ? record.resolvedName : shape;
+  const modelUrl =
+    typeof record.modelUrl === "string"
+      ? record.modelUrl
+      : typeof record.meshUrl === "string"
+        ? record.meshUrl
+        : "library://abstract";
+
+  return {
+    id:
+      typeof record.id === "string"
+        ? record.id
+        : `object-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    prompt:
+      typeof record.prompt === "string"
+        ? record.prompt
+        : resolvedName,
+    resolvedName,
+    tier: normalizeResolutionTier(record.tier),
+    modelUrl,
+    style: normalizeStylePreset(record.style),
+    generationStatus: normalizeGenerationStatus(record.generationStatus),
+    materializedAt: normalizeNumber(record.materializedAt, Date.now()),
+    rotation: normalizeRotation(record.rotation),
+    shape,
+    semanticFamily:
+      typeof record.semanticFamily === "string" ? record.semanticFamily : undefined,
+    material: normalizeSpatialMaterial(record.material),
+    color: typeof record.color === "string" ? record.color : "#EF9F27",
+    animation: normalizeAnimationPreset(record.animation),
+    position: normalizePosition(record.position),
+    scale: normalizeVector(record.scale, [1, 1, 1]),
+    intensity: normalizeNumber(record.intensity, 1),
+    meshUrl: typeof record.meshUrl === "string" ? record.meshUrl : undefined,
+    opacity: typeof record.opacity === "number" ? record.opacity : 1,
+    materialOverrides:
+      record.materialOverrides && typeof record.materialOverrides === "object"
+        ? (record.materialOverrides as Record<string, unknown>)
+        : undefined,
+    anchorSection:
+      typeof record.anchorSection === "string" ? record.anchorSection : undefined
+  };
+}
+
 export const useYiiyaStore = create<YiiyaState>((set) => ({
   currentProjectId: createProjectId(),
   currentProjectSlug: createProjectSlug(),
@@ -990,6 +1145,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   selectedElementId: null,
   selectedElements: [],
   hoveredElementId: null,
+  cursorTarget: null,
   referenceImage: null,
   toastMessage: null,
   publishResult: null,
@@ -1076,6 +1232,29 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   setSelectedElementId: (selectedElementId) => set({ selectedElementId }),
   setSelectedElements: (selectedElements) => set({ selectedElements }),
   setHoveredElementId: (hoveredElementId) => set({ hoveredElementId }),
+  setCursorTarget: (cursorTarget) => set({ cursorTarget }),
+  updateCursor3D: (scene) =>
+    set((state) =>
+      state.cursorTarget
+        ? {
+            cursorTarget: {
+              ...state.cursorTarget,
+              sceneObjectId: scene.sceneObjectId,
+              scenePoint: scene.scenePoint,
+              targetKind: scene.sceneObjectId
+                ? "scene-object"
+                : state.cursorTarget.targetKind === "scene-object"
+                  ? "scene-empty"
+                  : state.cursorTarget.targetKind,
+              description:
+                scene.sceneObjectId && state.sceneObjects.length > 0
+                  ? state.sceneObjects.find((object) => object.id === scene.sceneObjectId)
+                      ?.resolvedName ?? state.cursorTarget.description
+                  : state.cursorTarget.description
+            }
+          }
+        : state
+    ),
   setReferenceImage: (referenceImage) => set({ referenceImage }),
   setToastMessage: (toastMessage) => set({ toastMessage }),
   setPublishResult: (publishResult) => set({ publishResult }),
@@ -1164,12 +1343,37 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     const id = `object-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextObject: SceneObject = {
       id,
+      prompt:
+        typeof object.prompt === "string"
+          ? object.prompt
+          : typeof object.resolvedName === "string"
+            ? object.resolvedName
+            : typeof object.shape === "string"
+              ? object.shape
+              : "abstract object",
+      resolvedName:
+        typeof object.resolvedName === "string"
+          ? object.resolvedName
+          : typeof object.shape === "string"
+            ? object.shape
+            : "abstract",
+      tier: normalizeResolutionTier(object.tier),
+      modelUrl:
+        typeof object.modelUrl === "string"
+          ? object.modelUrl
+          : typeof object.meshUrl === "string"
+            ? object.meshUrl
+            : "library://abstract",
+      style: normalizeStylePreset(object.style),
+      generationStatus: normalizeGenerationStatus(object.generationStatus),
+      materializedAt: Date.now(),
+      rotation: normalizeRotation(object.rotation),
       shape: typeof object.shape === "string" ? object.shape : "sphere",
       semanticFamily:
         typeof object.semanticFamily === "string" ? object.semanticFamily : undefined,
       material: normalizeSpatialMaterial(object.material),
       color: typeof object.color === "string" ? object.color : "#EF9F27",
-      animation: typeof object.animation === "string" ? object.animation : "float",
+      animation: normalizeAnimationPreset(object.animation),
       position: normalizePosition(object.position),
       scale: normalizeVector(object.scale, [1, 1, 1]),
       intensity: normalizeNumber(object.intensity, 1),
@@ -1187,7 +1391,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         ...state.layers,
         {
           id,
-          name: `${nextObject.color} ${nextObject.shape}`,
+          name: `${nextObject.resolvedName} · ${nextObject.style}`,
           type: "mesh"
         }
       ]
@@ -1316,10 +1520,23 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
             ? {
                 ...object,
                 ...updates,
+                style:
+                  updates.style !== undefined
+                    ? normalizeStylePreset(updates.style)
+                    : object.style,
+                tier:
+                  updates.tier !== undefined
+                    ? normalizeResolutionTier(updates.tier)
+                    : object.tier,
+                generationStatus:
+                  updates.generationStatus !== undefined
+                    ? normalizeGenerationStatus(updates.generationStatus)
+                    : object.generationStatus,
                 material: updates.material
                   ? normalizeSpatialMaterial(updates.material)
                   : object.material,
                 scale: updates.scale ?? object.scale,
+                rotation: updates.rotation ?? object.rotation,
                 materialOverrides: {
                   ...object.materialOverrides,
                   ...updates.materialOverrides
@@ -1346,10 +1563,23 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
             ? {
                 ...object,
                 ...updates,
+                style:
+                  updates.style !== undefined
+                    ? normalizeStylePreset(updates.style)
+                    : object.style,
+                tier:
+                  updates.tier !== undefined
+                    ? normalizeResolutionTier(updates.tier)
+                    : object.tier,
+                generationStatus:
+                  updates.generationStatus !== undefined
+                    ? normalizeGenerationStatus(updates.generationStatus)
+                    : object.generationStatus,
                 material: updates.material
                   ? normalizeSpatialMaterial(updates.material)
                   : object.material,
                 scale: updates.scale ?? object.scale,
+                rotation: updates.rotation ?? object.rotation,
                 materialOverrides: {
                   ...object.materialOverrides,
                   ...updates.materialOverrides
@@ -1478,7 +1708,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       const canvas = project.canvas_json;
       const theme = project.theme_json ?? project.themeState;
       const sections = canvas?.sections ?? project.sections ?? [];
-      const sceneObjects = canvas?.sceneObjects ?? project.sceneObjects ?? [];
+      const sceneObjects = (canvas?.sceneObjects ?? project.sceneObjects ?? [])
+        .map((object) => normalizeSceneObjectRecord(object))
+        .filter((object): object is SceneObject => Boolean(object));
       const layers =
         canvas?.layers ??
         project.layers ??
@@ -1490,7 +1722,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
           })),
           ...sceneObjects.map((object) => ({
             id: object.id,
-            name: `${object.color} ${object.shape}`,
+            name: `${object.resolvedName} · ${object.style}`,
             type: "mesh" as const
           }))
         ];
@@ -1536,6 +1768,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       selectedElementId: null,
       selectedElements: [],
       hoveredElementId: null,
+      cursorTarget: null,
       referenceImage: null,
       toastMessage: null,
       publishResult: null,
