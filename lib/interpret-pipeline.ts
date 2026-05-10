@@ -669,7 +669,7 @@ function coerceCreativeBrief(value: unknown, fallback: CreativeBrief): CreativeB
 
 async function runCreativeBrief(
   body: InterpretRequestBody,
-  intent: IntentType,
+  intent: Exclude<IntentType, "QUESTION">,
   researchBrief: ResearchBrief | null
 ) {
   const heuristic = heuristicCreativeBrief({
