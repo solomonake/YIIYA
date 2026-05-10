@@ -198,6 +198,8 @@ export type YiiyaAction =
         scale?: unknown;
         intensity?: unknown;
         anchorSection?: unknown;
+        physicsBody?: unknown;
+        mass?: unknown;
       };
     }
   | {
@@ -272,6 +274,8 @@ export type YiiyaAction =
         scale?: unknown;
         position?: unknown;
         anchorSection?: unknown;
+        physicsBody?: unknown;
+        mass?: unknown;
       };
     }
   | {
