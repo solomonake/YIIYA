@@ -553,6 +553,8 @@ type YiiyaState = {
     anchorSection?: unknown;
     source?: unknown;
     scanResultId?: unknown;
+    physicsBody?: unknown;
+    mass?: unknown;
   }) => SceneObject;
   morphBlob: (blobState: Partial<BlobState>) => void;
   spawnControl: (control: Omit<LabControl, "kind"> & { kind?: "range" }) => void;
@@ -1133,7 +1135,12 @@ function normalizeSceneObjectRecord(value: unknown): SceneObject | null {
         ? (record.materialOverrides as Record<string, unknown>)
         : undefined,
     anchorSection:
-      typeof record.anchorSection === "string" ? record.anchorSection : undefined
+      typeof record.anchorSection === "string" ? record.anchorSection : undefined,
+    physicsBody:
+      record.physicsBody === "dynamic" || record.physicsBody === "fixed" || record.physicsBody === "kinematicPosition"
+        ? record.physicsBody
+        : undefined,
+    mass: typeof record.mass === "number" ? record.mass : undefined
   };
 }
 
