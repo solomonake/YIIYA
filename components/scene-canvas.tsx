@@ -5,8 +5,10 @@ import {
   Float,
   Grid,
   OrbitControls,
-  useGLTF
+  useGLTF,
+  useAnimations
 } from "@react-three/drei";
+import { Physics, RigidBody } from "@react-three/rapier";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import type { Group, Object3D } from "three";
@@ -367,8 +369,14 @@ function MaterializingGroup({
 function GeneratedMesh({ object }: { object: SceneObject }) {
   const gltf = useGLTF(object.modelUrl);
   const clone = useMemo(() => gltf.scene.clone(), [gltf.scene]);
+  const { actions } = useAnimations(gltf.animations, clone);
 
   useEffect(() => {
+    if (gltf.animations.length > 0 && object.animation !== "static") {
+      const actionName = gltf.animations[0].name;
+      actions[actionName]?.play();
+    }
+
     clone.traverse((child) => {
       if ("userData" in child) {
         (child as Object3D).userData = {
@@ -377,7 +385,7 @@ function GeneratedMesh({ object }: { object: SceneObject }) {
         };
       }
     });
-  }, [clone, object.id]);
+  }, [clone, object.id, gltf.animations, actions, object.animation]);
 
   return <primitive object={clone} />;
 }
@@ -411,7 +419,7 @@ function RenderedObject({
   dockedScale?: [number, number, number];
 }) {
   const groupRef = useRef<Group>(null);
-  const updateSceneObjectLive = useYiiyaStore((state) => state.updateSceneObjectLive);
+  const updateSceneObject = useYiiyaStore((state) => state.updateSceneObject);
   const draggingRef = useRef(false);
   const basePosition = anchor?.worldPosition ?? dockedPosition ?? object.position;
   const baseScale = dockedScale ?? object.scale;
@@ -437,16 +445,18 @@ function RenderedObject({
       groupRef.current.rotation.y += 0.01 * object.intensity;
     }
 
-    if (object.animation === "float" || object.animation === "drift") {
-      groupRef.current.position.y =
-        basePosition[1] + Math.sin(state.clock.elapsedTime * 1.3) * 0.06;
-    } else if (object.animation === "pulse") {
-      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2.1) * 0.06;
-      groupRef.current.scale.set(
-        baseScale[0] * pulse,
-        baseScale[1] * pulse,
-        baseScale[2] * pulse
-      );
+    if (!draggingRef.current) {
+      if (object.animation === "float" || object.animation === "drift") {
+        groupRef.current.position.y =
+          basePosition[1] + Math.sin(state.clock.elapsedTime * 1.3) * 0.06;
+      } else if (object.animation === "pulse") {
+        const pulse = 1 + Math.sin(state.clock.elapsedTime * 2.1) * 0.06;
+        groupRef.current.scale.set(
+          baseScale[0] * pulse,
+          baseScale[1] * pulse,
+          baseScale[2] * pulse
+        );
+      }
     }
   });
 
@@ -456,18 +466,27 @@ function RenderedObject({
   };
 
   const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
-    if (!draggingRef.current) {
+    if (!draggingRef.current || !groupRef.current) {
       return;
     }
 
     event.stopPropagation();
-    updateSceneObjectLive(object.id, {
-      position: [event.point.x, event.point.y, event.point.z]
-    });
+    groupRef.current.position.set(event.point.x, event.point.y, event.point.z);
   };
 
   const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
+    
+    if (draggingRef.current && groupRef.current) {
+      updateSceneObject(object.id, {
+        position: [
+          groupRef.current.position.x,
+          groupRef.current.position.y,
+          groupRef.current.position.z
+        ]
+      });
+    }
+
     draggingRef.current = false;
   };
 
@@ -482,15 +501,29 @@ function RenderedObject({
       onPointerOut={handlePointerUp}
       userData={{ yiiyaObjectId: object.id }}
     >
-      <MaterializingGroup object={object}>
-        {object.generationStatus === "generating" ? (
-          <GeneratingPlaceholder object={object} />
-        ) : object.modelUrl.startsWith("library://") ? (
-          <LibraryMesh object={object} />
-        ) : (
-          <GeneratedMesh object={object} />
-        )}
-      </MaterializingGroup>
+      {object.physicsBody ? (
+        <RigidBody type={object.physicsBody} colliders="hull" mass={object.mass ?? 1}>
+          <MaterializingGroup object={object}>
+            {object.generationStatus === "generating" ? (
+              <GeneratingPlaceholder object={object} />
+            ) : object.modelUrl.startsWith("library://") ? (
+              <LibraryMesh object={object} />
+            ) : (
+              <GeneratedMesh object={object} />
+            )}
+          </MaterializingGroup>
+        </RigidBody>
+      ) : (
+        <MaterializingGroup object={object}>
+          {object.generationStatus === "generating" ? (
+            <GeneratingPlaceholder object={object} />
+          ) : object.modelUrl.startsWith("library://") ? (
+            <LibraryMesh object={object} />
+          ) : (
+            <GeneratedMesh object={object} />
+          )}
+        </MaterializingGroup>
+      )}
     </group>
   );
 }
@@ -515,6 +548,7 @@ function CursorRaycaster() {
   const updateCursor3D = useYiiyaStore((state) => state.updateCursor3D);
   const raycasterRef = useRef(new Raycaster());
   const pointerRef = useRef(new Vector2(2, 2));
+  const lastHitIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -533,10 +567,14 @@ function CursorRaycaster() {
       .intersectObjects(scene.children, true)
       .find((entry) => entry.object.userData?.yiiyaObjectId);
 
-    updateCursor3D({
-      sceneObjectId: hit?.object.userData?.yiiyaObjectId ?? null,
-      scenePoint: hit ? [hit.point.x, hit.point.y, hit.point.z] : null
-    });
+    const hitId = hit?.object.userData?.yiiyaObjectId ?? null;
+    if (hitId !== lastHitIdRef.current) {
+      lastHitIdRef.current = hitId;
+      updateCursor3D({
+        sceneObjectId: hitId,
+        scenePoint: hit ? [hit.point.x, hit.point.y, hit.point.z] : null
+      });
+    }
   });
 
   return null;
@@ -651,14 +689,16 @@ export function SceneCanvas() {
         <ambientLight intensity={canvasMode === "3D" ? 0.88 : 0.56} />
         <directionalLight position={[3, 4, 5]} intensity={2.1} color="#fff6df" />
         <pointLight position={[-3, 2.4, 3]} intensity={1.2} color="#EF9F27" />
-        <group ref={rootGroupRef}>
-          <StarterScene
-            objects={sceneObjects}
-            anchors={spatialAnchors}
-            canvasMode={canvasMode}
-            hasSections={hasSections}
-          />
-        </group>
+        <Physics gravity={[0, -9.81, 0]}>
+          <group ref={rootGroupRef}>
+            <StarterScene
+              objects={sceneObjects}
+              anchors={spatialAnchors}
+              canvasMode={canvasMode}
+              hasSections={hasSections}
+            />
+          </group>
+        </Physics>
         <OrbitControls
           enabled={canvasMode === "3D"}
           enablePan={false}

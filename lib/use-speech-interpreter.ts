@@ -253,6 +253,7 @@ async function interpretTranscript(
   let brief: CreativeBrief | null = null;
   let confidence = 0;
   let fallbackPath: string | null = null;
+  let question: string | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -286,6 +287,7 @@ async function interpretTranscript(
         message?: string;
         actions?: unknown;
         qa_log?: unknown;
+        question?: string;
         brief?: CreativeBrief | null;
         confidence?: number;
         fallbackPath?: string | null;
@@ -318,10 +320,13 @@ async function interpretTranscript(
       if (record.type === "qa" && Array.isArray(record.qa_log)) {
         qaLog.push(...record.qa_log.filter((item): item is string => typeof item === "string"));
       }
+      if (record.type === "question" && typeof record.question === "string") {
+        question = record.question;
+      }
     }
   }
 
-  return { actions, qaLog, interpreter: "stream", brief, confidence, fallbackPath };
+  return { actions, qaLog, interpreter: "stream", brief, confidence, fallbackPath, question };
 }
 
 export async function runTranscriptThroughYiiya(transcript: string) {
@@ -335,16 +340,24 @@ export async function runTranscriptThroughYiiya(transcript: string) {
   const previousHistory = state.conversationHistory;
 
   state.setTranscript(normalizedTranscript);
+  state.setLatestQuestion(null);
   state.addMessage({ role: "user", content: normalizedTranscript });
   state.addLog(`[INTERPRET]: Intent = '${normalizedTranscript.slice(0, 52)}'.`);
   state.setInterpreting(true);
 
   try {
-    const { actions, qaLog, interpreter, brief, confidence, fallbackPath } =
+    const { actions, qaLog, interpreter, brief, confidence, fallbackPath, question } =
       await interpretTranscript(normalizedTranscript, previousHistory, state.addLog);
 
     if (interpreter === "stream") {
       state.addLog("[INTERPRET]: Streaming agent pipeline completed.");
+    }
+
+    if (question) {
+      state.setLatestQuestion(question);
+      state.addMessage({ role: "assistant", content: question });
+      state.addLog(`[INTERVIEW]: Copilot asked: ${question}`);
+      return;
     }
 
     state.setActiveBrief(brief, fallbackPath);

@@ -244,7 +244,12 @@ function applyAdd3DObject(action: YiiyaAction) {
     scale: blueprint.scale,
     position:
       positionFromAnchorSection(payload.anchorSection) ?? payload.position,
-    anchorSection: payload.anchorSection
+    anchorSection: payload.anchorSection,
+    physicsBody:
+      payload.physicsBody === "dynamic" || payload.physicsBody === "fixed" || payload.physicsBody === "kinematicPosition"
+        ? payload.physicsBody
+        : undefined,
+    mass: numericOverride(payload.mass)
   });
 }
 
@@ -401,7 +406,12 @@ function applyLoad3DMesh(action: YiiyaAction) {
       positionFromAnchorSection(action.payload.anchorSection) ??
       action.payload.position,
     scale: action.payload.scale,
-    anchorSection: action.payload.anchorSection
+    anchorSection: action.payload.anchorSection,
+    physicsBody:
+      action.payload.physicsBody === "dynamic" || action.payload.physicsBody === "fixed" || action.payload.physicsBody === "kinematicPosition"
+        ? (action.payload.physicsBody as "dynamic" | "fixed" | "kinematicPosition")
+        : undefined,
+    mass: numericOverride(action.payload.mass)
   });
 }
 
@@ -767,6 +777,29 @@ function canvasModeFromValue(value: unknown) {
 
   return undefined;
 }
+function applyDirectScene(action: YiiyaAction) {
+  if (action.type !== "DIRECT_SCENE") {
+    return;
+  }
+
+  if (!Array.isArray(action.payload.tracks)) {
+    return;
+  }
+
+  for (const track of action.payload.tracks) {
+    if (typeof track.timestampMs !== "number" || !Array.isArray(track.actions)) {
+      continue;
+    }
+
+    if (track.timestampMs <= 0) {
+      runYiiyaActions(track.actions);
+    } else {
+      setTimeout(() => {
+        runYiiyaActions(track.actions);
+      }, track.timestampMs);
+    }
+  }
+}
 
 export function runYiiyaActions(actions: YiiyaAction[]) {
   for (const action of actions) {
@@ -866,6 +899,10 @@ export function runYiiyaActions(actions: YiiyaAction[]) {
 
     if (action.type === "PUBLISH") {
       void publishCurrentProject();
+    }
+
+    if (action.type === "DIRECT_SCENE") {
+      applyDirectScene(action);
     }
   }
 

@@ -110,6 +110,8 @@ export type SceneObject = {
   opacity?: number;
   materialOverrides?: Record<string, unknown>;
   anchorSection?: string;
+  physicsBody?: "fixed" | "dynamic" | "kinematicPosition";
+  mass?: number;
 };
 
 export type BlobState = {
@@ -412,6 +414,15 @@ export type YiiyaAction =
   | {
       type: "REDO";
       payload: Record<string, never>;
+    }
+  | {
+      type: "DIRECT_SCENE";
+      payload: {
+        tracks: Array<{
+          timestampMs: number;
+          actions: YiiyaAction[];
+        }>;
+      };
     };
 
 export type CanvasMode = "WEB" | "3D" | "HYBRID";
@@ -458,6 +469,7 @@ type YiiyaState = {
   isInterpreting: boolean;
   transcript: string;
   interimTranscript: string;
+  latestQuestion: string | null;
   selectedElementId: string | null;
   selectedElements: string[];
   hoveredElementId: string | null;
@@ -499,6 +511,7 @@ type YiiyaState = {
   setInterpreting: (isInterpreting: boolean) => void;
   setTranscript: (transcript: string) => void;
   setInterimTranscript: (interimTranscript: string) => void;
+  setLatestQuestion: (question: string | null) => void;
   setSelectedElementId: (selectedElementId: string | null) => void;
   setSelectedElements: (selectedElements: string[]) => void;
   setHoveredElementId: (hoveredElementId: string | null) => void;
@@ -1138,6 +1151,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   isInterpreting: false,
   transcript: "",
   interimTranscript: "",
+  latestQuestion: null,
   selectedElementId: null,
   selectedElements: [],
   hoveredElementId: null,
@@ -1225,6 +1239,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   setInterpreting: (isInterpreting) => set({ isInterpreting }),
   setTranscript: (transcript) => set({ transcript }),
   setInterimTranscript: (interimTranscript) => set({ interimTranscript }),
+  setLatestQuestion: (latestQuestion) => set({ latestQuestion }),
   setSelectedElementId: (selectedElementId) => set({ selectedElementId }),
   setSelectedElements: (selectedElements) => set({ selectedElements }),
   setHoveredElementId: (hoveredElementId) => set({ hoveredElementId }),

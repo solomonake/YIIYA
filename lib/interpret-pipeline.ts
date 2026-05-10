@@ -9,7 +9,7 @@ import { compileLocalIntent } from "@/lib/local-intent-compiler";
 import type { YiiyaAction } from "@/lib/store";
 import type { CursorTarget } from "@/lib/scene/types";
 
-export type IntentType = "LAYOUT" | "SPATIAL" | "STYLE" | "COMMAND";
+export type IntentType = "LAYOUT" | "SPATIAL" | "STYLE" | "COMMAND" | "QUESTION";
 
 export type ReferenceImageInput = {
   base64: string;
@@ -70,6 +70,7 @@ export type PipelineEvent =
   | { type: "research"; brief: ResearchBrief | null; log: string }
   | { type: "actions"; actions: YiiyaAction[]; log?: string }
   | { type: "qa"; qa_log: string[] }
+  | { type: "question"; question: string }
   | {
       type: "done";
       actions: YiiyaAction[];
@@ -121,19 +122,21 @@ Return raw JSON array only. Handle only theme, typography, spacing, alignment, a
 Use SRL institutional defaults unless user explicitly asks otherwise.
 If selectedElementId or cursorTarget is present and the user says this, it, or that, target that selection.`;
 
-const ALCHEMIST_PROMPT = `You are the 3D Alchemist for Yiiya.
+const ALCHEMIST_PROMPT = `You are the 3D Director and Alchemist for Yiiya.
 Return raw JSON array only.
 Supported actions:
+DIRECT_SCENE payload { tracks: [{ timestampMs: number, actions: action[] }] } - Use this to choreograph scenes over time (e.g., spawn object at 0ms, move it at 2000ms).
 MOLD_BLOB payload { targetShape?: 'sphere'|'bottle'|'cube'|'organic'|'crystal', formation?: 'sphere'|'helix'|'torus'|'bottle'|'capsule'|'cube'|'wave', distort?: number, speed?: number, aspectRatio?: number, glow?: number, chaos?: number, twist?: number, particleDensity?: number, material?: string }
 MORPH_BLOB payload { targetShape: 'sphere'|'bottle'|'cube'|'organic'|'crystal', formation?: 'sphere'|'helix'|'torus'|'bottle'|'capsule'|'cube'|'wave', distort: number, speed: number, aspectRatio?: number, silhouette?: object, material?: string }
 SET_MATERIAL payload { objectId: string, material: string, metalness?: number, roughness?: number, color?: string, transmission?: number, emissive?: string }
-ADD_3D_OBJECT payload { prompt?: string, resolvedName?: string, shape?: string, modelUrl?: string, tier?: 'library'|'stylized'|'generated', style?: string, material: 'glass'|'chrome'|'gold'|'matte'|'carbon'|'holographic', color?: string, scale?: [number,number,number], position?: [number,number,number], animation?: 'rotate'|'float'|'pulse'|'spin'|'drift'|'static', intensity?: number, anchorSection?: string }
-LOAD_3D_MESH payload { url: string, prompt?: string, resolvedName?: string, style?: string, tier?: 'generated', material?: string, color?: string, scale?: [number,number,number], position?: [number,number,number], anchorSection?: string }
+ADD_3D_OBJECT payload { prompt?: string, resolvedName?: string, shape?: string, modelUrl?: string, tier?: 'library'|'stylized'|'generated', style?: string, material: 'glass'|'chrome'|'gold'|'matte'|'carbon'|'holographic', color?: string, scale?: [number,number,number], position?: [number,number,number], animation?: 'rotate'|'float'|'pulse'|'spin'|'drift'|'static', intensity?: number, anchorSection?: string, physicsBody?: 'dynamic'|'fixed'|'kinematicPosition', mass?: number }
+LOAD_3D_MESH payload { url: string, prompt?: string, resolvedName?: string, style?: string, tier?: 'generated', material?: string, color?: string, scale?: [number,number,number], position?: [number,number,number], anchorSection?: string, physicsBody?: 'dynamic'|'fixed' }
 MOVE_OBJECT payload { objectId: string, delta?: [number,number,number], position?: [number,number,number] }
 SET_OBJECT_ANIMATION payload { objectId: string, animation: 'rotate'|'float'|'pulse'|'spin'|'static', intensity?: number }
 SPAWN_CONTROL payload { id: string, label: string, min: number, max: number, step?: number, value: number, target: 'blob'|'theme'|'section'|'object', property: string }
 REMOVE_OBJECT payload { objectId: string }
-If cursorTarget.sceneObjectId is present and the user says this object, it, or that, target that object.
+If the user asks for a sequence of events, a scene, a choreography, or a script, wrap your actions in DIRECT_SCENE tracks.
+If the user says "drop", "throw", "bounce", or "physics", add physicsBody: "dynamic" to the ADD_3D_OBJECT payload.
 Prefer concrete resolved objects like cup, bottle, laptop, phone, watch, chair, car, shoe, bust, pedestal, camera, bag, or plant before falling back to abstract shapes.
 Map "make it gold" directly to SET_MATERIAL with metalness 1, roughness 0.2, color "#FFD700".`;
 
@@ -541,16 +544,8 @@ export async function classifyIntent(transcript: string): Promise<IntentType> {
     return "STYLE";
   }
 
-  if (
-    ["build", "create", "landing", "website", "page", "section", "brand"].some(
-      (term) => normalizedTranscript.includes(term)
-    )
-  ) {
-    return "LAYOUT";
-  }
-
   const system =
-    "Classify this user command into exactly one word: LAYOUT, SPATIAL, STYLE, or COMMAND. Return raw JSON string only, e.g. \"LAYOUT\".";
+    "Classify this user command into exactly one word: LAYOUT, SPATIAL, STYLE, COMMAND, or QUESTION. If the prompt is asking to build a website/app but lacks specific details about the industry, target audience, or specific features (e.g., 'make a website', 'build a landing page for my business'), return 'QUESTION'. Return raw JSON string only, e.g. \"QUESTION\".";
   const { text } = await callGemini(
     system,
     transcript,
@@ -562,7 +557,8 @@ export async function classifyIntent(transcript: string): Promise<IntentType> {
     parsed === "LAYOUT" ||
     parsed === "SPATIAL" ||
     parsed === "STYLE" ||
-    parsed === "COMMAND"
+    parsed === "COMMAND" ||
+    parsed === "QUESTION"
   ) {
     return parsed;
   }
@@ -1031,6 +1027,21 @@ export async function* runInterpretPipeline(
           ? "SPATIAL"
           : undefined;
     const intent = forcedIntent ?? (await classifyIntent(body.transcript));
+
+    if (intent === "QUESTION") {
+      const system = `You are a Copilot for a high-end website generator. The user gave a vague prompt: "${body.transcript}".
+Ask exactly one short, targeted clarifying question to gather missing context (like industry, target audience, or specific aesthetic). Return ONLY the question string, nothing else.`;
+      const { text } = await callGemini(system, "What should we ask the user?", fastGeminiModel());
+      yield {
+        type: "router",
+        intent,
+        model: fastGeminiModel(),
+        log: `[ROUTER]: Intent classified as QUESTION → Interview Mode triggered.`,
+      };
+      yield { type: "question", question: text.replace(/^["']|["']$/g, "") };
+      return;
+    }
+
     let researchBrief: ResearchBrief | null = null;
     let researchError: string | null = null;
 

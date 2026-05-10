@@ -11,6 +11,7 @@ export function VoiceBar() {
   const isListening = useYiiyaStore((state) => state.isListening);
   const isInterpreting = useYiiyaStore((state) => state.isInterpreting);
   const interimTranscript = useYiiyaStore((state) => state.interimTranscript);
+  const latestQuestion = useYiiyaStore((state) => state.latestQuestion);
   const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const sections = useYiiyaStore((state) => state.sections);
@@ -43,6 +44,7 @@ export function VoiceBar() {
       : "Idle";
   const promptText =
     interimTranscript ||
+    latestQuestion ||
     (selectedElementId
       ? `// ${selectedElementId} selected — speak to modify`
       : canvasMode === "WEB"
@@ -234,9 +236,11 @@ export function VoiceBar() {
             disabled={isInterpreting}
             onChange={(event) => setManualCommand(event.target.value)}
             placeholder={
-              selectedElementId
-                ? `// ${selectedElementId} selected - type to modify`
-                : rotatingStarterPrompts[starterPromptIndex] ?? "Type a command for demo safety"
+              latestQuestion
+                ? `// AI: ${latestQuestion}`
+                : selectedElementId
+                  ? `// ${selectedElementId} selected - type to modify`
+                  : rotatingStarterPrompts[starterPromptIndex] ?? "Type a command for demo safety"
             }
             className="min-w-0 flex-1 border-none bg-transparent text-[11px] text-bone outline-none placeholder:text-white/32 disabled:cursor-not-allowed disabled:text-white/35 sm:text-xs"
           />
