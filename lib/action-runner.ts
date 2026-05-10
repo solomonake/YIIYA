@@ -227,6 +227,7 @@ function applyAdd3DObject(action: YiiyaAction) {
   store.addSceneObject({
     prompt: blueprint.prompt,
     resolvedName: blueprint.resolvedName,
+    source: "generate",
     tier: blueprint.tier,
     modelUrl: blueprint.modelUrl,
     style: blueprint.style,
@@ -383,6 +384,7 @@ function applyLoad3DMesh(action: YiiyaAction) {
       typeof action.payload.resolvedName === "string"
         ? action.payload.resolvedName
         : "generated object",
+    source: "generate",
     tier: action.payload.tier === "library" ? "library" : "generated",
     modelUrl: action.payload.url,
     style:

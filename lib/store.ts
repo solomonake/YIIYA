@@ -16,7 +16,7 @@ import type {
   ResolutionTier,
   StylePreset
 } from "@/lib/scene/types";
-import type { CoverageCell, CoverageFrame } from "@/lib/scan-coverage";
+import type { ScanJobSummary } from "@/lib/scan-types";
 import type { PublishedProject } from "@/lib/published-project-types";
 import { createProjectSlug } from "@/lib/project-slug";
 import type { ExportTarget } from "@/lib/spatial-export";
@@ -41,17 +41,6 @@ export type TimelineSnapshot = {
   brief: CreativeBrief | null;
   htmlCanvasImage?: string;
   sceneCanvasImage?: string | null;
-};
-
-export type ScanSessionState = {
-  id: string;
-  status: "waiting" | "capturing" | "ready";
-  desktopUrl: string;
-  mobileUrl: string;
-  promptHint?: string;
-  objectHint?: string;
-  coverage: CoverageCell[];
-  latestFrame?: CoverageFrame;
 };
 
 export type LogEntry = {
@@ -101,6 +90,8 @@ export type SceneObject = {
   id: string;
   prompt: string;
   resolvedName: string;
+  source: "scan" | "generate";
+  scanResultId?: string;
   tier: ResolutionTier;
   modelUrl: string;
   style: StylePreset;
@@ -481,7 +472,7 @@ type YiiyaState = {
   timelineSnapshots: TimelineSnapshot[];
   activeTimelineSnapshotId: string | null;
   creationPathways: CreationPathway[];
-  scanSession: ScanSessionState | null;
+  scanJob: ScanJobSummary | null;
   themeState: YiiyaTheme;
   sidebarCollapsed: boolean;
   sections: YiiyaSection[];
@@ -518,7 +509,7 @@ type YiiyaState = {
   setPublishResult: (publishResult: PublishedProject | null) => void;
   setSaveStatus: (status: "idle" | "saving" | "saved", savedAt?: string) => void;
   setActiveBrief: (brief: CreativeBrief | null, fallbackPath?: string | null) => void;
-  setScanSession: (scanSession: ScanSessionState | null) => void;
+  setScanJob: (scanJob: ScanJobSummary | null) => void;
   pushTimelineSnapshot: (snapshot: TimelineSnapshot) => void;
   restoreTimelineSnapshot: (snapshotId: string) => void;
   setThemeState: (themeState: Partial<YiiyaTheme>) => void;
@@ -547,6 +538,8 @@ type YiiyaState = {
     intensity?: unknown;
     meshUrl?: unknown;
     anchorSection?: unknown;
+    source?: unknown;
+    scanResultId?: unknown;
   }) => SceneObject;
   morphBlob: (blobState: Partial<BlobState>) => void;
   spawnControl: (control: Omit<LabControl, "kind"> & { kind?: "range" }) => void;
@@ -1102,6 +1095,9 @@ function normalizeSceneObjectRecord(value: unknown): SceneObject | null {
         ? record.prompt
         : resolvedName,
     resolvedName,
+    source: record.source === "scan" ? "scan" : "generate",
+    scanResultId:
+      typeof record.scanResultId === "string" ? record.scanResultId : undefined,
     tier: normalizeResolutionTier(record.tier),
     modelUrl,
     style: normalizeStylePreset(record.style),
@@ -1156,7 +1152,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   timelineSnapshots: [],
   activeTimelineSnapshotId: null,
   creationPathways,
-  scanSession: null,
+  scanJob: null,
   themeState: defaultYiiyaTheme,
   sidebarCollapsed: true,
   exportTarget: "scene",
@@ -1268,7 +1264,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       activeBrief,
       lastFallbackPath: fallbackPath ?? null
     }),
-  setScanSession: (scanSession) => set({ scanSession }),
+  setScanJob: (scanJob) => set({ scanJob }),
   pushTimelineSnapshot: (snapshot) =>
     set((state) => ({
       timelineSnapshots: [snapshot, ...state.timelineSnapshots].slice(0, 18),
@@ -1357,6 +1353,9 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
           : typeof object.shape === "string"
             ? object.shape
             : "abstract",
+      source: object.source === "scan" ? "scan" : "generate",
+      scanResultId:
+        typeof object.scanResultId === "string" ? object.scanResultId : undefined,
       tier: normalizeResolutionTier(object.tier),
       modelUrl:
         typeof object.modelUrl === "string"
@@ -1737,7 +1736,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
         activeBrief: null,
         timelineSnapshots: [],
         activeTimelineSnapshotId: null,
-        scanSession: null,
+        scanJob: null,
         blobState: defaultBlobState(),
         spatialAnchors: [],
         labControls: [],
@@ -1779,7 +1778,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       lastFallbackPath: null,
       timelineSnapshots: [],
       activeTimelineSnapshotId: null,
-      scanSession: null,
+      scanJob: null,
       themeState: defaultYiiyaTheme,
       sections: [],
       sceneObjects: [],

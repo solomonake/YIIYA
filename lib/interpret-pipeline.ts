@@ -41,6 +41,7 @@ export type InterpretRequestBody = {
   creationGoal?: "web" | "spatial" | "scan";
   canvasMode?: "WEB" | "3D" | "HYBRID";
   starterPromptId?: string | null;
+  scanJobId?: string | null;
   scanSessionId?: string | null;
   cursorTarget?: CursorTarget | null;
 };
@@ -223,7 +224,7 @@ function buildContext(body: InterpretRequestBody, researchBrief: ResearchBrief |
       creationGoal: body.creationGoal ?? "web",
       canvasMode: body.canvasMode ?? "HYBRID",
       starterPromptId: body.starterPromptId ?? null,
-      scanSessionId: body.scanSessionId ?? null,
+      scanJobId: body.scanJobId ?? body.scanSessionId ?? null,
       selectedElement: body.activeElementId ?? "none",
       currentCanvas: body.current_canvas_json ?? body.currentScene,
       cursorTarget: body.cursorTarget ?? null,
@@ -377,6 +378,10 @@ async function callOpenAIVision(body: InterpretRequestBody) {
 }
 
 async function maybeGenerateTrellisMesh(body: InterpretRequestBody): Promise<YiiyaAction[]> {
+  if (body.scanJobId ?? body.scanSessionId) {
+    return [];
+  }
+
   const image = body.referenceImage;
 
   if (!image || (body.image_mode !== "3d" && body.image_mode !== "hybrid")) {

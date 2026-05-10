@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { createScanSession } from "@/lib/scan-session-store";
+import { createScanJob } from "@/lib/scan-job-store";
+
+export const maxDuration = 30;
 
 export async function POST(request: Request) {
   const payload = (await request.json().catch(() => null)) as
     | { promptHint?: string }
     | null;
   const origin = new URL(request.url).origin;
-  const session = createScanSession(origin, payload?.promptHint);
+  const result = await createScanJob(origin, payload?.promptHint);
 
-  return NextResponse.json(session);
+  return NextResponse.json(result);
 }

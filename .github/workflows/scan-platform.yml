@@ -1,0 +1,51 @@
+name: Scan Platform
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Start app
+        run: npm run start > /tmp/yiiya-scan-platform.log 2>&1 &
+
+      - name: Wait for app
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:3000 > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to start"
+          cat /tmp/yiiya-scan-platform.log
+          exit 1
+
+      - name: Scan smoke test
+        run: npm run smoke:scan

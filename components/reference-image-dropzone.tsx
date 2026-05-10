@@ -248,7 +248,7 @@ export function ReferenceImageDropzone() {
   const setActiveBrief = useYiiyaStore((state) => state.setActiveBrief);
   const creationGoal = useYiiyaStore((state) => state.creationGoal);
   const starterPromptId = useYiiyaStore((state) => state.starterPromptId);
-  const scanSession = useYiiyaStore((state) => state.scanSession);
+  const scanJob = useYiiyaStore((state) => state.scanJob);
   const triggerLabel =
     canvasMode === "WEB"
       ? "↑ Website Shot"
@@ -309,7 +309,7 @@ export function ReferenceImageDropzone() {
         creationGoal,
         canvasMode,
         starterPromptId,
-        scanSessionId: scanSession?.id ?? null
+        scanJobId: scanJob?.id ?? null
       })
     });
 
@@ -353,7 +353,7 @@ export function ReferenceImageDropzone() {
     addMessage,
     canvasMode,
     creationGoal,
-    scanSession,
+    scanJob,
     setActiveBrief,
     starterPromptId
   ]);

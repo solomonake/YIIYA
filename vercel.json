@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "app/api/scan/jobs/[id]/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/scan/jobs/[id]/capture/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/scan/jobs/[id]/complete-upload/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/scan/jobs/[id]/cancel/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/scan/jobs/[id]/upload/frame/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/scan/jobs/[id]/upload/video/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/scan/webhooks/reconstruction/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/scan/webhooks/fal/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

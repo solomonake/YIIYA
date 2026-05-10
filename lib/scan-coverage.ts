@@ -16,11 +16,13 @@ export type CoverageFrame = {
   coverage: CoverageCell[];
   confidence: number;
   previewDataUrl?: string;
+  previewImageUrl?: string;
   objectHint?: string;
   updatedAt: string;
   depthScore?: number;
   guidance?: string;
   silhouette?: CoverageSilhouette;
+  sharpness?: number;
 };
 
 const coverageLabels = [

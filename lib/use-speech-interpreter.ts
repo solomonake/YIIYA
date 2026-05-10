@@ -185,7 +185,7 @@ async function interpretTranscript(
     creationGoal: state.creationGoal,
     starterPromptId: state.starterPromptId,
     canvasMode: state.canvasMode,
-    scanSessionId: state.scanSession?.id ?? null,
+    scanJobId: state.scanJob?.id ?? null,
     selectedElementId: state.selectedElementId,
     activeElement: getSelectedElementSnapshot(state.selectedElementId),
     sections: state.sections,
@@ -224,7 +224,7 @@ async function interpretTranscript(
     creationGoal: state.creationGoal,
     canvasMode: state.canvasMode,
     starterPromptId: state.starterPromptId,
-    scanSessionId: state.scanSession?.id ?? null,
+    scanJobId: state.scanJob?.id ?? null,
     cursorTarget,
     strategyMode: state.strategyMode,
     partial

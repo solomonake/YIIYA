@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { canUseSupabasePublish } from "@/lib/supabase-projects";
+import { getScanInfraStatus } from "@/lib/scan-job-store";
 
 const requiredEnv = [
   "NEXT_PUBLIC_SUPABASE_URL",
@@ -9,7 +10,12 @@ const requiredEnv = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "FAL_KEY",
-  "UNSPLASH_ACCESS_KEY"
+  "UNSPLASH_ACCESS_KEY",
+  "BLOB_READ_WRITE_TOKEN",
+  "SCAN_RECONSTRUCTION_ENDPOINT",
+  "SCAN_RECONSTRUCTION_API_KEY",
+  "SCAN_RECONSTRUCTION_WEBHOOK_SECRET",
+  "SCAN_FAL_WEBHOOK_SECRET"
 ] as const;
 
 function hasUsableValue(value: string | undefined) {
@@ -26,6 +32,7 @@ export function GET() {
     requiredEnv.map((name) => [name, hasUsableValue(process.env[name])])
   ) as Record<(typeof requiredEnv)[number], boolean>;
   const missing = requiredEnv.filter((name) => !env[name]);
+  const scanInfra = getScanInfraStatus();
 
   return NextResponse.json({
     ok: missing.length === 0 && canUseSupabasePublish(),
@@ -70,6 +77,14 @@ export function GET() {
       publicUrlConfigured: env.NEXT_PUBLIC_SUPABASE_URL,
       anonKeyConfigured: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       serviceRoleConfigured: env.SUPABASE_SERVICE_ROLE_KEY
+    },
+    scan: {
+      storageConfigured: scanInfra.blobConfigured,
+      persistenceConfigured: scanInfra.supabaseConfigured,
+      reconstructionConfigured: scanInfra.modalConfigured,
+      falFallbackConfigured: scanInfra.falConfigured,
+      webhookSecretsConfigured:
+        env.SCAN_RECONSTRUCTION_WEBHOOK_SECRET || env.SCAN_FAL_WEBHOOK_SECRET
     }
   });
 }

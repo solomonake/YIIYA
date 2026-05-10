@@ -2,12 +2,16 @@
   "name": "yiiya",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x || 22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke:scan": "node scripts/scan-job-smoke.mjs"
   },
   "dependencies": {
     "@fal-ai/client": "^1.9.5",
@@ -16,6 +20,7 @@
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.17.10",
     "@supabase/supabase-js": "^2.103.3",
+    "@vercel/blob": "^2.3.3",
     "@xyflow/react": "^12.10.2",
     "framer-motion": "^12.38.0",
     "html2canvas": "^1.4.1",
