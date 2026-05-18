@@ -12,7 +12,9 @@ export function VoiceBar() {
   const isInterpreting = useYiiyaStore((state) => state.isInterpreting);
   const interimTranscript = useYiiyaStore((state) => state.interimTranscript);
   const latestQuestion = useYiiyaStore((state) => state.latestQuestion);
+  const guidedIntake = useYiiyaStore((state) => state.guidedIntake);
   const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
+  const cursorTarget = useYiiyaStore((state) => state.cursorTarget);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const sections = useYiiyaStore((state) => state.sections);
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
@@ -75,7 +77,15 @@ export function VoiceBar() {
       ? "Website only · screenshot upload"
       : canvasMode === "3D"
         ? "3D only · speech or phone scan"
-        : "Web + 3D · execution mode";
+      : "Web + 3D · execution mode";
+  const guidedIntakeProgress = guidedIntake
+    ? `${Object.values(guidedIntake.answers).filter(Boolean).length + 1}/4`
+    : null;
+  const targetLabel =
+    selectedElementId ??
+    cursorTarget?.domElementId ??
+    cursorTarget?.sceneObjectId ??
+    null;
 
   const handleManualSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -141,7 +151,17 @@ export function VoiceBar() {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-7 z-10 flex justify-center px-3 sm:px-6">
       <div className="pointer-events-auto flex w-[min(820px,calc(100vw-24px))] flex-col gap-3">
-        {showPathways ? (
+        {guidedIntake ? (
+          <div className="mx-auto flex max-w-[780px] flex-wrap items-center justify-center gap-2 border border-amber/35 bg-[#070707]/94 px-3 py-2 text-[11px] text-white/58 backdrop-blur-xl">
+            <span className="font-bold uppercase tracking-[0.16em] text-amber">
+              Guided brief {guidedIntakeProgress}
+            </span>
+            <span className="max-w-[560px] text-center text-white/70">
+              {latestQuestion}
+            </span>
+            <span className="text-white/34">Type generate now to skip ahead.</span>
+          </div>
+        ) : showPathways ? (
           <div className="flex flex-wrap items-center justify-center gap-2">
             {creationPathways.map((pathway) => (
               <button
@@ -166,6 +186,7 @@ export function VoiceBar() {
           <div className="flex items-center justify-center">
             <div className="border border-terminalBorder bg-[#070707]/92 px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-white/46 backdrop-blur-xl">
               {modeLabel} · {modeHint}
+              {targetLabel ? ` · target ${targetLabel}` : ""}
             </div>
           </div>
         )}
@@ -238,8 +259,8 @@ export function VoiceBar() {
             placeholder={
               latestQuestion
                 ? `// AI: ${latestQuestion}`
-                : selectedElementId
-                  ? `// ${selectedElementId} selected - type to modify`
+                : targetLabel
+                  ? `// ${targetLabel} targeted - type or speak to modify`
                   : rotatingStarterPrompts[starterPromptIndex] ?? "Type a command for demo safety"
             }
             className="min-w-0 flex-1 border-none bg-transparent text-[11px] text-bone outline-none placeholder:text-white/32 disabled:cursor-not-allowed disabled:text-white/35 sm:text-xs"

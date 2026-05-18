@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { captureTimelineSnapshot } from "@/lib/timeline-snapshots";
-import { useYiiyaStore, type YiiyaAction } from "@/lib/store";
+import {
+  useYiiyaStore,
+  type GuidedIntakeQuestionId,
+  type GuidedIntakeState,
+  type YiiyaAction
+} from "@/lib/store";
 import { runYiiyaActions } from "@/lib/action-runner";
 import type { CreativeBrief } from "@/lib/creative-brief";
+import type { CursorTarget } from "@/lib/scene/types";
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -171,6 +177,175 @@ function shouldPrimeSpeculativeResearch(transcript: string) {
   ].some((term) => text.includes(term));
 }
 
+const guidedIntakeQuestions: Array<{
+  id: GuidedIntakeQuestionId;
+  label: string;
+  question: string;
+}> = [
+  {
+    id: "targetAudience",
+    label: "Audience",
+    question: "Who is this for, and what should they already care about?"
+  },
+  {
+    id: "offerOutcome",
+    label: "Offer",
+    question: "What are you offering, and what outcome should the page make obvious?"
+  },
+  {
+    id: "visualDirection",
+    label: "Visual",
+    question: "What visual direction should it follow? Name a vibe, reference, palette, or image style."
+  },
+  {
+    id: "mustChange",
+    label: "Target",
+    question: "What object, section, or detail must Yiiya get right or be ready to change first?"
+  }
+];
+
+function questionFor(id: GuidedIntakeQuestionId) {
+  return guidedIntakeQuestions.find((question) => question.id === id) ?? guidedIntakeQuestions[0];
+}
+
+function nextGuidedQuestion(
+  answers: GuidedIntakeState["answers"]
+): GuidedIntakeQuestionId | null {
+  return guidedIntakeQuestions.find((question) => !answers[question.id])?.id ?? null;
+}
+
+function isExplicitGenerationRelease(transcript: string) {
+  return /\b(?:generate|build|make|create|run|go|ship|continue)\s+(?:it|now|the page|the site|the website)?\b/i.test(
+    transcript
+  );
+}
+
+function isQuickCommand(transcript: string) {
+  const text = transcript.toLowerCase();
+
+  if (
+    /\b(?:undo|redo|publish|reset|new project|web mode|3d mode|three d mode|hybrid mode)\b/.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
+  return (
+    /\b(?:this|that|it|selected|circled)\b/.test(text) &&
+    /\b(?:make|turn|move|shift|center|align|delete|remove|gold|glass|chrome|bigger|smaller|wider|taller|spin)\b/.test(
+      text
+    )
+  );
+}
+
+function isSpecificSectionCommand(transcript: string) {
+  return /\b(?:add|create|make)\s+(?:a\s+)?(?:hero|about|features|services|contact|faq|pricing|footer|navbar|nav)\b/i.test(
+    transcript
+  );
+}
+
+function shouldStartGuidedIntake(
+  transcript: string,
+  state: ReturnType<typeof useYiiyaStore.getState>
+) {
+  const text = transcript.toLowerCase();
+  const wantsBigWebGeneration =
+    /\b(?:build|create|generate|design|make)\b/.test(text) &&
+    /\b(?:website|landing page|site|web page|homepage|page)\b/.test(text);
+
+  return (
+    wantsBigWebGeneration &&
+    !isQuickCommand(transcript) &&
+    !isSpecificSectionCommand(transcript) &&
+    state.canvasMode !== "3D" &&
+    state.sections.length === 0
+  );
+}
+
+function composeGuidedTranscript(
+  command: string,
+  answers: GuidedIntakeState["answers"]
+) {
+  const details = guidedIntakeQuestions
+    .map((question) => {
+      const answer = answers[question.id]?.trim();
+
+      return answer ? `- ${question.label}: ${answer}` : null;
+    })
+    .filter((item): item is string => Boolean(item))
+    .join("\n");
+
+  return details
+    ? `${command}\n\nGuided direction:\n${details}`
+    : command;
+}
+
+function applyGuidedIntake(transcript: string) {
+  const state = useYiiyaStore.getState();
+  const activeIntake = state.guidedIntake;
+
+  if (activeIntake && !isQuickCommand(transcript)) {
+    const shouldRelease = isExplicitGenerationRelease(transcript);
+    const answers = shouldRelease
+      ? activeIntake.answers
+      : {
+          ...activeIntake.answers,
+          [activeIntake.currentQuestionId]: transcript.trim()
+        };
+    const nextQuestionId = nextGuidedQuestion(answers);
+
+    if (!shouldRelease) {
+      state.addMessage({ role: "user", content: transcript.trim() });
+    }
+
+    if (nextQuestionId && !shouldRelease) {
+      const nextQuestion = questionFor(nextQuestionId);
+
+      state.setGuidedIntake({
+        ...activeIntake,
+        answers,
+        currentQuestionId: nextQuestionId,
+        askedCount: Math.min(4, activeIntake.askedCount + 1)
+      });
+      state.setLatestQuestion(nextQuestion.question);
+      state.addMessage({ role: "assistant", content: nextQuestion.question });
+      state.addLog(`[GUIDE]: ${nextQuestion.label} question queued.`);
+      return null;
+    }
+
+    state.setGuidedIntake(null);
+    state.setLatestQuestion(null);
+    state.addLog("[GUIDE]: Guided direction attached to generation request.");
+    return composeGuidedTranscript(activeIntake.pendingCommand, answers);
+  }
+
+  if (shouldStartGuidedIntake(transcript, state)) {
+    const firstQuestion = guidedIntakeQuestions[0];
+
+    state.setGuidedIntake({
+      pendingCommand: transcript,
+      answers: {},
+      currentQuestionId: firstQuestion.id,
+      askedCount: 1,
+      startedAt: Date.now()
+    });
+    state.setLatestQuestion(firstQuestion.question);
+    state.addMessage({ role: "assistant", content: firstQuestion.question });
+    state.addLog("[GUIDE]: Big web generation paused for four-question direction.");
+    return null;
+  }
+
+  return transcript;
+}
+
+function resolveVoiceTargetId(
+  selectedElementId: string | null,
+  cursorTarget: CursorTarget | null
+) {
+  return selectedElementId ?? cursorTarget?.domElementId ?? null;
+}
+
 async function interpretTranscript(
   transcript: string,
   history: Array<{ role: "user" | "assistant"; content: string }>,
@@ -178,6 +353,10 @@ async function interpretTranscript(
   partial = false
 ) {
   const state = useYiiyaStore.getState();
+  const activeElementId = resolveVoiceTargetId(
+    state.selectedElementId,
+    state.cursorTarget
+  );
   const currentCanvasJson = {
     projectSlug: state.currentProjectSlug,
     projectId: state.currentProjectId,
@@ -186,8 +365,8 @@ async function interpretTranscript(
     starterPromptId: state.starterPromptId,
     canvasMode: state.canvasMode,
     scanJobId: state.scanJob?.id ?? null,
-    selectedElementId: state.selectedElementId,
-    activeElement: getSelectedElementSnapshot(state.selectedElementId),
+    selectedElementId: activeElementId,
+    activeElement: getSelectedElementSnapshot(activeElementId),
     sections: state.sections,
     sceneObjects: state.sceneObjects,
     themeState: state.themeState,
@@ -216,7 +395,7 @@ async function interpretTranscript(
 
   const requestPayload = {
     transcript,
-    activeElementId: state.selectedElementId,
+    activeElementId,
     currentScene: currentCanvasJson,
     current_canvas_json: currentCanvasJson,
     history: history.slice(-5),
@@ -330,7 +509,7 @@ async function interpretTranscript(
 }
 
 export async function runTranscriptThroughYiiya(transcript: string) {
-  const normalizedTranscript = transcript.trim();
+  const normalizedTranscript = applyGuidedIntake(transcript.trim());
 
   if (!normalizedTranscript) {
     return;
@@ -555,6 +734,18 @@ export function useSpeechInterpreter() {
     speculativeTranscriptRef.current = "";
     submittedTranscriptRef.current = "";
     setInterimTranscript("");
+
+    const state = useYiiyaStore.getState();
+    const cursorTarget = state.cursorTarget;
+
+    if (cursorTarget?.domElementId) {
+      state.setSelectedElementId(cursorTarget.domElementId);
+      state.setSelectedElements([cursorTarget.domElementId]);
+      addLog(`[CONTEXT]: Voice edit armed for ${cursorTarget.domElementId}.`);
+    } else if (cursorTarget?.sceneObjectId) {
+      addLog(`[CONTEXT]: Voice edit armed for ${cursorTarget.sceneObjectId}.`);
+    }
+
     setListening(true);
 
     try {

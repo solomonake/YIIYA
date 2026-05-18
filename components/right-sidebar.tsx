@@ -11,7 +11,20 @@ const typeLabel = {
   section: "Section"
 } as const;
 
-type SidebarTab = "brief" | "feed" | "layers";
+const directionQuestions = [
+  "Who is this for?",
+  "What are they buying or doing?",
+  "What should the hero object be?",
+  "What action should the page drive?"
+];
+
+const primaryTrack = [
+  { label: "Web", detail: "page structure and offer" },
+  { label: "3D hero", detail: "one object with material and motion" },
+  { label: "Publish", detail: "live URL plus production export" }
+];
+
+type SidebarTab = "guide" | "brief" | "feed" | "layers";
 
 export function RightSidebar() {
   const collapsed = useYiiyaStore((state) => state.sidebarCollapsed);
@@ -20,18 +33,24 @@ export function RightSidebar() {
   const sections = useYiiyaStore((state) => state.sections);
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
+  const latestQuestion = useYiiyaStore((state) => state.latestQuestion);
+  const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
+  const referenceImage = useYiiyaStore((state) => state.referenceImage);
   const activeBrief = useYiiyaStore((state) => state.activeBrief);
   const lastFallbackPath = useYiiyaStore((state) => state.lastFallbackPath);
   const toggleSidebar = useYiiyaStore((state) => state.toggleSidebar);
-  const [tab, setTab] = useState<SidebarTab>("brief");
+  const [tab, setTab] = useState<SidebarTab>("guide");
 
   const visibleTabs = useMemo<SidebarTab[]>(
-    () => (canvasMode === "WEB" ? ["brief", "feed"] : ["brief", "feed", "layers"]),
+    () =>
+      canvasMode === "WEB"
+        ? ["guide", "brief", "feed"]
+        : ["guide", "brief", "feed", "layers"],
     [canvasMode]
   );
   useEffect(() => {
     if (!visibleTabs.includes(tab)) {
-      setTab("brief");
+      setTab("guide");
     }
   }, [tab, visibleTabs]);
   const recentLogs = logs.slice(-8).reverse();
@@ -42,7 +61,7 @@ export function RightSidebar() {
   return (
     <aside
       className="absolute right-0 top-0 z-20 flex h-full flex-col border-l border-terminalBorder bg-ink/95 backdrop-blur-xl transition-[width] duration-200"
-      style={{ width: collapsed ? 44 : 260 }}
+      style={{ width: collapsed ? 44 : 304 }}
     >
       <button
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -54,10 +73,10 @@ export function RightSidebar() {
 
       {collapsed ? null : (
         <div className="flex min-h-0 flex-1 flex-col px-3 py-4">
-          <section className="shrink-0 border border-terminalBorder bg-white/[0.025] p-3">
+          <section className="yiiya-panel-subtle shrink-0 p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/44">
-                Inspector
+                Product shell
               </p>
               <span className="text-[10px] uppercase tracking-[0.14em] text-amber/75">
                 {canvasMode === "HYBRID" ? "POWER" : canvasMode}
@@ -97,6 +116,74 @@ export function RightSidebar() {
           </div>
 
           <div className="mt-4 min-h-0 flex-1">
+            {tab === "guide" ? (
+              <section className="yiiya-scrollbar flex h-full flex-col overflow-y-auto border border-terminalBorder bg-white/[0.025] p-3 text-[11px] leading-relaxed text-white/62">
+                <div className="yiiya-focus-line border border-terminalBorder bg-amber/[0.055] p-3 pl-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber">
+                    Direction lock
+                  </p>
+                  <p className="mt-2 text-[11px] text-white/66">
+                    YIIYA should ask for these before a vague generation runs too far.
+                    Answer them in the command bar when the output feels generic.
+                  </p>
+                </div>
+
+                <div className="mt-3 grid gap-2">
+                  {directionQuestions.map((question, index) => (
+                    <div
+                      key={question}
+                      className="flex min-h-10 items-center gap-3 border border-terminalBorder bg-white/[0.018] px-3 py-2"
+                    >
+                      <span className="grid h-5 w-5 shrink-0 place-items-center border border-amber/40 text-[10px] text-amber">
+                        {index + 1}
+                      </span>
+                      <span className="text-white/62">{question}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {latestQuestion ? (
+                  <div className="mt-3 border border-amber/35 bg-amber/[0.06] p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber">
+                      Current question
+                    </p>
+                    <p className="mt-2 text-white/74">{latestQuestion}</p>
+                  </div>
+                ) : null}
+
+                <div className="mt-3 grid gap-2">
+                  {primaryTrack.map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex items-start justify-between gap-3 border border-terminalBorder bg-white/[0.018] p-3"
+                    >
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/72">
+                          {item.label}
+                        </p>
+                        <p className="mt-1 text-[10px] text-white/40">{item.detail}</p>
+                      </div>
+                      <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-amber" />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 border border-terminalBorder bg-white/[0.018] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/46">
+                    Targeting
+                  </p>
+                  <p className="mt-2 text-white/58">
+                    {selectedElementId
+                      ? `${selectedElementId} is selected. Speak or type a change and it will target this element.`
+                      : "Hover or circle the page/object while speaking so this and it resolve correctly."}
+                  </p>
+                  <p className="mt-2 text-[10px] uppercase tracking-[0.12em] text-white/34">
+                    Reference image: {referenceImage ? "attached" : "not attached"}
+                  </p>
+                </div>
+              </section>
+            ) : null}
+
             {tab === "brief" ? (
               <section className="h-full border border-terminalBorder bg-white/[0.025] p-3 text-[11px] leading-relaxed text-white/62">
                 {activeBrief ? (

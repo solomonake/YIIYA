@@ -8,8 +8,11 @@
   --yiiya-fg: #ededed;
   --yiiya-muted: rgba(237, 237, 237, 0.62);
   --yiiya-surface: rgba(255, 255, 255, 0.045);
+  --yiiya-surface-strong: rgba(10, 10, 10, 0.94);
   --yiiya-border: #1a1a1a;
   --yiiya-accent: #ef9f27;
+  --yiiya-accent-soft: rgba(239, 159, 39, 0.12);
+  --yiiya-green: #39ff14;
   --yiiya-gap: 18px;
   --yiiya-radius: 4px;
   --yiiya-font-scale: 1;
@@ -47,6 +50,10 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+}
+
 ::selection {
   background: rgba(239, 159, 39, 0.32);
 }
@@ -57,6 +64,56 @@ button {
     linear-gradient(90deg, rgba(237, 237, 237, 0.025) 1px, transparent 1px);
   background-color: var(--yiiya-bg);
   background-size: 48px 48px;
+}
+
+.yiiya-panel {
+  border: 1px solid var(--yiiya-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 34%),
+    var(--yiiya-surface-strong);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(18px);
+}
+
+.yiiya-panel-subtle {
+  border: 1px solid var(--yiiya-border);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.yiiya-focus-line {
+  position: relative;
+}
+
+.yiiya-focus-line::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--yiiya-accent);
+  opacity: 0.9;
+}
+
+.yiiya-micro-button {
+  border: 1px solid var(--yiiya-border);
+  background: rgba(255, 255, 255, 0.018);
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.yiiya-micro-button:hover {
+  border-color: rgba(239, 159, 39, 0.68);
+  color: var(--yiiya-accent);
+  background: rgba(239, 159, 39, 0.065);
+}
+
+.yiiya-micro-button:focus-visible {
+  outline: 1px solid var(--yiiya-accent);
+  outline-offset: 2px;
 }
 
 .yiiya-scrollbar {
@@ -88,4 +145,15 @@ button {
 
 .yiiya-scan-line {
   animation: yiiya-scan 1.5s linear forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }

@@ -170,6 +170,20 @@ export type YiiyaMessage = {
   content: string;
 };
 
+export type GuidedIntakeQuestionId =
+  | "targetAudience"
+  | "offerOutcome"
+  | "visualDirection"
+  | "mustChange";
+
+export type GuidedIntakeState = {
+  pendingCommand: string;
+  answers: Partial<Record<GuidedIntakeQuestionId, string>>;
+  currentQuestionId: GuidedIntakeQuestionId;
+  askedCount: number;
+  startedAt: number;
+};
+
 export type YiiyaAction =
   | {
       type: "ADD_SECTION";
@@ -474,6 +488,7 @@ type YiiyaState = {
   transcript: string;
   interimTranscript: string;
   latestQuestion: string | null;
+  guidedIntake: GuidedIntakeState | null;
   selectedElementId: string | null;
   selectedElements: string[];
   hoveredElementId: string | null;
@@ -516,6 +531,7 @@ type YiiyaState = {
   setTranscript: (transcript: string) => void;
   setInterimTranscript: (interimTranscript: string) => void;
   setLatestQuestion: (question: string | null) => void;
+  setGuidedIntake: (guidedIntake: GuidedIntakeState | null) => void;
   setSelectedElementId: (selectedElementId: string | null) => void;
   setSelectedElements: (selectedElements: string[]) => void;
   setHoveredElementId: (hoveredElementId: string | null) => void;
@@ -1163,6 +1179,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   transcript: "",
   interimTranscript: "",
   latestQuestion: null,
+  guidedIntake: null,
   selectedElementId: null,
   selectedElements: [],
   hoveredElementId: null,
@@ -1251,6 +1268,7 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
   setTranscript: (transcript) => set({ transcript }),
   setInterimTranscript: (interimTranscript) => set({ interimTranscript }),
   setLatestQuestion: (latestQuestion) => set({ latestQuestion }),
+  setGuidedIntake: (guidedIntake) => set({ guidedIntake }),
   setSelectedElementId: (selectedElementId) => set({ selectedElementId }),
   setSelectedElements: (selectedElements) => set({ selectedElements }),
   setHoveredElementId: (hoveredElementId) => set({ hoveredElementId }),
@@ -1790,6 +1808,8 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
       canvasMode: "WEB",
       transcript: "",
       interimTranscript: "",
+      latestQuestion: null,
+      guidedIntake: null,
       selectedElementId: null,
       selectedElements: [],
       hoveredElementId: null,

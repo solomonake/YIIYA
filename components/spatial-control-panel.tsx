@@ -254,22 +254,24 @@ export function SpatialControlPanel() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="pointer-events-auto absolute left-5 top-16 z-30 border border-terminalBorder bg-[#050505]/90 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/62 backdrop-blur-xl transition hover:border-amber/70 hover:text-amber"
+        className="yiiya-panel pointer-events-auto absolute left-5 top-[23rem] z-30 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/66 transition hover:border-amber/70 hover:text-amber"
       >
-        Mold Lab
+        3D Hero Lab
       </button>
     );
   }
 
   return (
-    <div className="pointer-events-auto absolute left-5 top-16 z-30 w-[244px] border border-terminalBorder bg-[#050505]/90 p-2 font-mono text-white/62 backdrop-blur-xl">
+    <div className="yiiya-panel pointer-events-auto absolute left-5 top-[23rem] z-30 w-[286px] p-3 font-mono text-white/62">
       <video ref={videoRef} className="hidden" playsInline muted />
       <div className="flex items-center justify-between border-b border-terminalBorder pb-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber">
-            Mold Lab
+            3D Hero Lab
           </p>
-          <p className="mt-1 text-[10px] text-white/36">3D only: voice, hand, sliders</p>
+          <p className="mt-1 text-[10px] text-white/38">
+            Circle, speak, then tune the hero object
+          </p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -279,6 +281,7 @@ export function SpatialControlPanel() {
             className="h-8 border px-2 text-[10px] font-bold uppercase tracking-[0.12em] transition hover:border-amber/70 hover:text-amber"
             style={{
               borderColor: handEnabled ? "#EF9F27" : "#1A1A1A",
+              background: handEnabled ? "rgba(239,159,39,0.1)" : "rgba(255,255,255,0.018)",
               color: handEnabled ? "#EF9F27" : "rgba(255,255,255,0.55)"
             }}
           >
@@ -288,7 +291,7 @@ export function SpatialControlPanel() {
             type="button"
             title="Hide Mold Lab"
             onClick={() => setOpen(false)}
-            className="h-8 border border-terminalBorder px-2 text-[10px] uppercase tracking-[0.12em] text-white/45 transition hover:border-white/20 hover:text-bone"
+            className="yiiya-micro-button h-8 px-2 text-[10px] uppercase tracking-[0.12em] text-white/45"
           >
             Hide
           </button>
@@ -299,6 +302,11 @@ export function SpatialControlPanel() {
         <p className="mt-2 text-[10px] text-white/42">camera initializing...</p>
       ) : null}
 
+      <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/38">
+        <span>Shape</span>
+        <span className="text-amber/70">object-first</span>
+      </div>
+
       <div className="mt-2 grid grid-cols-3 gap-1">
         {(["sphere", "helix", "torus", "bottle", "capsule", "wave"] as const).map((formation) => (
           <button
@@ -306,11 +314,16 @@ export function SpatialControlPanel() {
             type="button"
             title={`Mold blob into ${formation}`}
             onClick={() => moldFormation(formation)}
-            className="h-8 border border-terminalBorder px-1 text-[10px] font-bold uppercase tracking-[0.08em] transition hover:border-amber/70 hover:text-amber"
+            className="yiiya-micro-button h-8 px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-white/62"
           >
             {formation === "torus" ? "Donut" : formation}
           </button>
         ))}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/38">
+        <span>Material</span>
+        <span className="text-white/28">visual finish</span>
       </div>
 
       <div className="mt-2 grid grid-cols-3 gap-1">
@@ -320,7 +333,7 @@ export function SpatialControlPanel() {
             type="button"
             title={`Make latest object or blob ${material}`}
             onClick={() => applyMaterial(material)}
-            className="h-8 border border-terminalBorder px-1 text-[10px] font-bold uppercase tracking-[0.08em] transition hover:border-amber/70 hover:text-amber"
+            className="yiiya-micro-button h-8 px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-white/62"
           >
             {material}
           </button>
@@ -342,7 +355,7 @@ export function SpatialControlPanel() {
               intensity: 0.7
             })
           }
-          className="h-8 border border-terminalBorder px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition hover:border-amber/70 hover:text-amber"
+          className="yiiya-micro-button h-8 px-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/62"
         >
           Add sphere
         </button>
@@ -374,7 +387,7 @@ export function SpatialControlPanel() {
             property: "chaos"
           })
         }
-        className="mt-2 h-8 w-full border border-terminalBorder px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition hover:border-amber/70 hover:text-amber"
+        className="yiiya-micro-button mt-2 h-8 w-full px-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/62"
       >
         Add slider
       </button>
@@ -388,6 +401,7 @@ export function SpatialControlPanel() {
             className="h-8 border px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition"
             style={{
               borderColor: exportTarget === target ? "#EF9F27" : "#1A1A1A",
+              background: exportTarget === target ? "rgba(239,159,39,0.1)" : "rgba(255,255,255,0.018)",
               color: exportTarget === target ? "#EF9F27" : "rgba(255,255,255,0.55)"
             }}
           >
@@ -413,7 +427,7 @@ export function SpatialControlPanel() {
             );
           }
         }}
-        className="mt-2 h-8 w-full border border-terminalBorder px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition hover:border-amber/70 hover:text-amber"
+        className="mt-2 h-8 w-full border border-amber/50 bg-amber/10 px-2 text-[10px] font-bold uppercase tracking-[0.08em] text-amber transition hover:bg-amber/15"
       >
         Export {exportTarget === "latest" ? "Latest" : "Scene"}
       </button>

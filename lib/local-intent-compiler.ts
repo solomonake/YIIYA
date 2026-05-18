@@ -1,4 +1,5 @@
 import { themeFromVibe, type YiiyaTheme } from "@/lib/designSystem";
+import type { CursorTarget } from "@/lib/scene/types";
 
 type LocalCompilerInput = {
   transcript: string;
@@ -26,6 +27,7 @@ type LocalCompilerInput = {
     imageMode?: "web" | "3d" | "hybrid";
   } | null;
   image_mode?: "web" | "3d" | "hybrid";
+  cursorTarget?: CursorTarget | null;
 };
 
 type LocalAction = {
@@ -623,8 +625,30 @@ function inferColor(text: string) {
   return hex ?? "#EF9F27";
 }
 
+function hasDirectReference(text: string) {
+  return /\b(?:this|that|it|here|selected|circled|targeted|this one)\b/.test(text);
+}
+
+function resolveElementTarget(input: LocalCompilerInput, text: string) {
+  if (input.activeElementId) {
+    return input.activeElementId;
+  }
+
+  if (hasDirectReference(text)) {
+    return input.cursorTarget?.domElementId ?? null;
+  }
+
+  return null;
+}
+
+function resolveObjectTarget(input: LocalCompilerInput) {
+  return input.cursorTarget?.sceneObjectId ?? "latest";
+}
+
 function compileElementModification(input: LocalCompilerInput, text: string) {
-  if (!input.activeElementId) {
+  const elementId = resolveElementTarget(input, text);
+
+  if (!elementId) {
     return [];
   }
 
@@ -637,7 +661,7 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
       {
         type: "MODIFY_ELEMENT",
         payload: {
-          elementId: input.activeElementId,
+          elementId,
           property: "textAlign",
           value: "center",
           mode: "replace"
@@ -646,7 +670,7 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
       {
         type: "MODIFY_ELEMENT",
         payload: {
-          elementId: input.activeElementId,
+          elementId,
           property: "marginInline",
           value: "auto",
           mode: "replace"
@@ -659,7 +683,7 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
     actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
-        elementId: input.activeElementId,
+        elementId,
         property: "fontSize",
         value: 1.2,
         mode: "multiply"
@@ -671,7 +695,7 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
     actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
-        elementId: input.activeElementId,
+        elementId,
         property: "fontSize",
         value: 0.88,
         mode: "multiply"
@@ -685,7 +709,7 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
     actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
-        elementId: input.activeElementId,
+        elementId,
         property: hasAny(text, ["background", "button"]) ? "backgroundColor" : "color",
         value: color,
         mode: "replace"
@@ -697,7 +721,7 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
     actions.push({
       type: "MODIFY_ELEMENT",
       payload: {
-        elementId: input.activeElementId,
+        elementId,
         property: "borderRadius",
         value: "24px",
         mode: "replace"
@@ -716,6 +740,8 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const requestedName = inferRequestedName(input.transcript);
   const theme = themeFromVibe(text);
   const modifications = compileElementModification(input, text);
+  const elementTarget = resolveElementTarget(input, text);
+  const objectTarget = resolveObjectTarget(input);
 
   if (requestedName) {
     actions.push({
@@ -723,11 +749,11 @@ export function compileLocalIntent(input: LocalCompilerInput) {
       payload: { projectName: titleCase(requestedName) }
     });
 
-    if (input.activeElementId) {
+    if (elementTarget) {
       actions.push({
         type: "MODIFY_ELEMENT",
         payload: {
-          elementId: input.activeElementId,
+          elementId: elementTarget,
           property: "content",
           value: titleCase(requestedName),
           mode: "replace"
@@ -769,7 +795,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
         {
           type: "SET_MATERIAL",
           payload: {
-            objectId: "latest",
+            objectId: objectTarget,
             material: "matte",
             color: "#1a1a1a"
           }
@@ -836,7 +862,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
       actions.push({
         type: "SET_MATERIAL",
         payload: {
-          objectId: "latest",
+          objectId: objectTarget,
           material: inferMaterial(text),
           metalness: text.includes("gold") ? 1 : undefined,
           roughness: text.includes("gold") ? 0.2 : undefined,
@@ -870,7 +896,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["move it left", "move left", "shift left"])) {
       actions.push({
         type: "MOVE_OBJECT",
-        payload: { objectId: "latest", delta: [-0.45, 0, 0] }
+        payload: { objectId: objectTarget, delta: [-0.45, 0, 0] }
       });
       return actions;
     }
@@ -878,7 +904,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["move it right", "move right", "shift right"])) {
       actions.push({
         type: "MOVE_OBJECT",
-        payload: { objectId: "latest", delta: [0.45, 0, 0] }
+        payload: { objectId: objectTarget, delta: [0.45, 0, 0] }
       });
       return actions;
     }
@@ -886,7 +912,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["move it up", "move up", "raise it"])) {
       actions.push({
         type: "MOVE_OBJECT",
-        payload: { objectId: "latest", delta: [0, 0.38, 0] }
+        payload: { objectId: objectTarget, delta: [0, 0.38, 0] }
       });
       return actions;
     }
@@ -894,7 +920,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["move it down", "move down", "lower it"])) {
       actions.push({
         type: "MOVE_OBJECT",
-        payload: { objectId: "latest", delta: [0, -0.38, 0] }
+        payload: { objectId: objectTarget, delta: [0, -0.38, 0] }
       });
       return actions;
     }
@@ -902,7 +928,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["make it taller", "taller", "stretch it"])) {
       actions.push({
         type: "RESHAPE_OBJECT",
-        payload: { objectId: "latest", scaleY: 1.55 }
+        payload: { objectId: objectTarget, scaleY: 1.55 }
       });
       actions.push({
         type: "MOLD_BLOB",
@@ -920,7 +946,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["make it wider", "wider"])) {
       actions.push({
         type: "RESHAPE_OBJECT",
-        payload: { objectId: "latest", scaleX: 1.45, scaleZ: 1.18 }
+        payload: { objectId: objectTarget, scaleX: 1.45, scaleZ: 1.18 }
       });
       return actions;
     }
@@ -928,7 +954,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["spin slower", "rotate slower", "slower spin"])) {
       actions.push({
         type: "SET_OBJECT_ANIMATION",
-        payload: { objectId: "latest", animation: "rotate", intensity: 0.35 }
+        payload: { objectId: objectTarget, animation: "rotate", intensity: 0.35 }
       });
       return actions;
     }
@@ -936,7 +962,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     if (hasAny(text, ["spin faster", "rotate faster", "faster spin"])) {
       actions.push({
         type: "SET_OBJECT_ANIMATION",
-        payload: { objectId: "latest", animation: "rotate", intensity: 1.6 }
+        payload: { objectId: objectTarget, animation: "rotate", intensity: 1.6 }
       });
       return actions;
     }
@@ -987,7 +1013,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
         actions.push({
           type: "SET_MATERIAL",
           payload: {
-            objectId: "latest",
+            objectId: objectTarget,
             material: inferMaterial(text),
             metalness: text.includes("gold") ? 1 : undefined,
             roughness: text.includes("gold") ? 0.2 : undefined,

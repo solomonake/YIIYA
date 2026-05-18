@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { emptyCoverage, surfaceCoverageConfidence, type CoverageCell } from "@/lib/scan-coverage";
 import { useYiiyaStore } from "@/lib/store";
@@ -262,14 +263,19 @@ export function ScanStudioPanel() {
   };
 
   return (
-    <div className="pointer-events-auto absolute bottom-28 left-5 z-30 w-[272px] border border-terminalBorder bg-[#050505]/94 p-3 font-mono text-white/62 backdrop-blur-xl">
+    <div className="yiiya-panel pointer-events-auto absolute bottom-28 left-5 z-30 w-[286px] p-3 font-mono text-white/62">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber">
-            Scan Studio
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber">
+              Scan Studio
+            </p>
+            <span className="border border-white/10 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-white/36">
+              Labs
+            </span>
+          </div>
           <p className="mt-1 text-[10px] text-white/36">
-            durable phone-to-desktop reconstruction
+            advanced phone-to-desktop reconstruction
           </p>
         </div>
         <button
@@ -283,16 +289,15 @@ export function ScanStudioPanel() {
 
       {!open ? (
         <div className="mt-3 grid gap-2">
-          <p className="text-[10px] leading-relaxed text-white/40">
-            Start an iPhone-first scan job here. The phone captures video plus
-            curated keyframes, while reconstruction stays queued outside the
-            interpreter path.
+          <p className="text-[10px] leading-relaxed text-white/42">
+            Use after the core Web + 3D hero path is working. Scan jobs stay
+            queued outside the main generator so experiments do not block publish.
           </p>
           <button
             type="button"
             onClick={() => void startScan()}
             disabled={isStarting}
-            className="h-9 w-full border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:opacity-50"
+            className="h-9 w-full border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:border-white/5 disabled:text-white/25"
           >
             {isStarting ? "Starting..." : "Start Scan"}
           </button>
@@ -309,16 +314,19 @@ export function ScanStudioPanel() {
                 type="button"
                 onClick={() => void startScan()}
                 disabled={isStarting}
-                className="h-9 w-full border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:opacity-50"
+                className="h-9 w-full border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:border-white/5 disabled:text-white/25"
               >
                 {isStarting ? "Starting..." : "Create Scan Job"}
               </button>
             </>
           ) : (
             <>
-              <img
+              <Image
                 alt="Scan QR code"
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(scanJob.mobileUrl)}`}
+                width={160}
+                height={160}
+                unoptimized
                 className="mx-auto h-40 w-40 border border-terminalBorder bg-white p-2"
               />
               <a
@@ -450,7 +458,7 @@ export function ScanStudioPanel() {
                   type="button"
                   onClick={() => void loadIntoScene()}
                   disabled={!sceneExport?.url || isLoadingIntoScene}
-                  className="h-9 border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:opacity-40"
+                  className="h-9 border border-terminalBorder text-[11px] font-bold uppercase tracking-[0.12em] text-white/72 transition hover:border-amber/70 hover:text-amber disabled:border-white/5 disabled:text-white/25"
                 >
                   {isLoadingIntoScene ? "Loading..." : "Load Mesh Into Scene"}
                 </button>
@@ -458,7 +466,7 @@ export function ScanStudioPanel() {
                   type="button"
                   onClick={() => void refreshScanJob(scanJob.id)}
                   disabled={isRefreshing}
-                  className="h-9 border border-terminalBorder text-[11px] uppercase tracking-[0.12em] text-white/52 transition hover:border-white/20 hover:text-bone disabled:opacity-40"
+                  className="h-9 border border-terminalBorder text-[11px] uppercase tracking-[0.12em] text-white/52 transition hover:border-white/20 hover:text-bone disabled:border-white/5 disabled:text-white/25"
                 >
                   {isRefreshing ? "Refreshing..." : "Refresh Job"}
                 </button>
@@ -474,7 +482,7 @@ export function ScanStudioPanel() {
                     type="button"
                     onClick={() => void cancelJob()}
                     disabled={isCancelling}
-                    className="h-9 border border-[#3A1B1B] text-[11px] uppercase tracking-[0.12em] text-[#ff9b8b] transition hover:border-[#ff8470]/60 hover:text-[#ffb4a8] disabled:opacity-40"
+                    className="h-9 border border-[#3A1B1B] text-[11px] uppercase tracking-[0.12em] text-[#ff9b8b] transition hover:border-[#ff8470]/60 hover:text-[#ffb4a8] disabled:border-white/5 disabled:text-white/25"
                   >
                     {isCancelling ? "Cancelling..." : "Cancel Job"}
                   </button>

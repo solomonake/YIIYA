@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 import { canUseSupabasePublish } from "@/lib/supabase-projects";
 import { getScanInfraStatus } from "@/lib/scan-job-store";
 
-const requiredEnv = [
+const coreRequiredEnv = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
   "GEMINI_API_KEY",
   "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
+  "OPENAI_API_KEY"
+] as const;
+
+const labOptionalEnv = [
   "FAL_KEY",
   "UNSPLASH_ACCESS_KEY",
   "BLOB_READ_WRITE_TOKEN",
@@ -29,14 +32,27 @@ function hasUsableValue(value: string | undefined) {
 
 export function GET() {
   const env = Object.fromEntries(
-    requiredEnv.map((name) => [name, hasUsableValue(process.env[name])])
-  ) as Record<(typeof requiredEnv)[number], boolean>;
-  const missing = requiredEnv.filter((name) => !env[name]);
+    [...coreRequiredEnv, ...labOptionalEnv].map((name) => [
+      name,
+      hasUsableValue(process.env[name])
+    ])
+  ) as Record<
+    (typeof coreRequiredEnv)[number] | (typeof labOptionalEnv)[number],
+    boolean
+  >;
+  const missingCore = coreRequiredEnv.filter((name) => !env[name]);
+  const missingLab = labOptionalEnv.filter((name) => !env[name]);
+  const coreOk = missingCore.length === 0 && canUseSupabasePublish();
+  const labOk = missingLab.length === 0;
   const scanInfra = getScanInfraStatus();
 
   return NextResponse.json({
-    ok: missing.length === 0 && canUseSupabasePublish(),
-    missing,
+    ok: coreOk,
+    coreOk,
+    labOk,
+    missing: [...missingCore, ...missingLab],
+    missingCore,
+    missingLab,
     ai: {
       conductor: {
         model: process.env.GEMINI_FLASH_MODEL ?? "gemini-2.5-flash",

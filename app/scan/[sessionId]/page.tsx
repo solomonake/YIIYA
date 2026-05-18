@@ -896,6 +896,7 @@ export default function ScanPage({
                     key={frame.id}
                     className="aspect-square overflow-hidden border border-[#1A1A1A] bg-black"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- keyframes are transient local data URLs captured from the camera. */}
                     <img
                       alt="Captured keyframe"
                       src={frame.previewDataUrl}

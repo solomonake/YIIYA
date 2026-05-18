@@ -29,6 +29,8 @@ const SceneCanvas = dynamic(
   }
 );
 
+const workflowSteps = ["Direction", "Web", "3D hero", "Publish"];
+
 export function YiiyaWorkspace() {
   useProjectAutosave();
   useCursorTracker();
@@ -91,21 +93,52 @@ export function YiiyaWorkspace() {
 
   return (
     <main className="flex h-svh flex-col overflow-hidden bg-ink font-mono text-bone">
-      <header className="z-20 flex h-12 shrink-0 items-center justify-between border-b border-terminalBorder bg-ink px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <input
-            aria-label="Project name"
-            value={projectName}
-            onChange={(event) => setProjectName(event.target.value)}
-            className="w-[min(36vw,360px)] rounded-none border-none bg-transparent text-[13px] font-semibold tracking-[0] text-bone outline-none transition-colors placeholder:text-white/35 focus:text-amber"
-          />
-          <span className="hidden text-[11px] text-white/35 sm:inline">
-            {saveStatus === "saving"
-              ? "// saving"
-              : saveStatus === "saved" && lastSavedAt
-                ? `// saved ${lastSavedAt}`
-                : ""}
-          </span>
+      <header className="z-20 grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-terminalBorder bg-[#050505]/98 px-4 shadow-[0_12px_50px_rgba(0,0,0,0.42)]">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="hidden h-9 w-9 shrink-0 place-items-center border border-amber/50 bg-amber/10 text-[11px] font-black text-amber sm:grid">
+            Y
+          </div>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-3">
+              <input
+                aria-label="Project name"
+                value={projectName}
+                onChange={(event) => setProjectName(event.target.value)}
+                className="w-[min(34vw,340px)] rounded-none border-none bg-transparent text-[13px] font-semibold tracking-[0] text-bone outline-none transition-colors placeholder:text-white/35 focus:text-amber"
+              />
+              <span className="hidden text-[10px] uppercase tracking-[0.16em] text-white/35 md:inline">
+                {saveStatus === "saving"
+                  ? "saving"
+                  : saveStatus === "saved" && lastSavedAt
+                    ? `saved ${lastSavedAt}`
+                    : "local draft"}
+              </span>
+            </div>
+            <p className="mt-0.5 hidden truncate text-[10px] uppercase tracking-[0.16em] text-white/32 lg:block">
+              Web + 3D hero compiler · publish-ready canvas
+            </p>
+          </div>
+          <div className="hidden min-w-0 items-center gap-1 xl:flex">
+            {workflowSteps.map((step, index) => (
+              <div
+                key={step}
+                className="flex items-center gap-1 text-[10px] uppercase tracking-[0.14em] text-white/34"
+              >
+                <span
+                  className={
+                    index === 1
+                      ? "border border-amber/45 bg-amber/10 px-2 py-1 text-amber"
+                      : "border border-terminalBorder px-2 py-1"
+                  }
+                >
+                  {step}
+                </span>
+                {index < workflowSteps.length - 1 ? (
+                  <span className="text-white/18">/</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {showNewConfirmation ? (
@@ -129,7 +162,7 @@ export function YiiyaWorkspace() {
           ) : null}
           <button
             onClick={handlePublish}
-            className="h-8 border border-amber/60 bg-amber px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-ink transition hover:bg-signalAmber focus:outline-none focus:ring-1 focus:ring-amber"
+            className="h-9 border border-amber/70 bg-amber px-4 text-[11px] font-black uppercase tracking-[0.16em] text-ink shadow-[0_0_24px_rgba(239,159,39,0.18)] transition hover:bg-signalAmber focus:outline-none focus:ring-1 focus:ring-amber"
           >
             Publish
           </button>
@@ -141,7 +174,7 @@ export function YiiyaWorkspace() {
         <div
           className="relative min-w-0 flex-1 canvas-grid"
           style={{
-            marginRight: sidebarCollapsed ? 44 : 260,
+            marginRight: sidebarCollapsed ? 44 : 304,
             transition: "margin-right 220ms ease"
           }}
         >
