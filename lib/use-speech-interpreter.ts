@@ -353,6 +353,13 @@ async function interpretTranscript(
   partial = false
 ) {
   const state = useYiiyaStore.getState();
+  // Stage lifecycle: as soon as a real prompt arrives, leave EMPTY and surface
+  // the typographic placeholder. The blob default is dead. Final transitions to
+  // GENERATING/READY are emitted by the action runner when 3D actions fire.
+  const trimmedPrompt = (transcript ?? "").trim();
+  if (trimmedPrompt && !partial) {
+    state.stageDispatch({ type: "PROMPT_TYPED", text: trimmedPrompt });
+  }
   const activeElementId = resolveVoiceTargetId(
     state.selectedElementId,
     state.cursorTarget
@@ -566,6 +573,11 @@ export async function runTranscriptThroughYiiya(transcript: string) {
     const message =
       error instanceof Error ? error.message : "Interpret request failed";
     state.addLog(`[SYSTEM]: ${message}`);
+    // Stage lifecycle: error path — clears the typographic placeholder so the
+    // user isn't left staring at the prompt word with no progress. ERROR is
+    // visually equivalent to EMPTY in the Stage dispatcher; the System Op Feed
+    // surfaces the error message above.
+    state.stageDispatch({ type: "GENERATION_FAILED", reason: message });
   } finally {
     state.setStarterPromptId(null);
     state.setInterpreting(false);

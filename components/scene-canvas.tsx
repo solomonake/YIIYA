@@ -16,6 +16,8 @@ import { Raycaster, Vector2 } from "three";
 import { styleMaterialPack } from "@/lib/scene/styles";
 import { useYiiyaStore, type SceneObject, type SpatialAnchor } from "@/lib/store";
 import { registerExportObject, registerExportRoot } from "@/lib/spatial-export";
+import { Stage as StagePlaceholder } from "@/components/scene/stage";
+import type { StageState } from "@/lib/scene/stage-state";
 
 function materialNode(
   object: SceneObject
@@ -584,12 +586,14 @@ function StarterScene({
   objects,
   anchors,
   canvasMode,
-  hasSections
+  hasSections,
+  stage
 }: {
   objects: SceneObject[];
   anchors: SpatialAnchor[];
   canvasMode: "WEB" | "3D" | "HYBRID";
   hasSections: boolean;
+  stage: StageState;
 }) {
   const anchorMap = useMemo(
     () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
@@ -611,9 +615,17 @@ function StarterScene({
     scale[2] * 0.66
   ];
 
+  // Empty-canvas affordance: render the lifecycle-aware Stage when a prompt
+  // is active; fall back to the QuietStarterMarker only when nothing has
+  // been asked yet (stage.kind === "EMPTY"). Once any real SceneObject
+  // exists we render the actual objects below and skip both.
+  const showPlaceholder = objects.length === 0 && canvasMode === "3D";
+
   return (
     <>
-      {objects.length === 0 && canvasMode === "3D" ? <QuietStarterMarker /> : null}
+      {showPlaceholder ? (
+        stage.kind === "EMPTY" ? <QuietStarterMarker /> : <StagePlaceholder state={stage} />
+      ) : null}
 
       {objects.map((object, index) => {
         const anchor = anchorMap.get(object.id);
@@ -656,6 +668,7 @@ export function SceneCanvas() {
   const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const hasSections = useYiiyaStore((state) => state.sections.length > 0);
+  const stage = useYiiyaStore((state) => state.stage);
   const rootGroupRef = useRef<Group>(null);
 
   useEffect(() => {
@@ -696,6 +709,7 @@ export function SceneCanvas() {
               anchors={spatialAnchors}
               canvasMode={canvasMode}
               hasSections={hasSections}
+              stage={stage}
             />
           </group>
         </Physics>

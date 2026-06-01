@@ -20,6 +20,7 @@ import type { ScanJobSummary } from "@/lib/scan-types";
 import type { PublishedProject } from "@/lib/published-project-types";
 import { createProjectSlug } from "@/lib/project-slug";
 import type { ExportTarget } from "@/lib/spatial-export";
+import { createStageSlice, type StageSlice } from "@/lib/scene/stage-slice";
 
 export type Layer = {
   id: string;
@@ -1164,7 +1165,7 @@ function normalizeSceneObjectRecord(value: unknown): SceneObject | null {
   };
 }
 
-export const useYiiyaStore = create<YiiyaState>((set) => ({
+export const useYiiyaStore = create<YiiyaState & StageSlice>((set, get) => ({
   currentProjectId: createProjectId(),
   currentProjectSlug: createProjectSlug(),
   projectName: defaultProjectName,
@@ -1839,5 +1840,11 @@ export const useYiiyaStore = create<YiiyaState>((set) => ({
     })),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  setExportTarget: (exportTarget) => set({ exportTarget })
+  setExportTarget: (exportTarget) => set({ exportTarget }),
+  // Stage lifecycle slice — provides `stage`, `stageDispatch`, `clearStage`.
+  // See lib/scene/stage-slice.ts and lib/scene/stage-state.ts.
+  ...createStageSlice(
+    set as unknown as Parameters<typeof createStageSlice>[0],
+    get as unknown as Parameters<typeof createStageSlice>[1]
+  )
 }));

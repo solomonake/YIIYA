@@ -201,6 +201,19 @@ function applyAdd3DObject(action: YiiyaAction) {
     store.addLog("SYSTEM: Mode switched to HYBRID — 3D object detected.");
   }
 
+  // Stage lifecycle: an authored 3D object is being added. We don't have a
+  // GLB URL on this path (the renderer composes the object procedurally from
+  // shape + material), so we synthesise a READY signal pointing at a sentinel
+  // that the Stage knows to ignore — the real visual is the procedural mesh
+  // mounted via RenderedObject in scene-canvas.tsx.
+  if (typeof payload.shape === "string") {
+    store.stageDispatch({
+      type: "GENERATION_READY",
+      glbUrl: `procedural://${payload.shape}`,
+      provider: "procedural"
+    });
+  }
+
   const blueprint = resolveSceneBlueprint({
     prompt:
       typeof payload.prompt === "string"
@@ -375,6 +388,16 @@ function applyLoad3DMesh(action: YiiyaAction) {
     store.setCanvasMode("HYBRID");
     store.addLog("SYSTEM: Mode switched to HYBRID — 3D mesh detected.");
   }
+
+  // Stage lifecycle: a real GLB landed → transition to READY. This lets the
+  // typographic placeholder cross-fade into the real mesh and clears the
+  // particle dissolve. The Stage component handles the visual handoff.
+  store.stageDispatch({
+    type: "GENERATION_READY",
+    glbUrl: action.payload.url,
+    provider:
+      typeof action.payload.tier === "string" ? `tier:${action.payload.tier}` : "unknown"
+  });
 
   const material = normalizeSpatialMaterial(action.payload.material);
 
