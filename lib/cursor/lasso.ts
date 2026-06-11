@@ -35,7 +35,7 @@ export function pointInRect(p: Point, r: Rect): boolean {
 }
 
 export function isClosed(path: ReadonlyArray<Point>): boolean {
-  if (path.length < 6) return false;
+  if (path.length < 3) return false;
   const a = path[0];
   const b = path[path.length - 1];
   const dx = a.x - b.x;
