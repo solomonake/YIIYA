@@ -4,6 +4,7 @@ import type {
   AssetExportFormat,
   AssetLane,
   AssetPlan,
+  AssetReadinessCheck,
   RoutePlan
 } from "@/lib/asset-compiler";
 import type { ScanJobSummary } from "@/lib/scan-types";
@@ -151,7 +152,7 @@ export function createAssetJob(plan: AssetPlan, prompt: string, input?: { scanId
       scanId: input?.scanId ?? null
     },
     artifacts: [],
-    validation: plan.brief.readiness.checks.map((check) => ({
+    validation: plan.brief.readiness.checks.map((check: AssetReadinessCheck) => ({
       label: check.label,
       status: check.status,
       detail: check.detail
@@ -222,50 +223,60 @@ export function syncAssetJobFromScan(scanJob: ScanJobSummary) {
     listAssetJobs().find((job) => job.inputs.scanId === scanJob.id) ?? null;
 
   const artifacts: AssetArtifact[] = [
-    ...scanJob.exports.map((item) => ({
-      id: item.id,
-      label: `${item.tier} ${item.format.toUpperCase()}`,
-      kind: item.tier === "source-pack" ? ("source-pack" as const) : ("export" as const),
-      format: item.format,
-      mimeType:
-        item.format === "zip"
-          ? "application/zip"
-          : item.format === "stl"
-            ? "model/stl"
-            : item.format === "obj"
-              ? "model/obj"
-              : "model/gltf-binary",
-      status: item.status === "failed" ? "failed" : item.status === "ready" ? "ready" : "pending",
-      url: item.url,
-      fileName: item.fileName
-    })),
+    ...scanJob.exports.map(
+      (item): AssetArtifact => ({
+        id: item.id,
+        label: `${item.tier} ${item.format.toUpperCase()}`,
+        kind: item.tier === "source-pack" ? "source-pack" : "export",
+        format: item.format,
+        mimeType:
+          item.format === "zip"
+            ? "application/zip"
+            : item.format === "stl"
+              ? "model/stl"
+              : item.format === "obj"
+                ? "model/obj"
+                : "model/gltf-binary",
+        status: item.status === "failed" ? "failed" : item.status === "ready" ? "ready" : "pending",
+        url: item.url,
+        fileName: item.fileName
+      }),
+    ),
     ...scanJob.assets
-      .filter((asset) => asset.kind === "preview-mesh" || asset.kind === "mesh" || asset.kind === "textured-mesh")
-      .map((asset) => ({
-        id: asset.id,
-        label: asset.label,
-        kind: asset.kind === "preview-mesh" ? ("preview" as const) : ("final" as const),
-        format: asset.fileName.toLowerCase().endsWith(".obj") ? "obj" : "glb",
-        mimeType: asset.mimeType,
-        status: "ready" as const,
-        url: asset.url,
-        fileName: asset.fileName
-      })),
+      .filter(
+        (asset) =>
+          asset.kind === "preview-mesh" ||
+          asset.kind === "mesh" ||
+          asset.kind === "textured-mesh",
+      )
+      .map(
+        (asset): AssetArtifact => ({
+          id: asset.id,
+          label: asset.label,
+          kind: asset.kind === "preview-mesh" ? "preview" : "final",
+          format: asset.fileName.toLowerCase().endsWith(".obj") ? "obj" : "glb",
+          mimeType: asset.mimeType,
+          status: "ready",
+          url: asset.url,
+          fileName: asset.fileName
+        }),
+      ),
     ...scanJob.assets
-      .filter((asset) => asset.kind === "metadata" && asset.fileName.toLowerCase().endsWith(".json"))
-      .map((asset) => ({
-        id: asset.id,
-        label: asset.label,
-        kind:
-          asset.fileName.toLowerCase().includes("manifest")
-            ? ("manifest" as const)
-            : ("report" as const),
-        format: "json" as const,
-        mimeType: asset.mimeType,
-        status: "ready" as const,
-        url: asset.url,
-        fileName: asset.fileName
-      }))
+      .filter(
+        (asset) => asset.kind === "metadata" && asset.fileName.toLowerCase().endsWith(".json"),
+      )
+      .map(
+        (asset): AssetArtifact => ({
+          id: asset.id,
+          label: asset.label,
+          kind: asset.fileName.toLowerCase().includes("manifest") ? "manifest" : "report",
+          format: "json",
+          mimeType: asset.mimeType,
+          status: "ready",
+          url: asset.url,
+          fileName: asset.fileName
+        }),
+      )
   ];
 
   const validation: AssetValidationCheck[] = [

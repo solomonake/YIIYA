@@ -40,11 +40,35 @@ export type ScanAssetKind =
 export type ScanExportTier = "mobile-preview" | "creator" | "print" | "source-pack";
 
 export type ScanWarningSeverity = "info" | "warning" | "error";
+export type ScanStageReportStatus =
+  | "planned"
+  | "running"
+  | "ready"
+  | "needs-input"
+  | "heuristic"
+  | "fallback"
+  | "deferred"
+  | "failed";
 
 export type ScanWarning = {
   code: string;
   label: string;
   severity: ScanWarningSeverity;
+};
+
+export type ScanStageReport = {
+  stage: ScanJobStage;
+  status: ScanStageReportStatus;
+  detail?: string;
+  metrics?: Record<string, string | number | boolean | null>;
+};
+
+export type ScanRepairSummary = {
+  fallbackMode?: "single-image" | "manual" | "none";
+  usedFallbackMesh?: boolean;
+  manifestUrl?: string;
+  repairLogUrl?: string;
+  sourcePackUrl?: string;
 };
 
 export type ScanUploadTargetMap = {
@@ -112,6 +136,8 @@ export type ScanJobSummary = {
   coverage: CoverageCell[];
   latestFrame?: ScanLatestFrame;
   warnings: ScanWarning[];
+  stageReports: ScanStageReport[];
+  repairSummary?: ScanRepairSummary;
   uploads: ScanUploadRecord[];
   assets: ScanAssetSummary[];
   exports: ScanExportSummary[];
