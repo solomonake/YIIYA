@@ -1,0 +1,743 @@
+import { textTo3d } from "@/services/scene/text-to-3d";
+import type { AssetArtifact, AssetValidationCheck } from "@/lib/asset-jobs";
+import type { AssetBrief } from "@/lib/asset-compiler";
+
+type PrimitiveSpec =
+  | { kind: "box"; width: number; depth: number; height: number }
+  | { kind: "cylinder"; radius: number; height: number; segments: number }
+  | {
+      kind: "stool";
+      width: number;
+      depth: number;
+      seatHeight: number;
+      legWidth: number;
+    }
+  | {
+      kind: "lamp";
+      baseRadius: number;
+      stemHeight: number;
+      shadeRadius: number;
+      shadeHeight: number;
+    };
+
+export type CadGenerationInput = {
+  prompt: string;
+  brief: AssetBrief;
+  intent: "preview" | "final";
+  userId?: string | null;
+  sessionId?: string | null;
+  traceId?: string | null;
+};
+
+export type CadGenerationOutput = {
+  previewGlbUrl: string | null;
+  provider: string;
+  artifacts: AssetArtifact[];
+  validation: AssetValidationCheck[];
+  warnings: string[];
+  handoffNotes: string[];
+};
+
+type CadWorkerValidation = {
+  label: string;
+  status: "ready" | "needs-work" | "planned" | "failed";
+  detail?: string;
+};
+
+type CadWorkerPayload = {
+  provider?: string;
+  previewGlbBase64?: string;
+  previewStats?: Record<string, unknown>;
+  scriptText?: string;
+  stepText?: string;
+  stlBase64?: string;
+  dimensions?: Record<string, unknown>;
+  warnings?: string[];
+  validation?: CadWorkerValidation[];
+  handoffNotes?: string[];
+};
+
+function recordOrNull(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringOrUndefined(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function parseCadWorkerPayload(payload: unknown): CadWorkerPayload | null {
+  const data = recordOrNull(payload);
+
+  if (!data) {
+    return null;
+  }
+
+  const validation = Array.isArray(data.validation)
+    ? data.validation
+        .map((item) => {
+          const row = recordOrNull(item);
+
+          if (!row || typeof row.label !== "string" || typeof row.status !== "string") {
+            return null;
+          }
+
+          return {
+            label: row.label,
+            status: row.status as CadWorkerValidation["status"],
+            detail: stringOrUndefined(row.detail)
+          } satisfies CadWorkerValidation;
+        })
+        .filter((item): item is CadWorkerValidation => Boolean(item))
+    : undefined;
+
+  const parsed: CadWorkerPayload = {
+    provider: stringOrUndefined(data.provider),
+    previewGlbBase64: stringOrUndefined(data.previewGlbBase64),
+    previewStats: recordOrNull(data.previewStats) ?? undefined,
+    scriptText: stringOrUndefined(data.scriptText),
+    stepText: stringOrUndefined(data.stepText),
+    stlBase64: stringOrUndefined(data.stlBase64),
+    dimensions: recordOrNull(data.dimensions) ?? undefined,
+    warnings: stringArray(data.warnings),
+    validation,
+    handoffNotes: stringArray(data.handoffNotes)
+  };
+
+  if (!parsed.previewGlbBase64 && !parsed.scriptText && !parsed.stepText && !parsed.stlBase64) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function inferPrimitive(prompt: string, brief: AssetBrief): PrimitiveSpec {
+  const text = prompt.toLowerCase();
+  const unitScale =
+    brief.dimensions?.unit === "cm"
+      ? 10
+      : brief.dimensions?.unit === "in"
+        ? 25.4
+        : 1;
+  const width = (brief.dimensions?.width ?? 120) * unitScale;
+  const depth = (brief.dimensions?.depth ?? width * 0.7) * unitScale;
+  const height = (brief.dimensions?.height ?? 90) * unitScale;
+
+  if (text.includes("lamp")) {
+    return {
+      kind: "lamp",
+      baseRadius: Math.max(24, width * 0.18),
+      stemHeight: Math.max(120, height * 1.2),
+      shadeRadius: Math.max(45, width * 0.32),
+      shadeHeight: Math.max(42, height * 0.4),
+    };
+  }
+
+  if (text.includes("stool") || text.includes("chair")) {
+    return {
+      kind: "stool",
+      width: Math.max(180, width),
+      depth: Math.max(180, depth),
+      seatHeight: Math.max(240, height * 1.5),
+      legWidth: Math.max(18, Math.min(width, depth) * 0.08),
+    };
+  }
+
+  if (
+    text.includes("bottle") ||
+    text.includes("mug") ||
+    text.includes("cup") ||
+    text.includes("cylinder")
+  ) {
+    return {
+      kind: "cylinder",
+      radius: Math.max(18, width * 0.18),
+      height: Math.max(72, height),
+      segments: 24,
+    };
+  }
+
+  return {
+    kind: "box",
+    width: Math.max(60, width),
+    depth: Math.max(40, depth),
+    height: Math.max(24, height),
+  };
+}
+
+function cadQueryScript(spec: PrimitiveSpec) {
+  const header = [
+    "# Auto-generated by Yiiya CAD beta",
+    "import cadquery as cq",
+    "",
+  ];
+
+  switch (spec.kind) {
+    case "box":
+      return [
+        ...header,
+        `result = cq.Workplane("XY").box(${spec.width.toFixed(2)}, ${spec.depth.toFixed(2)}, ${spec.height.toFixed(2)})`,
+        "show_object(result)",
+      ].join("\n");
+    case "cylinder":
+      return [
+        ...header,
+        `result = cq.Workplane("XY").circle(${spec.radius.toFixed(2)}).extrude(${spec.height.toFixed(2)})`,
+        "show_object(result)",
+      ].join("\n");
+    case "stool":
+      return [
+        ...header,
+        `seat = cq.Workplane("XY").box(${spec.width.toFixed(2)}, ${spec.depth.toFixed(2)}, ${(spec.legWidth * 1.4).toFixed(2)})`,
+        `leg = cq.Workplane("XY").box(${spec.legWidth.toFixed(2)}, ${spec.legWidth.toFixed(2)}, ${spec.seatHeight.toFixed(2)})`,
+        "offset_x = " + (spec.width / 2 - spec.legWidth / 2 - 12).toFixed(2),
+        "offset_y = " + (spec.depth / 2 - spec.legWidth / 2 - 12).toFixed(2),
+        `legs = (
+    leg.translate(( offset_x,  offset_y, -${(spec.seatHeight / 2).toFixed(2)}))
+    .union(leg.translate((-offset_x,  offset_y, -${(spec.seatHeight / 2).toFixed(2)})))
+    .union(leg.translate(( offset_x, -offset_y, -${(spec.seatHeight / 2).toFixed(2)})))
+    .union(leg.translate((-offset_x, -offset_y, -${(spec.seatHeight / 2).toFixed(2)})))
+)`,
+        "result = seat.union(legs)",
+        "show_object(result)",
+      ].join("\n");
+    case "lamp":
+      return [
+        ...header,
+        `base = cq.Workplane("XY").circle(${spec.baseRadius.toFixed(2)}).extrude(18)`,
+        `stem = cq.Workplane("XY").circle(${(spec.baseRadius * 0.2).toFixed(2)}).extrude(${spec.stemHeight.toFixed(2)}).translate((0, 0, 18))`,
+        `shade = (
+    cq.Workplane("XY")
+    .workplane(offset=${(spec.stemHeight + 12).toFixed(2)})
+    .circle(${(spec.shadeRadius * 0.55).toFixed(2)})
+    .workplane(offset=${spec.shadeHeight.toFixed(2)})
+    .circle(${spec.shadeRadius.toFixed(2)})
+    .loft(combine=True)
+)`,
+        "result = base.union(stem).union(shade)",
+        "show_object(result)",
+      ].join("\n");
+  }
+}
+
+type Triangle = [
+  [number, number, number],
+  [number, number, number],
+  [number, number, number],
+];
+
+function boxTriangles(width: number, depth: number, height: number): Triangle[] {
+  const x = width / 2;
+  const y = depth / 2;
+  const z = height / 2;
+  const vertices: Record<string, [number, number, number]> = {
+    lbf: [-x, -y, -z],
+    rbf: [x, -y, -z],
+    ltf: [-x, y, -z],
+    rtf: [x, y, -z],
+    lbb: [-x, -y, z],
+    rbb: [x, -y, z],
+    ltb: [-x, y, z],
+    rtb: [x, y, z],
+  };
+
+  return [
+    [vertices.lbf, vertices.rbf, vertices.rtf],
+    [vertices.lbf, vertices.rtf, vertices.ltf],
+    [vertices.lbb, vertices.rtb, vertices.rbb],
+    [vertices.lbb, vertices.ltb, vertices.rtb],
+    [vertices.lbf, vertices.lbb, vertices.rbb],
+    [vertices.lbf, vertices.rbb, vertices.rbf],
+    [vertices.ltf, vertices.rtf, vertices.rtb],
+    [vertices.ltf, vertices.rtb, vertices.ltb],
+    [vertices.lbf, vertices.ltf, vertices.ltb],
+    [vertices.lbf, vertices.ltb, vertices.lbb],
+    [vertices.rbf, vertices.rbb, vertices.rtb],
+    [vertices.rbf, vertices.rtb, vertices.rtf],
+  ];
+}
+
+function cylinderTriangles(
+  radius: number,
+  height: number,
+  segments: number,
+): Triangle[] {
+  const triangles: Triangle[] = [];
+  const half = height / 2;
+
+  for (let index = 0; index < segments; index += 1) {
+    const a0 = (index / segments) * Math.PI * 2;
+    const a1 = ((index + 1) / segments) * Math.PI * 2;
+    const p0: [number, number, number] = [
+      Math.cos(a0) * radius,
+      Math.sin(a0) * radius,
+      -half,
+    ];
+    const p1: [number, number, number] = [
+      Math.cos(a1) * radius,
+      Math.sin(a1) * radius,
+      -half,
+    ];
+    const p2: [number, number, number] = [
+      Math.cos(a0) * radius,
+      Math.sin(a0) * radius,
+      half,
+    ];
+    const p3: [number, number, number] = [
+      Math.cos(a1) * radius,
+      Math.sin(a1) * radius,
+      half,
+    ];
+    const topCenter: [number, number, number] = [0, 0, half];
+    const bottomCenter: [number, number, number] = [0, 0, -half];
+
+    triangles.push(
+      [p0, p1, p3],
+      [p0, p3, p2],
+      [topCenter, p2, p3],
+      [bottomCenter, p1, p0],
+    );
+  }
+
+  return triangles;
+}
+
+function translateTriangles(
+  triangles: Triangle[],
+  dx: number,
+  dy: number,
+  dz: number,
+) {
+  return triangles.map(
+    (triangle) =>
+      triangle.map(
+        ([x, y, z]) => [x + dx, y + dy, z + dz] as [number, number, number],
+      ) as Triangle,
+  );
+}
+
+function trianglesForSpec(spec: PrimitiveSpec) {
+  switch (spec.kind) {
+    case "box":
+      return boxTriangles(spec.width, spec.depth, spec.height);
+    case "cylinder":
+      return cylinderTriangles(spec.radius, spec.height, spec.segments);
+    case "stool": {
+      const seat = translateTriangles(
+        boxTriangles(spec.width, spec.depth, spec.legWidth * 1.4),
+        0,
+        0,
+        spec.seatHeight / 2,
+      );
+      const offsetX = spec.width / 2 - spec.legWidth / 2 - 12;
+      const offsetY = spec.depth / 2 - spec.legWidth / 2 - 12;
+      const legTriangles = [
+        translateTriangles(
+          boxTriangles(spec.legWidth, spec.legWidth, spec.seatHeight),
+          offsetX,
+          offsetY,
+          -spec.legWidth * 0.7,
+        ),
+        translateTriangles(
+          boxTriangles(spec.legWidth, spec.legWidth, spec.seatHeight),
+          -offsetX,
+          offsetY,
+          -spec.legWidth * 0.7,
+        ),
+        translateTriangles(
+          boxTriangles(spec.legWidth, spec.legWidth, spec.seatHeight),
+          offsetX,
+          -offsetY,
+          -spec.legWidth * 0.7,
+        ),
+        translateTriangles(
+          boxTriangles(spec.legWidth, spec.legWidth, spec.seatHeight),
+          -offsetX,
+          -offsetY,
+          -spec.legWidth * 0.7,
+        ),
+      ].flat();
+
+      return [...seat, ...legTriangles];
+    }
+    case "lamp": {
+      const base = cylinderTriangles(spec.baseRadius, 18, 24);
+      const stem = translateTriangles(
+        cylinderTriangles(spec.baseRadius * 0.2, spec.stemHeight, 18),
+        0,
+        0,
+        spec.stemHeight / 2 + 18,
+      );
+      const shade = translateTriangles(
+        cylinderTriangles(spec.shadeRadius, spec.shadeHeight, 24),
+        0,
+        0,
+        spec.stemHeight + spec.shadeHeight / 2 + 18,
+      );
+
+      return [...base, ...stem, ...shade];
+    }
+  }
+}
+
+function facetNormal([a, b, c]: Triangle) {
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const n = [
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0],
+  ];
+  const len = Math.hypot(n[0], n[1], n[2]) || 1;
+
+  return [n[0] / len, n[1] / len, n[2] / len];
+}
+
+function asciiStl(name: string, triangles: Triangle[]) {
+  const lines = [`solid ${name.replace(/\s+/g, "_").toLowerCase()}`];
+
+  for (const triangle of triangles) {
+    const normal = facetNormal(triangle);
+    lines.push(`  facet normal ${normal[0]} ${normal[1]} ${normal[2]}`);
+    lines.push("    outer loop");
+    for (const vertex of triangle) {
+      lines.push(`      vertex ${vertex[0]} ${vertex[1]} ${vertex[2]}`);
+    }
+    lines.push("    endloop");
+    lines.push("  endfacet");
+  }
+
+  lines.push(`endsolid ${name.replace(/\s+/g, "_").toLowerCase()}`);
+  return lines.join("\n");
+}
+
+function validationFor(brief: AssetBrief, stepReady: boolean): AssetValidationCheck[] {
+  return [
+    {
+      label: "CadQuery script",
+      status: "ready",
+      detail: "A bounded parametric script candidate was produced.",
+    },
+    {
+      label: "STL export",
+      status: "ready",
+      detail: "A simple printable mesh export was produced from the same primitive family.",
+    },
+    {
+      label: "STEP export",
+      status: stepReady ? "ready" : "planned",
+      detail: stepReady
+        ? "STEP artifact is available."
+        : "STEP requires a dedicated CAD worker or CadQuery/OpenCascade runtime.",
+    },
+    {
+      label: "Named features",
+      status: brief.partSemantics.length > 0 ? "ready" : "needs-work",
+    },
+  ];
+}
+
+async function requestCadWorker(
+  input: CadGenerationInput,
+): Promise<CadWorkerPayload | null> {
+  const endpoint = process.env.CAD_WORKER_ENDPOINT?.trim();
+
+  if (!endpoint) {
+    return null;
+  }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(process.env.CAD_WORKER_API_KEY
+        ? { Authorization: `Bearer ${process.env.CAD_WORKER_API_KEY}` }
+        : {}),
+    },
+    body: JSON.stringify({
+      prompt: input.prompt,
+      brief: input.brief,
+      intent: input.intent,
+      traceId: input.traceId,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`cad worker failed with ${response.status}`);
+  }
+
+  const parsed = parseCadWorkerPayload(await response.json());
+
+  if (!parsed) {
+    throw new Error("cad worker returned an invalid payload");
+  }
+
+  return parsed;
+}
+
+function buildRemoteArtifacts(
+  input: CadGenerationInput,
+  previewGlbUrl: string | null,
+  payload: CadWorkerPayload,
+): CadGenerationOutput {
+  const warnings = Array.from(new Set([
+    "CAD lane is intentionally bounded to hard-surface/product-style geometry.",
+    ...(payload.warnings ?? []),
+  ]));
+
+  if (payload.previewStats?.watertight === false) {
+    warnings.push("Worker preview mesh is not watertight; inspect it before manufacturing handoff.");
+  }
+
+  const artifacts: AssetArtifact[] = [];
+
+  if (payload.previewGlbBase64) {
+    artifacts.push({
+      id: "cad-preview",
+      label: "Preview GLB",
+      kind: "preview",
+      format: "glb",
+      mimeType: "model/gltf-binary",
+      status: "ready",
+      inlineBase64: payload.previewGlbBase64,
+      fileName: "preview.glb",
+    });
+  } else if (previewGlbUrl) {
+    artifacts.push({
+      id: "cad-preview",
+      label: "Preview GLB",
+      kind: "preview",
+      format: "glb",
+      mimeType: "model/gltf-binary",
+      status: "ready",
+      url: previewGlbUrl,
+      fileName: "preview.glb",
+    });
+  }
+
+  artifacts.push(
+    {
+      id: "cadquery-script",
+      label: "CadQuery Script",
+      kind: "cadquery",
+      format: "py",
+      mimeType: "text/x-python",
+      status: payload.scriptText ? "ready" : "failed",
+      inlineText: payload.scriptText,
+      fileName: "cadquery.py",
+    },
+    {
+      id: "cad-stl",
+      label: "CAD STL",
+      kind: "stl",
+      format: "stl",
+      mimeType: "model/stl",
+      status: payload.stlBase64 ? "ready" : "failed",
+      inlineBase64: payload.stlBase64,
+      fileName: "model.stl",
+    },
+    {
+      id: "cad-step",
+      label: "STEP Export",
+      kind: "step",
+      format: "step",
+      mimeType: "model/step",
+      status: payload.stepText ? "ready" : "failed",
+      inlineText: payload.stepText,
+      fileName: "model.step",
+    },
+    {
+      id: "cad-dimensions",
+      label: "Dimensions",
+      kind: "report",
+      format: "json",
+      mimeType: "application/json",
+      status: "ready",
+      inlineJson: payload.dimensions ?? input.brief.dimensions ?? { unit: "mm" },
+      fileName: "dimensions.json",
+    },
+    {
+      id: "cad-handoff",
+      label: "Handoff Report",
+      kind: "report",
+      format: "json",
+      mimeType: "application/json",
+      status: "ready",
+      inlineJson: {
+        objectName: input.brief.objectName,
+        lane: input.brief.lane,
+        destination: input.brief.destination,
+        constraints: input.brief.constraints,
+        partSemantics: input.brief.partSemantics,
+        previewStats: payload.previewStats,
+        warnings,
+      },
+      fileName: "handoff-report.json",
+    },
+  );
+
+  return {
+    previewGlbUrl: payload.previewGlbBase64 ? null : previewGlbUrl,
+    provider: payload.provider ?? "cadquery-worker",
+    artifacts,
+    validation:
+      payload.validation?.map((item) => ({
+        label: item.label,
+        status: item.status,
+        detail: item.detail,
+      })) ?? validationFor(input.brief, Boolean(payload.stepText)),
+    warnings,
+    handoffNotes: payload.handoffNotes ?? [
+      "Use the GLB preview for quick spatial review.",
+      "Use the CadQuery script as the editable source candidate.",
+      "STEP and STL were exported by the dedicated CAD worker.",
+    ],
+  };
+}
+
+function buildLocalArtifacts(
+  input: CadGenerationInput,
+  previewGlbUrl: string | null,
+  provider: string,
+): CadGenerationOutput {
+  const primitive = inferPrimitive(input.prompt, input.brief);
+  const script = cadQueryScript(primitive);
+  const stl = asciiStl(input.brief.objectName, trianglesForSpec(primitive));
+  const warnings = [
+    "CAD beta is bounded to hard-surface/product-style geometry.",
+    "STEP export is scaffolded until a dedicated CAD worker is configured.",
+  ];
+  const artifacts: AssetArtifact[] = [
+    {
+      id: "cadquery-script",
+      label: "CadQuery Script",
+      kind: "cadquery",
+      format: "py",
+      mimeType: "text/x-python",
+      status: "ready",
+      inlineText: script,
+      fileName: "cadquery.py",
+    },
+    {
+      id: "cad-stl",
+      label: "CAD STL",
+      kind: "stl",
+      format: "stl",
+      mimeType: "model/stl",
+      status: "ready",
+      inlineText: stl,
+      fileName: "model.stl",
+    },
+    {
+      id: "cad-step",
+      label: "STEP Export",
+      kind: "step",
+      format: "step",
+      mimeType: "model/step",
+      status: "pending",
+      fileName: "model.step",
+    },
+    {
+      id: "cad-dimensions",
+      label: "Dimensions",
+      kind: "report",
+      format: "json",
+      mimeType: "application/json",
+      status: "ready",
+      inlineJson: input.brief.dimensions ?? { unit: "mm" },
+      fileName: "dimensions.json",
+    },
+    {
+      id: "cad-handoff",
+      label: "Handoff Report",
+      kind: "report",
+      format: "json",
+      mimeType: "application/json",
+      status: "ready",
+      inlineJson: {
+        objectName: input.brief.objectName,
+        lane: input.brief.lane,
+        destination: input.brief.destination,
+        constraints: input.brief.constraints,
+        partSemantics: input.brief.partSemantics,
+        warnings,
+      },
+      fileName: "handoff-report.json",
+    },
+  ];
+
+  if (previewGlbUrl) {
+    artifacts.unshift({
+      id: "cad-preview",
+      label: "Preview GLB",
+      kind: "preview",
+      format: "glb",
+      mimeType: "model/gltf-binary",
+      status: "ready",
+      url: previewGlbUrl,
+      fileName: "preview.glb",
+    });
+  }
+
+  return {
+    previewGlbUrl,
+    provider,
+    artifacts,
+    validation: validationFor(input.brief, false),
+    warnings,
+    handoffNotes: [
+      "Use the GLB preview for quick spatial review.",
+      "Use the CadQuery script as the editable source candidate.",
+      "STEP remains pending until the CAD worker is configured.",
+    ],
+  };
+}
+
+export async function generateCadArtifacts(
+  input: CadGenerationInput,
+): Promise<CadGenerationOutput> {
+  const preview = await textTo3d({
+    prompt: input.prompt,
+    intent: input.intent,
+    userId: input.userId,
+    sessionId: input.sessionId,
+    traceId: input.traceId,
+  });
+
+  const previewGlbUrl = preview.ok ? preview.result.glbUrl : null;
+  const previewProvider = preview.ok ? preview.result.provider : "cadquery-planner";
+
+  try {
+    const remote = await requestCadWorker(input);
+
+    if (remote) {
+      return buildRemoteArtifacts(input, previewGlbUrl, remote);
+    }
+  } catch (error) {
+    const fallback = buildLocalArtifacts(input, previewGlbUrl, previewProvider);
+
+    return {
+      ...fallback,
+      warnings: Array.from(new Set([
+        ...fallback.warnings,
+        `Dedicated CAD worker unavailable: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      ])),
+      handoffNotes: [
+        "The dedicated CAD worker was unreachable, so Yiiya fell back to the local bounded planner.",
+        "Use the GLB preview for quick spatial review.",
+        "Use the CadQuery script as the editable source candidate.",
+      ],
+    };
+  }
+
+  return buildLocalArtifacts(input, previewGlbUrl, previewProvider);
+}

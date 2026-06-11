@@ -8,20 +8,36 @@ Vercel remains the product shell; Modal runs the heavy 3D job stages off-request
 - Accepts queued scan dispatches from the Next.js app.
 - Downloads the uploaded video and keyframes for a scan job.
 - Emits stage-by-stage webhook updates back to `/api/scan/webhooks/reconstruction`.
-- Provides the place where FFmpeg, segmentation, COLMAP, dense reconstruction,
-  cleanup, UV, and appearance baking should run.
+- Uploads worker-produced artifacts back into the app through the internal
+  `worker-artifact` route.
+- Packages a durable source pack and repair log even when full reconstruction
+  backends are not available.
+- Converts completed mesh output into `creator.obj`, `print.stl`, and geometry
+  diagnostics when mesh conversion succeeds.
+- Can finish with a single-image GLB fallback through fal when the full
+  multi-view stack is still unavailable.
 
 ## Current state
 
-The scaffold is intentionally honest:
+The worker is now more truthful end to end:
 
-- It can receive a dispatch payload.
-- It can download inputs and extract frames with FFmpeg.
-- It can emit progress updates through the same webhook contract the web app now expects.
-- It does **not** yet run the full COLMAP/Open3D/PyMeshLab/xatlas stack.
+- It receives dispatch payloads and downloads inputs.
+- It extracts keyframes with FFmpeg.
+- It uploads `source-pack.zip`, `manifest.json`, and `repair-log.json` back into
+  the app when Blob is configured.
+- It can promote completed mesh output into real downstream exports:
+  `creator.glb`, `creator.obj`, `print.stl`, and `geometry-report.json`.
+- It emits the same staged webhook payloads the product already understands.
+- It can complete with a usable GLB export by using the configured fal fallback.
 
-If you wire `SCAN_RECONSTRUCTION_ENDPOINT` to this worker today, jobs will progress
-through the planned stages and then fail with a clear placeholder error instead of hanging.
+What still is **not** complete:
+
+- True COLMAP / pycolmap camera solving
+- Dense multi-view reconstruction
+- Open3D / PyMeshLab cleanup
+- xatlas UV unwrap and proper texturing
+
+Those stages are still represented honestly in the repair log and warnings.
 
 ## Modal setup
 
@@ -29,6 +45,9 @@ through the planned stages and then fail with a clear placeholder error instead 
 2. Put these values into that secret:
    - `SCAN_RECONSTRUCTION_WEBHOOK_URL`
    - `SCAN_RECONSTRUCTION_WEBHOOK_SECRET`
+   - `SCAN_RECONSTRUCTION_APP_URL`
+   - `FAL_KEY` (optional, but enables worker-side GLB completion)
+   - `FAL_TRELLIS_MODEL` (optional)
 3. Deploy the worker:
 
 ```bash
@@ -43,9 +62,10 @@ SCAN_RECONSTRUCTION_ENDPOINT=https://<your-modal-endpoint>
 
 ## Next backend steps
 
-- Add real keyframe culling and masking before solve.
+- Replace the single-image fallback with true multi-view camera solve.
 - Install and wire `pycolmap` or a COLMAP wrapper for camera poses.
 - Add dense geometry plus mesh extraction.
 - Add Open3D / PyMeshLab cleanup.
 - Add UV unwrap and decimation.
-- Upload packaged artifacts to durable storage, then send final export URLs in the webhook.
+- Replace the single-image fallback with a true multi-view solve so the mesh
+  conversion/export path is fed by reconstruction instead of fallback-only mesh.
