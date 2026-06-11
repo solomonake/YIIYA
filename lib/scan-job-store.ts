@@ -15,6 +15,8 @@ import {
   type ScanJobState,
   type ScanJobSummary,
   type ScanLatestFrame,
+  type ScanRepairSummary,
+  type ScanStageReport,
   type ScanUploadKind,
   type ScanUploadRecord,
   type ScanWarning
@@ -168,6 +170,28 @@ function arrayOr<T>(value: unknown) {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function recordOrNull(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function scanStageReportsFromMetadata(metadata: Record<string, unknown> | null | undefined) {
+  const reports = arrayOr<ScanStageReport>(metadata?.stageReports);
+
+  if (reports.length > 0) {
+    return reports;
+  }
+
+  return [];
+}
+
+function scanRepairSummaryFromMetadata(metadata: Record<string, unknown> | null | undefined) {
+  const summary = recordOrNull(metadata?.repairSummary);
+
+  return summary ? (summary as ScanRepairSummary) : undefined;
+}
+
 function sortByCreatedAt<T extends { created_at: string }>(items: T[]) {
   return [...items].sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
@@ -250,6 +274,8 @@ function buildSummary(
     coverage: arrayOr<CoverageCell>(session.coverage_json),
     latestFrame: session.latest_frame_json ?? undefined,
     warnings: arrayOr<ScanWarning>(session.warning_json),
+    stageReports: scanStageReportsFromMetadata(job.metadata_json),
+    repairSummary: scanRepairSummaryFromMetadata(job.metadata_json),
     uploads: sortByCreatedAt(uploads).map(mapUploadRow),
     assets: sortByCreatedAt(assets).map(mapAssetRow),
     exports: sortByUpdatedAt(exports).map(mapExportRow),

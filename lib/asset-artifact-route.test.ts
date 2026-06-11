@@ -13,11 +13,11 @@ function makeJob(overrides: Partial<AssetJob> = {}): AssetJob {
     phase: "package",
     progress: 1,
     summary: {
+      rawTranscript: "Design a compact desk lamp",
+      normalizedPrompt: "Design a compact desk lamp",
+      concise: "Compact desk lamp",
       userVisible: "Desk lamp",
-      forPrompt: "Desk lamp",
-      constraints: [],
-      warnings: [],
-      mode: "create"
+      warnings: []
     },
     brief: {
       sourceKind: "text",
@@ -37,18 +37,42 @@ function makeJob(overrides: Partial<AssetJob> = {}): AssetJob {
       materialTargets: [],
       motionTargets: [],
       exportTargets: ["glb", "step", "stl"],
-      qualityTargets: [],
+      qualityTargets: {
+        topology: "cad_surface",
+        texture: "none",
+        manufacturable: true,
+        riggable: false,
+        cadFriendly: true
+      },
       readiness: {
+        score: 80,
+        label: "handoff",
         checks: []
       },
-      fallbackPolicy: "fallback-to-mesh"
+      fallbackPolicy: {
+        rerouteTo: "mesh",
+        reason: "Fallback to mesh if the CAD worker cannot compile a closed solid.",
+        maxRepairAttempts: 2
+      }
     },
     routePlan: {
       lane: "cad",
-      previewProvider: "cadquery-worker",
-      finalProvider: "cadquery-worker",
-      validationChecks: [],
-      exportFormats: ["glb", "step", "stl"]
+      destination: "cad",
+      preview: {
+        label: "CAD preview",
+        provider: "cadquery-worker",
+        detail: "Compile a tessellated preview."
+      },
+      final: {
+        label: "CAD final",
+        provider: "cadquery-worker",
+        detail: "Compile STEP, STL, and CadQuery outputs."
+      },
+      validation: [],
+      exportPack: ["glb", "step", "stl"],
+      qaFocus: [],
+      boundedAgents: ["summarizer", "router", "planner", "qa"],
+      confidence: 0.8
     },
     inputs: {
       prompt: "Design a compact desk lamp",

@@ -89,11 +89,17 @@ function parseCadWorkerPayload(payload: unknown): CadWorkerPayload | null {
             return null;
           }
 
-          return {
+          const validation: CadWorkerValidation = {
             label: row.label,
-            status: row.status as CadWorkerValidation["status"],
-            detail: stringOrUndefined(row.detail)
-          } satisfies CadWorkerValidation;
+            status: row.status as CadWorkerValidation["status"]
+          };
+
+          const detail = stringOrUndefined(row.detail);
+          if (detail) {
+            validation.detail = detail;
+          }
+
+          return validation;
         })
         .filter((item): item is CadWorkerValidation => Boolean(item))
     : undefined;
