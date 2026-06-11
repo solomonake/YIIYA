@@ -5,11 +5,15 @@ import "../styles/editorial.css";
 
 export const metadata: Metadata = {
   title: "Yiiya",
-  description: "A voice-first creation tool for websites and 3D scenes."
+  description:
+    "A voice-first studio for fast CAD-ready 3D assets, scans, and animation handoff.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {

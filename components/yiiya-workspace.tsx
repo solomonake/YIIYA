@@ -14,22 +14,20 @@ import { ReferenceImageDropzone } from "@/components/reference-image-dropzone";
 import { SpatialControlPanel } from "@/components/spatial-control-panel";
 import { Toast } from "@/components/toast";
 import { VoiceBar } from "@/components/voice-bar";
-import { WebsiteLayer } from "@/components/website-layer";
 import { WorkspaceNavigation } from "@/components/workspace-navigation";
 import { CursorReticle } from "@/components/cursor-reticle";
 import { useCursorTracker } from "@/lib/cursor/use-cursor-target";
-import { publishCurrentProject } from "@/lib/publish-project";
 import { useProjectAutosave } from "@/lib/use-project-autosave";
 
 const SceneCanvas = dynamic(
   () => import("@/components/scene-canvas").then((mod) => mod.SceneCanvas),
   {
     ssr: false,
-    loading: () => <div className="h-full w-full bg-ink" />
-  }
+    loading: () => <div className="h-full w-full bg-ink" />,
+  },
 );
 
-const workflowSteps = ["Direction", "Web", "3D hero", "Publish"];
+const workflowSteps = ["Intent", "Model", "Validate", "Export"];
 
 export function YiiyaWorkspace() {
   useProjectAutosave();
@@ -47,6 +45,7 @@ export function YiiyaWorkspace() {
   const lastSavedAt = useYiiyaStore((state) => state.lastSavedAt);
   const addLog = useYiiyaStore((state) => state.addLog);
   const resetProject = useYiiyaStore((state) => state.resetProject);
+  const activeAssetJob = useYiiyaStore((state) => state.activeAssetJob);
 
   useEffect(() => {
     try {
@@ -69,12 +68,18 @@ export function YiiyaWorkspace() {
     }
   }, [addLog]);
 
-  const handlePublish = async () => {
-    try {
-      await publishCurrentProject();
-    } catch (error) {
-      addLog(`[SYSTEM]: ${error instanceof Error ? error.message : "Publish failed."}`);
+  const handleExport = async () => {
+    const readyArtifact = activeAssetJob?.artifacts.find(
+      (artifact) => artifact.status === "ready" && artifact.url
+    );
+
+    if (!readyArtifact?.url) {
+      addLog("[EXPORT]: No ready asset package is available yet.");
+      return;
     }
+
+    window.open(readyArtifact.url, "_blank", "noopener,noreferrer");
+    addLog(`[EXPORT]: Opened ${readyArtifact.label}.`);
   };
 
   const handleNewProject = () => {
@@ -115,7 +120,7 @@ export function YiiyaWorkspace() {
               </span>
             </div>
             <p className="mt-0.5 hidden truncate text-[10px] uppercase tracking-[0.16em] text-white/32 lg:block">
-              Web + 3D hero compiler · publish-ready canvas
+              CAD + 3D animation studio · export-ready assets
             </p>
           </div>
           <div className="hidden min-w-0 items-center gap-1 xl:flex">
@@ -161,10 +166,10 @@ export function YiiyaWorkspace() {
             </div>
           ) : null}
           <button
-            onClick={handlePublish}
+            onClick={handleExport}
             className="h-9 border border-amber/70 bg-amber px-4 text-[11px] font-black uppercase tracking-[0.16em] text-ink shadow-[0_0_24px_rgba(239,159,39,0.18)] transition hover:bg-signalAmber focus:outline-none focus:ring-1 focus:ring-amber"
           >
-            Publish
+            Export
           </button>
           <AccountIndicator />
         </div>
@@ -175,12 +180,11 @@ export function YiiyaWorkspace() {
           className="relative min-w-0 flex-1 canvas-grid"
           style={{
             marginRight: sidebarCollapsed ? 44 : 304,
-            transition: "margin-right 220ms ease"
+            transition: "margin-right 220ms ease",
           }}
         >
           <Suspense fallback={<div className="h-full w-full bg-ink" />}>
             <SceneCanvas />
-            <WebsiteLayer />
           </Suspense>
           <WorkspaceNavigation
             onToggleProjects={() => setProjectDrawerOpen((open) => !open)}

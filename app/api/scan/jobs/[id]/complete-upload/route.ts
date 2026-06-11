@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { completeScanUpload } from "@/lib/scan-job-store";
+import { syncAssetJobFromScan } from "@/lib/asset-jobs";
 
 export const maxDuration = 60;
 
@@ -20,5 +21,6 @@ export async function POST(
     return NextResponse.json({ error: "Scan job not found." }, { status: 404 });
   }
 
+  syncAssetJobFromScan(job);
   return NextResponse.json(job);
 }

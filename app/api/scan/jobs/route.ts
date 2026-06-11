@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createScanJob } from "@/lib/scan-job-store";
+import { syncAssetJobFromScan } from "@/lib/asset-jobs";
 
 export const maxDuration = 30;
 
@@ -10,6 +11,7 @@ export async function POST(request: Request) {
       | null;
     const origin = new URL(request.url).origin;
     const result = await createScanJob(origin, payload?.promptHint);
+    syncAssetJobFromScan(result.job);
 
     return NextResponse.json(result);
   } catch (error) {

@@ -4,7 +4,6 @@ import {
   runInterpretOnce,
   type InterpretRequestBody
 } from "@/lib/interpret-pipeline";
-import { COLOR_STORIES } from "@/lib/brief/stake-matrix";
 import { guardRequest, guardOutput, type ArchitectAction } from "./guard";
 
 function headerSafeMessage(error: unknown) {
@@ -44,30 +43,37 @@ export async function POST(request: NextRequest) {
   // The firewall may have rewritten the transcript; hand the guard's body to
   // the pipeline so downstream sees the sanitized version.
   const pipelineBody = guard.body as unknown as InterpretRequestBody;
-  const theme = COLOR_STORIES[guard.stake.colorStory];
-
   try {
     const output = await runInterpretOnce(pipelineBody);
 
     // Post-flight: sanitize string fields, run slop and a11y guards.
-    const safe = await guardOutput(
-      output.actions as unknown as ArchitectAction[],
-      guard.stake,
-      { bg: theme.bg, fg: theme.fg }
-    );
-    if (!safe.ok) return safe.response;
+    let safeActions = output.actions;
+    let guardWarnings: string[] = [];
 
-    const qa_log = safe.warnings.length
-      ? [...output.qa_log, ...safe.warnings.map((w) => `[GUARD]: ${w}`)]
+    if (output.actions.length > 0) {
+      const safe = await guardOutput(
+        output.actions as unknown as ArchitectAction[],
+        guard.stake,
+        { bg: "#050505", fg: "#EDEDED" }
+      );
+      if (!safe.ok) return safe.response;
+      safeActions = safe.actions as unknown as typeof output.actions;
+      guardWarnings = safe.warnings.map((warning) => `[GUARD]: ${warning}`);
+    }
+
+    const qa_log = guardWarnings.length
+      ? [...output.qa_log, ...guardWarnings]
       : output.qa_log;
 
     return withTrace(
       NextResponse.json({
-        actions: safe.actions,
+        summary: output.summary,
+        lane: output.lane,
+        destination: output.destination,
+        assetBrief: output.assetBrief,
+        routePlan: output.routePlan,
+        actions: safeActions,
         qa_log,
-        brief: output.brief,
-        confidence: output.confidence,
-        fallbackPath: output.fallbackPath
       }),
       guard.traceId
     );

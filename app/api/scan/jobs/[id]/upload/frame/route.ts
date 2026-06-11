@@ -1,6 +1,7 @@
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { attachScanUpload, getScanJob } from "@/lib/scan-job-store";
+import { syncAssetJobFromScan } from "@/lib/asset-jobs";
 import { isVercelBlobConfigured } from "@/lib/vercel-blob";
 
 export const maxDuration = 60;
@@ -66,6 +67,10 @@ export async function POST(
       ...metadata
     }
   });
+
+  if (summary) {
+    syncAssetJobFromScan(summary);
+  }
 
   return NextResponse.json({
     upload: summary?.uploads.find((item) => item.url === blob.url) ?? null,

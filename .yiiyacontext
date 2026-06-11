@@ -26,18 +26,21 @@ Generation Rules:
 - Use grounded industry copy and Unsplash assets for business categories.
 - Prefer clean sections with strong offer, proof, CTA, and founder-friendly copy.
 - Every button in Yiiya UI must perform a clear action or disclose why it is disabled.
+- Every spatial command should produce or refresh an asset brief: source kind, destination, object name, part semantics, material targets, motion targets, export formats, quality targets, readiness score, and handoff checks.
 
 Spatial Rules:
 - The 3D layer is never blank. Use a living MeshDistortMaterial blob by default.
 - Speech maps directly to material props and Zustand state.
 - Uploaded images instantly morph the blob locally; Fal Trellis 2 GLB replaces it when ready.
 - In HYBRID mode, 3D never blocks HTML clicks.
+- Model Lab must expose the active asset plan, not just visual knobs: destination, readiness, validation checks, and export formats should be visible while users create.
 
 QA Rules:
 - Contrast must be at least 4.5:1.
 - Mobile must not horizontally overflow.
 - Sections must feel visually balanced and token-consistent.
 - System feed must narrate routing, research, QA, autosave, publish, and spatial sync.
+- Handoff truth matters: separate draft, preview, needs-work, planned, and ready states instead of implying an export is production-safe before validation.
 
 Routing Defaults:
 - Conductor: Gemini 1.5 Flash.

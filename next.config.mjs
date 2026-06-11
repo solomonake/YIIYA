@@ -26,7 +26,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https:",
       "worker-src 'self' blob:",
-      "connect-src 'self' blob: https: wss://*.supabase.co https://*.hf.space https://*.tripo3d.ai https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com https://*.sentry.io https://plausible.io",
+      "connect-src 'self' data: blob: https: wss://*.supabase.co https://*.hf.space https://*.tripo3d.ai https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com https://*.sentry.io https://plausible.io",
       "frame-src 'self' https://huggingface.co",
       "object-src 'none'",
       "base-uri 'self'",

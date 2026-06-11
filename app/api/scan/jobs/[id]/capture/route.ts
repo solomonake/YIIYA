@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { updateScanCapture } from "@/lib/scan-job-store";
+import { syncAssetJobFromScan } from "@/lib/asset-jobs";
 import type { ScanLatestFrame } from "@/lib/scan-types";
 
 export const maxDuration = 30;
@@ -26,5 +27,6 @@ export async function POST(
     return NextResponse.json({ error: "Scan job not found." }, { status: 404 });
   }
 
+  syncAssetJobFromScan(job);
   return NextResponse.json(job);
 }

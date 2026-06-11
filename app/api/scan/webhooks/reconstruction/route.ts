@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { applyReconstructionWebhook } from "@/lib/scan-job-store";
-import type { ScanJobStage, ScanJobState, ScanWarning, ScanAssetKind, ScanExportTier } from "@/lib/scan-types";
+import { syncAssetJobFromScan } from "@/lib/asset-jobs";
+import type {
+  ScanAssetKind,
+  ScanExportTier,
+  ScanJobStage,
+  ScanJobState,
+  ScanRepairSummary,
+  ScanStageReport,
+  ScanWarning
+} from "@/lib/scan-types";
 
 export const maxDuration = 60;
 
@@ -32,6 +41,8 @@ export async function POST(request: Request) {
         objectHint?: string;
         lastError?: string | null;
         warnings?: ScanWarning[];
+        stageReports?: ScanStageReport[];
+        repairSummary?: ScanRepairSummary;
         assets?: Array<{
           id?: string;
           kind: ScanAssetKind;
@@ -68,5 +79,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Scan job not found." }, { status: 404 });
   }
 
+  syncAssetJobFromScan(result);
   return NextResponse.json({ ok: true, job: result });
 }

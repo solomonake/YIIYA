@@ -18,7 +18,10 @@ const labOptionalEnv = [
   "SCAN_RECONSTRUCTION_ENDPOINT",
   "SCAN_RECONSTRUCTION_API_KEY",
   "SCAN_RECONSTRUCTION_WEBHOOK_SECRET",
-  "SCAN_FAL_WEBHOOK_SECRET"
+  "SCAN_RECONSTRUCTION_APP_URL",
+  "SCAN_FAL_WEBHOOK_SECRET",
+  "CAD_WORKER_ENDPOINT",
+  "CAD_WORKER_API_KEY"
 ] as const;
 
 function hasUsableValue(value: string | undefined) {
@@ -99,8 +102,13 @@ export function GET() {
       persistenceConfigured: scanInfra.supabaseConfigured,
       reconstructionConfigured: scanInfra.modalConfigured,
       falFallbackConfigured: scanInfra.falConfigured,
+      workerArtifactUploadConfigured: env.SCAN_RECONSTRUCTION_APP_URL,
       webhookSecretsConfigured:
         env.SCAN_RECONSTRUCTION_WEBHOOK_SECRET || env.SCAN_FAL_WEBHOOK_SECRET
+    },
+    cad: {
+      workerConfigured: env.CAD_WORKER_ENDPOINT,
+      workerAuthConfigured: env.CAD_WORKER_API_KEY
     }
   });
 }

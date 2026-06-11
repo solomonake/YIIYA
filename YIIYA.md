@@ -2,9 +2,12 @@
 
 ## System State
 
-- Product definition: Spatial Design Orchestrator, not a template website builder.
-- Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, website sections, and spatial objects.
-- Current phase completed: Phase 8 Section Library v2.
+- Product definition: CAD and 3D animation acceleration studio, not a template website builder.
+- Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, scans, editable 3D/CAD-ready objects, motion previews, and optional web presentation shells.
+- Product north star: help design students, design professionals, CAD users, illustrators, and 3D animators move from rough intent to usable geometry faster than Blender/Fusion/SolidWorks/Maya manual setup.
+- Web generation is optional and independent. It should not block or define the core 3D/CAD workflow.
+- Strategy source of truth: `docs/PRODUCT_STRATEGY_3D_CAD.md`.
+- Current phase completed: Phase 9 Asset Compiler & Handoff Layer.
 - Active backend route: `/api/interpret`.
 - Active publish route: `/api/publish`.
 - Active status route: `/api/status`.
@@ -105,3 +108,13 @@
 - Updated the Architect prompt to advertise the full section library.
 - Updated the local intent compiler so business prompts can request services, metrics/stats, testimonials/reviews, pricing/plans, FAQ/questions, navbar/navigation, and footer.
 - Full-site fallback generation now produces `NAVBAR`, `HERO`, `ABOUT`, `FEATURES`, `CONTACT`, and `FOOTER` by default, with optional business sections added when requested.
+
+## Phase 9 Implementation Notes
+
+- Added `lib/asset-compiler.ts` as the product-level planner above raw actions and mesh generation.
+- Asset briefs now classify source kind, destination, object name, functional intent, part semantics, material targets, motion targets, export formats, quality targets, readiness score, and handoff checks.
+- Voice and typed commands compile an asset brief before `/api/interpret/stream`, and the brief is sent inside `current_canvas_json` and request payload.
+- Reference-image uploads and scan jobs now create or refresh asset briefs immediately, so image-to-CAD and scan-to-object flows have a visible handoff plan before provider completion.
+- Adding a scene object promotes the asset brief from draft toward preview readiness based on real scene output.
+- `WorkspaceNavigation`, `VoiceBar`, and `SpatialControlPanel` now expose the active asset plan, destination, readiness score, validation checks, and export targets.
+- Timeline snapshots now preserve the asset brief so restored states keep product intent, not only canvas geometry.
