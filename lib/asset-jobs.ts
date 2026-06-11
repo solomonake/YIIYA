@@ -4,10 +4,11 @@ import type {
   AssetExportFormat,
   AssetLane,
   AssetPlan,
-  AssetReadinessCheck,
   RoutePlan
 } from "@/lib/asset-compiler";
 import type { ScanJobSummary } from "@/lib/scan-types";
+
+type AssetReadinessCheck = AssetBrief["readiness"]["checks"][number];
 
 export type AssetJobState =
   | "queued"
