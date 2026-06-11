@@ -17,7 +17,7 @@ function controlValueLabel(control: LabControl) {
 }
 
 export function SpatialControlPanel() {
-  const canvasMode = useYiiyaStore((state) => state.canvasMode);
+  const activeLane = useYiiyaStore((state) => state.activeLane);
   const addSceneObject = useYiiyaStore((state) => state.addSceneObject);
   const morphBlob = useYiiyaStore((state) => state.morphBlob);
   const updateSceneObject = useYiiyaStore((state) => state.updateSceneObject);
@@ -29,17 +29,20 @@ export function SpatialControlPanel() {
   const addLog = useYiiyaStore((state) => state.addLog);
   const exportTarget = useYiiyaStore((state) => state.exportTarget);
   const setExportTarget = useYiiyaStore((state) => state.setExportTarget);
+  const assetBrief = useYiiyaStore((state) => state.assetBrief);
   const [handEnabled, setHandEnabled] = useState(false);
-  const [handStatus, setHandStatus] = useState<"idle" | "loading" | "active" | "error">("idle");
+  const [handStatus, setHandStatus] = useState<
+    "idle" | "loading" | "active" | "error"
+  >("idle");
   const [open, setOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const handRuntimeRef = useRef<HandRuntime | null>(null);
 
   useEffect(() => {
-    if (canvasMode === "WEB") {
+    if (activeLane === "scan") {
       setOpen(false);
     }
-  }, [canvasMode]);
+  }, [activeLane]);
 
   useEffect(() => {
     if (!handEnabled) {
@@ -56,7 +59,7 @@ export function SpatialControlPanel() {
         setHandStatus("loading");
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user", width: 640, height: 480 },
-          audio: false
+          audio: false,
         });
         const video = videoRef.current;
 
@@ -70,17 +73,20 @@ export function SpatialControlPanel() {
 
         const vision = await import("@mediapipe/tasks-vision");
         const fileset = await vision.FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm",
         );
-        const landmarker = await vision.HandLandmarker.createFromOptions(fileset, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-            delegate: "GPU"
+        const landmarker = await vision.HandLandmarker.createFromOptions(
+          fileset,
+          {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+              delegate: "GPU",
+            },
+            runningMode: "VIDEO",
+            numHands: 1,
           },
-          runningMode: "VIDEO",
-          numHands: 1
-        });
+        );
 
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
@@ -112,55 +118,46 @@ export function SpatialControlPanel() {
               const y = (0.5 - index.y) * 3.1;
               const pinch =
                 thumb &&
-                Math.hypot(index.x - thumb.x, index.y - thumb.y, index.z - thumb.z) < 0.052;
+                Math.hypot(
+                  index.x - thumb.x,
+                  index.y - thumb.y,
+                  index.z - thumb.z,
+                ) < 0.052;
 
-              if (canvasMode === "3D") {
-                if (sceneObjects.length > 0) {
-                  useYiiyaStore.setState((state) => {
-                    const latest = state.sceneObjects.at(-1);
+              if (sceneObjects.length > 0) {
+                useYiiyaStore.setState((state) => {
+                  const latest = state.sceneObjects.at(-1);
 
-                    if (!latest) {
-                      return state;
-                    }
-
-                    return {
-                      sceneObjects: state.sceneObjects.map((object) =>
-                        object.id === latest.id
-                          ? { ...object, position: [x, y, -0.15] }
-                          : object
-                      )
-                    };
-                  });
-
-                  if (pinch && !grabbed) {
-                    addLog("[HAND]: Moving latest 3D object.");
+                  if (!latest) {
+                    return state;
                   }
-                } else {
-                  useYiiyaStore.setState((state) => ({
-                    blobState: {
-                      ...state.blobState,
-                      controlledByHand: true,
-                      formation: pinch ? "helix" : "sphere",
-                      twist: x * 0.35,
-                      chaos: Math.max(0.12, Math.abs(y) * 0.16),
-                      morphProgress: 1
-                    }
-                  }));
 
-                  if (pinch && !grabbed) {
-                    addLog("[HAND]: Molding blob.");
-                  }
+                  return {
+                    sceneObjects: state.sceneObjects.map((object) =>
+                      object.id === latest.id
+                        ? { ...object, position: [x, y, -0.15] }
+                        : object,
+                    ),
+                  };
+                });
+
+                if (pinch && !grabbed) {
+                  addLog("[HAND]: Moving latest 3D object.");
                 }
               } else {
-                const element = document.elementFromPoint(
-                  index.x * window.innerWidth,
-                  index.y * window.innerHeight
-                )?.closest<HTMLElement>("[data-yiiya-id]");
+                useYiiyaStore.setState((state) => ({
+                  blobState: {
+                    ...state.blobState,
+                    controlledByHand: true,
+                    formation: pinch ? "helix" : "sphere",
+                    twist: x * 0.35,
+                    chaos: Math.max(0.12, Math.abs(y) * 0.16),
+                    morphProgress: 1,
+                  },
+                }));
 
-                if (pinch && element?.dataset.yiiyaId && !grabbed) {
-                  useYiiyaStore.getState().setSelectedElementId(element.dataset.yiiyaId);
-                  useYiiyaStore.getState().setSelectedElements([element.dataset.yiiyaId]);
-                  addLog(`[HAND]: Selected ${element.dataset.yiiyaId}.`);
+                if (pinch && !grabbed) {
+                  addLog("[HAND]: Molding blob.");
                 }
               }
 
@@ -177,7 +174,7 @@ export function SpatialControlPanel() {
             window.cancelAnimationFrame(frameId);
             landmarker.close();
             stream.getTracks().forEach((track) => track.stop());
-          }
+          },
         };
       } catch (error) {
         setHandStatus("error");
@@ -185,7 +182,7 @@ export function SpatialControlPanel() {
         addLog(
           `[HAND]: ${
             error instanceof Error ? error.message : "Tracking unavailable."
-          }`
+          }`,
         );
       }
     }
@@ -197,9 +194,16 @@ export function SpatialControlPanel() {
       handRuntimeRef.current?.stop();
       handRuntimeRef.current = null;
     };
-  }, [addLog, canvasMode, handEnabled, morphBlob, sceneObjects.length, updateSceneObject]);
+  }, [
+    addLog,
+    activeLane,
+    handEnabled,
+    morphBlob,
+    sceneObjects.length,
+    updateSceneObject,
+  ]);
 
-  if (canvasMode === "WEB") {
+  if (activeLane === "scan") {
     return null;
   }
 
@@ -207,13 +211,23 @@ export function SpatialControlPanel() {
     if (sceneObjects.length > 0) {
       updateSceneObject("latest", {
         material,
-        color: material === "gold" ? "#FFD700" : material === "chrome" ? "#C0C0C0" : "#EDEDED",
+        color:
+          material === "gold"
+            ? "#FFD700"
+            : material === "chrome"
+              ? "#C0C0C0"
+              : "#EDEDED",
         materialOverrides:
           material === "gold"
             ? { metalness: 1, roughness: 0.2 }
             : material === "glass"
-              ? { transmission: 1, roughness: 0, transparent: true, opacity: 0.82 }
-              : { metalness: 1, roughness: 0.05 }
+              ? {
+                  transmission: 1,
+                  roughness: 0,
+                  transparent: true,
+                  opacity: 0.82,
+                }
+              : { metalness: 1, roughness: 0.05 },
       });
       return;
     }
@@ -223,12 +237,19 @@ export function SpatialControlPanel() {
       glow: material === "glass" ? 0.9 : 0.46,
       distort: material === "glass" ? 0.62 : 0.38,
       speed: material === "chrome" ? 1.4 : 2.1,
-      morphProgress: 0.8
+      morphProgress: 0.8,
     });
   };
 
   const moldFormation = (
-    formation: "sphere" | "helix" | "torus" | "bottle" | "capsule" | "cube" | "wave"
+    formation:
+      | "sphere"
+      | "helix"
+      | "torus"
+      | "bottle"
+      | "capsule"
+      | "cube"
+      | "wave",
   ) => {
     morphBlob({
       formation,
@@ -237,15 +258,18 @@ export function SpatialControlPanel() {
           ? "bottle"
           : formation === "cube"
             ? "cube"
-            : formation === "helix" || formation === "torus" || formation === "wave"
+            : formation === "helix" ||
+                formation === "torus" ||
+                formation === "wave"
               ? "organic"
               : "sphere",
-      aspectRatio: formation === "bottle" ? 1.75 : formation === "capsule" ? 1.35 : 1,
+      aspectRatio:
+        formation === "bottle" ? 1.75 : formation === "capsule" ? 1.35 : 1,
       twist: formation === "helix" ? 1.35 : 0,
       chaos: formation === "wave" ? 0.74 : 0.28,
       distort: formation === "cube" ? 0.18 : 0.46,
       speed: formation === "helix" ? 2.4 : 1.7,
-      morphProgress: 1
+      morphProgress: 1,
     });
   };
 
@@ -256,7 +280,7 @@ export function SpatialControlPanel() {
         onClick={() => setOpen(true)}
         className="yiiya-panel pointer-events-auto absolute left-5 top-[23rem] z-30 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/66 transition hover:border-amber/70 hover:text-amber"
       >
-        3D Hero Lab
+        Model Lab
       </button>
     );
   }
@@ -267,10 +291,10 @@ export function SpatialControlPanel() {
       <div className="flex items-center justify-between border-b border-terminalBorder pb-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber">
-            3D Hero Lab
+            Model Lab
           </p>
           <p className="mt-1 text-[10px] text-white/38">
-            Circle, speak, then tune the hero object
+            Circle, speak, then tune the model
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -281,8 +305,10 @@ export function SpatialControlPanel() {
             className="h-8 border px-2 text-[10px] font-bold uppercase tracking-[0.12em] transition hover:border-amber/70 hover:text-amber"
             style={{
               borderColor: handEnabled ? "#EF9F27" : "#1A1A1A",
-              background: handEnabled ? "rgba(239,159,39,0.1)" : "rgba(255,255,255,0.018)",
-              color: handEnabled ? "#EF9F27" : "rgba(255,255,255,0.55)"
+              background: handEnabled
+                ? "rgba(239,159,39,0.1)"
+                : "rgba(255,255,255,0.018)",
+              color: handEnabled ? "#EF9F27" : "rgba(255,255,255,0.55)",
             }}
           >
             Hand
@@ -302,13 +328,64 @@ export function SpatialControlPanel() {
         <p className="mt-2 text-[10px] text-white/42">camera initializing...</p>
       ) : null}
 
+      <div className="yiiya-panel-subtle yiiya-focus-line mt-3 p-3 pl-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[11px] font-semibold text-white/84">
+              {assetBrief?.objectName ?? "Spatial Concept"}
+            </p>
+            <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-white/38">
+              {(assetBrief?.destination ?? "cad").toUpperCase()} ·{" "}
+              {assetBrief?.sourceKind ?? "text"}
+            </p>
+          </div>
+          <span className="shrink-0 border border-amber/35 bg-amber/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-amber">
+            {assetBrief?.readiness.score ?? 0}%
+          </span>
+        </div>
+
+        <div className="mt-3 grid gap-1">
+          {(assetBrief?.readiness.checks ?? [
+            { label: "Fast preview mesh", status: "planned" as const },
+            { label: "Scale and part semantics", status: "planned" as const },
+            { label: "Topology and normals", status: "planned" as const },
+          ]).map((check) => (
+            <div
+              key={check.label}
+              className="flex items-center justify-between gap-2 text-[10px]"
+            >
+              <span className="truncate text-white/45">{check.label}</span>
+              <span
+                className={
+                  check.status === "ready"
+                    ? "text-signalGreen/80"
+                    : check.status === "needs-work"
+                      ? "text-signalAmber/80"
+                      : "text-white/28"
+                }
+              >
+                {check.status}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-3 text-[10px] leading-relaxed text-white/42">
+          {(assetBrief?.exportTargets ?? ["glb", "obj", "stl", "step"])
+            .map((format) => format.toUpperCase())
+            .join(" / ")}
+        </p>
+      </div>
+
       <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/38">
         <span>Shape</span>
         <span className="text-amber/70">object-first</span>
       </div>
 
       <div className="mt-2 grid grid-cols-3 gap-1">
-        {(["sphere", "helix", "torus", "bottle", "capsule", "wave"] as const).map((formation) => (
+        {(
+          ["sphere", "helix", "torus", "bottle", "capsule", "wave"] as const
+        ).map((formation) => (
           <button
             key={formation}
             type="button"
@@ -352,7 +429,7 @@ export function SpatialControlPanel() {
               animation: "rotate",
               position: [1.85, 0.35, -1.4],
               scale: [0.62, 0.62, 0.62],
-              intensity: 0.7
+              intensity: 0.7,
             })
           }
           className="yiiya-micro-button h-8 px-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/62"
@@ -384,7 +461,7 @@ export function SpatialControlPanel() {
             step: 0.01,
             value: 0.72,
             target: "blob",
-            property: "chaos"
+            property: "chaos",
           })
         }
         className="yiiya-micro-button mt-2 h-8 w-full px-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/62"
@@ -401,8 +478,12 @@ export function SpatialControlPanel() {
             className="h-8 border px-2 text-[10px] font-bold uppercase tracking-[0.08em] transition"
             style={{
               borderColor: exportTarget === target ? "#EF9F27" : "#1A1A1A",
-              background: exportTarget === target ? "rgba(239,159,39,0.1)" : "rgba(255,255,255,0.018)",
-              color: exportTarget === target ? "#EF9F27" : "rgba(255,255,255,0.55)"
+              background:
+                exportTarget === target
+                  ? "rgba(239,159,39,0.1)"
+                  : "rgba(255,255,255,0.018)",
+              color:
+                exportTarget === target ? "#EF9F27" : "rgba(255,255,255,0.55)",
             }}
           >
             {target}
@@ -417,13 +498,13 @@ export function SpatialControlPanel() {
           try {
             exportSpatialTarget(exportTarget, sceneObjects.at(-1)?.id);
             addLog(
-              `[EXPORT]: ${exportTarget === "latest" ? "Latest object" : "Scene"} exported.`
+              `[EXPORT]: ${exportTarget === "latest" ? "Latest object" : "Scene"} exported.`,
             );
           } catch (error) {
             addLog(
               `[EXPORT]: ${
                 error instanceof Error ? error.message : "Export unavailable."
-              }`
+              }`,
             );
           }
         }}

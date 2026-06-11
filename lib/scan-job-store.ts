@@ -138,6 +138,28 @@ type ReconstructionWebhookPayload = {
   }>;
 };
 
+type WorkerArtifactInput =
+  | {
+      target: "asset";
+      assetKind: ScanAssetKind;
+      label: string;
+      fileName: string;
+      url: string;
+      mimeType: string;
+      sizeBytes: number;
+      metadata?: Record<string, unknown>;
+    }
+  | {
+      target: "export";
+      tier: ScanExportTier;
+      format: ScanExportSummary["format"];
+      status: ScanExportSummary["status"];
+      fileName: string;
+      url: string;
+      sizeBytes: number;
+      metadata?: Record<string, unknown>;
+    };
+
 const globalStore = globalThis as typeof globalThis & {
   __yiiyaFallbackScanJobs?: Map<string, FallbackScanRecord>;
 };
@@ -1037,6 +1059,80 @@ export async function getScanJob(scanId: string, syncFallback = true): Promise<S
   );
 
   return syncFallback ? ensureFalFallbackStatus(summary) : summary;
+}
+
+export async function registerWorkerArtifact(
+  scanId: string,
+  artifact: WorkerArtifactInput
+): Promise<ScanJobSummary | null> {
+  const record = isSupabaseRestConfigured("service")
+    ? await loadSupabaseRecord(scanId)
+    : loadFallbackRecord(scanId);
+
+  if (!record) {
+    return null;
+  }
+
+  if (artifact.target === "asset") {
+    await addAssetRow(scanId, record.job.id, {
+      asset_kind: artifact.assetKind,
+      label: artifact.label,
+      file_name: artifact.fileName,
+      url: artifact.url,
+      mime_type: artifact.mimeType,
+      size_bytes: artifact.sizeBytes,
+      metadata_json: artifact.metadata ?? {}
+    });
+    await updateJobRow(scanId, {
+      state: record.job.state === "complete" ? "complete" : "cleaning",
+      stage: "mesh_cleanup",
+      progress: Math.max(record.job.progress, 0.72),
+      last_error: null
+    });
+  } else {
+    await upsertExportRow(scanId, record.job.id, {
+      tier: artifact.tier,
+      file_format: artifact.format,
+      status: artifact.status,
+      file_name: artifact.fileName,
+      url: artifact.url,
+      size_bytes: artifact.sizeBytes,
+      metadata_json: artifact.metadata ?? {}
+    });
+    await updateJobRow(scanId, {
+      state:
+        artifact.status === "failed"
+          ? "failed"
+          : artifact.status === "ready"
+            ? "complete"
+            : "packaging",
+      stage: "package_exports",
+      progress:
+        artifact.status === "failed"
+          ? record.job.progress
+          : artifact.status === "ready"
+            ? 1
+            : Math.max(record.job.progress, 0.86),
+      last_error: artifact.status === "failed" ? "Worker export failed." : null
+    });
+  }
+
+  const updated = isSupabaseRestConfigured("service")
+    ? await loadSupabaseRecord(scanId)
+    : loadFallbackRecord(scanId);
+
+  if (!updated) {
+    return null;
+  }
+
+  return buildSummary(
+    updated.session,
+    updated.job,
+    updated.uploads,
+    updated.assets,
+    updated.exports,
+    isSupabaseRestConfigured("service") ? "supabase" : "memory"
+  );
 }
 
 export async function updateScanCapture(

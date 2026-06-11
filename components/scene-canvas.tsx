@@ -585,21 +585,17 @@ function CursorRaycaster() {
 function StarterScene({
   objects,
   anchors,
-  canvasMode,
-  hasSections,
   stage
 }: {
   objects: SceneObject[];
   anchors: SpatialAnchor[];
-  canvasMode: "WEB" | "3D" | "HYBRID";
-  hasSections: boolean;
   stage: StageState;
 }) {
   const anchorMap = useMemo(
     () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
     [anchors]
   );
-  const subduedHybrid = canvasMode === "HYBRID" && hasSections;
+  const subduedHybrid = false;
   const hybridDock = (index: number) => {
     const placements: Array<[number, number, number]> = [
       [2.95, 0.1, -2.25],
@@ -619,7 +615,7 @@ function StarterScene({
   // is active; fall back to the QuietStarterMarker only when nothing has
   // been asked yet (stage.kind === "EMPTY"). Once any real SceneObject
   // exists we render the actual objects below and skip both.
-  const showPlaceholder = objects.length === 0 && canvasMode === "3D";
+  const showPlaceholder = objects.length === 0;
 
   return (
     <>
@@ -643,21 +639,19 @@ function StarterScene({
         );
       })}
 
-      {canvasMode === "3D" ? (
-        <Grid
-          position={[0, -0.02, 0]}
-          args={[14, 14]}
-          cellSize={0.62}
-          cellThickness={0.5}
-          cellColor="#1A1A1A"
-          sectionSize={2.48}
-          sectionThickness={0.9}
-          sectionColor="#2A2A2A"
-          fadeDistance={18}
-          fadeStrength={1.6}
-        />
-      ) : null}
-      <Environment preset={canvasMode === "3D" ? "studio" : "city"} />
+      <Grid
+        position={[0, -0.02, 0]}
+        args={[14, 14]}
+        cellSize={0.62}
+        cellThickness={0.5}
+        cellColor="#1A1A1A"
+        sectionSize={2.48}
+        sectionThickness={0.9}
+        sectionColor="#2A2A2A"
+        fadeDistance={18}
+        fadeStrength={1.6}
+      />
+      <Environment preset="studio" />
       <CursorRaycaster />
     </>
   );
@@ -666,10 +660,9 @@ function StarterScene({
 export function SceneCanvas() {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
-  const canvasMode = useYiiyaStore((state) => state.canvasMode);
-  const hasSections = useYiiyaStore((state) => state.sections.length > 0);
   const stage = useYiiyaStore((state) => state.stage);
   const rootGroupRef = useRef<Group>(null);
+  const canvasMode = "3D" as const;
 
   useEffect(() => {
     registerExportRoot(rootGroupRef.current);
@@ -677,16 +670,12 @@ export function SceneCanvas() {
     return () => registerExportRoot(null);
   }, []);
 
-  if (canvasMode === "WEB") {
-    return null;
-  }
-
   return (
     <div
       className="absolute inset-0 z-0 transition-opacity"
       style={{
-        opacity: canvasMode === "HYBRID" ? 0.28 : 1,
-        pointerEvents: canvasMode === "3D" ? "auto" : "none"
+        opacity: 1,
+        pointerEvents: "auto"
       }}
     >
       <Canvas
@@ -697,9 +686,9 @@ export function SceneCanvas() {
         dpr={[1, 2]}
         className="h-full w-full"
       >
-        {canvasMode === "3D" ? <color attach="background" args={["#050505"]} /> : null}
+        <color attach="background" args={["#050505"]} />
         <fog attach="fog" args={["#050505", 6, 16]} />
-        <ambientLight intensity={canvasMode === "3D" ? 0.88 : 0.56} />
+        <ambientLight intensity={0.88} />
         <directionalLight position={[3, 4, 5]} intensity={2.1} color="#fff6df" />
         <pointLight position={[-3, 2.4, 3]} intensity={1.2} color="#EF9F27" />
         <Physics gravity={[0, -9.81, 0]}>
@@ -707,14 +696,12 @@ export function SceneCanvas() {
             <StarterScene
               objects={sceneObjects}
               anchors={spatialAnchors}
-              canvasMode={canvasMode}
-              hasSections={hasSections}
               stage={stage}
             />
           </group>
         </Physics>
         <OrbitControls
-          enabled={canvasMode === "3D"}
+          enabled
           enablePan={false}
           maxDistance={12}
           maxPolarAngle={Math.PI * 0.48}

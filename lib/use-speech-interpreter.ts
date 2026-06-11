@@ -9,6 +9,8 @@ import {
   type YiiyaAction
 } from "@/lib/store";
 import { runYiiyaActions } from "@/lib/action-runner";
+import type { AssetJob } from "@/lib/asset-jobs";
+import type { AssetPlan } from "@/lib/asset-compiler";
 import type { CreativeBrief } from "@/lib/creative-brief";
 import type { CursorTarget } from "@/lib/scene/types";
 
@@ -369,6 +371,7 @@ async function interpretTranscript(
     projectId: state.currentProjectId,
     projectName: state.projectName,
     creationGoal: state.creationGoal,
+    activeLane: state.activeLane,
     starterPromptId: state.starterPromptId,
     canvasMode: state.canvasMode,
     scanJobId: state.scanJob?.id ?? null,
@@ -411,6 +414,7 @@ async function interpretTranscript(
     canvasMode: state.canvasMode,
     starterPromptId: state.starterPromptId,
     scanJobId: state.scanJob?.id ?? null,
+    activeLane: state.activeLane,
     cursorTarget,
     strategyMode: state.strategyMode,
     partial
@@ -440,6 +444,8 @@ async function interpretTranscript(
   let confidence = 0;
   let fallbackPath: string | null = null;
   let question: string | null = null;
+  let assetPlan: AssetPlan | null = null;
+  let activeAssetJob: AssetJob | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -477,6 +483,11 @@ async function interpretTranscript(
         brief?: CreativeBrief | null;
         confidence?: number;
         fallbackPath?: string | null;
+        assetPlan?: AssetPlan | null;
+        assetBrief?: AssetPlan["brief"] | null;
+        assetSummary?: AssetPlan["summary"] | null;
+        routePlan?: AssetPlan["routePlan"] | null;
+        activeAssetJob?: AssetJob | null;
       };
 
       if (record.type === "error") {
@@ -499,6 +510,20 @@ async function interpretTranscript(
         fallbackPath = record.fallbackPath;
       }
 
+      if (record.assetPlan) {
+        assetPlan = record.assetPlan;
+      } else if (record.assetBrief && record.assetSummary && record.routePlan) {
+        assetPlan = {
+          brief: record.assetBrief,
+          summary: record.assetSummary,
+          routePlan: record.routePlan
+        };
+      }
+
+      if (record.activeAssetJob) {
+        activeAssetJob = record.activeAssetJob;
+      }
+
       if ((record.type === "actions" || record.type === "done") && isYiiyaActionArray(record.actions)) {
         actions = record.actions;
       }
@@ -512,7 +537,17 @@ async function interpretTranscript(
     }
   }
 
-  return { actions, qaLog, interpreter: "stream", brief, confidence, fallbackPath, question };
+  return {
+    actions,
+    qaLog,
+    interpreter: "stream",
+    brief,
+    confidence,
+    fallbackPath,
+    question,
+    assetPlan,
+    activeAssetJob
+  };
 }
 
 export async function runTranscriptThroughYiiya(transcript: string) {
@@ -532,7 +567,17 @@ export async function runTranscriptThroughYiiya(transcript: string) {
   state.setInterpreting(true);
 
   try {
-    const { actions, qaLog, interpreter, brief, confidence, fallbackPath, question } =
+    const {
+      actions,
+      qaLog,
+      interpreter,
+      brief,
+      confidence,
+      fallbackPath,
+      question,
+      assetPlan,
+      activeAssetJob
+    } =
       await interpretTranscript(normalizedTranscript, previousHistory, state.addLog);
 
     if (interpreter === "stream") {
@@ -547,6 +592,10 @@ export async function runTranscriptThroughYiiya(transcript: string) {
     }
 
     state.setActiveBrief(brief, fallbackPath);
+    state.setAssetPlan(assetPlan);
+    if (activeAssetJob) {
+      state.setActiveAssetJob(activeAssetJob);
+    }
     if (brief) {
       state.addLog(
         `[BRIEF]: ${brief.summary} | ${Math.round(confidence * 100)}% | ${fallbackPath ?? brief.fallbackPath}`

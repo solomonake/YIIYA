@@ -3,14 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { emptyCoverage, surfaceCoverageConfidence, type CoverageCell } from "@/lib/scan-coverage";
+import {
+  emptyCoverage,
+  surfaceCoverageConfidence,
+  type CoverageCell,
+} from "@/lib/scan-coverage";
 import { useYiiyaStore } from "@/lib/store";
 import type { ScanExportSummary, ScanJobSummary } from "@/lib/scan-types";
 
 const terminalStates = new Set<ScanJobSummary["state"]>([
   "complete",
   "failed",
-  "cancelled"
+  "cancelled",
 ]);
 
 function stageLabel(stage: ScanJobSummary["stage"]) {
@@ -42,13 +46,13 @@ function preferredSceneExport(job: ScanJobSummary | null) {
       (item) =>
         item.status === "ready" &&
         item.format === "glb" &&
-        item.tier === "creator"
+        item.tier === "creator",
     ) ??
     job.exports.find(
       (item) =>
         item.status === "ready" &&
         item.format === "glb" &&
-        item.tier === "mobile-preview"
+        item.tier === "mobile-preview",
     ) ??
     null
   );
@@ -68,14 +72,60 @@ function exportLabel(exportItem: ScanExportSummary) {
   return `${exportItem.tier} · ${exportItem.format.toUpperCase()}`;
 }
 
+function reportTone(status: ScanJobSummary["stageReports"][number]["status"]) {
+  switch (status) {
+    case "ready":
+      return {
+        borderColor: "rgba(57,255,20,0.28)",
+        background: "rgba(57,255,20,0.08)",
+        color: "rgba(220,255,220,0.82)",
+      };
+    case "fallback":
+    case "heuristic":
+      return {
+        borderColor: "rgba(239,159,39,0.32)",
+        background: "rgba(239,159,39,0.08)",
+        color: "rgba(255,228,188,0.82)",
+      };
+    case "deferred":
+    case "needs-input":
+      return {
+        borderColor: "rgba(255,255,255,0.12)",
+        background: "rgba(255,255,255,0.03)",
+        color: "rgba(255,255,255,0.58)",
+      };
+    case "failed":
+      return {
+        borderColor: "rgba(255,132,112,0.3)",
+        background: "rgba(255,132,112,0.08)",
+        color: "rgba(255,210,204,0.82)",
+      };
+    default:
+      return {
+        borderColor: "rgba(255,255,255,0.12)",
+        background: "rgba(255,255,255,0.03)",
+        color: "rgba(255,255,255,0.62)",
+      };
+  }
+}
+
+function metadataAsset(job: ScanJobSummary | null, fileName: string) {
+  return (
+    job?.assets.find(
+      (asset) =>
+        asset.kind === "metadata" &&
+        asset.fileName.toLowerCase() === fileName.toLowerCase(),
+    ) ?? null
+  );
+}
+
 export function ScanStudioPanel() {
   const searchParams = useSearchParams();
-  const canvasMode = useYiiyaStore((state) => state.canvasMode);
-  const creationGoal = useYiiyaStore((state) => state.creationGoal);
+  const activeLane = useYiiyaStore((state) => state.activeLane);
   const scanJob = useYiiyaStore((state) => state.scanJob);
   const setScanJob = useYiiyaStore((state) => state.setScanJob);
+  const setActiveLane = useYiiyaStore((state) => state.setActiveLane);
   const setCreationGoal = useYiiyaStore((state) => state.setCreationGoal);
-  const setCanvasMode = useYiiyaStore((state) => state.setCanvasMode);
   const addSceneObject = useYiiyaStore((state) => state.addSceneObject);
   const addLog = useYiiyaStore((state) => state.addLog);
   const [open, setOpen] = useState(false);
@@ -107,14 +157,14 @@ export function ScanStudioPanel() {
         }
       }
     },
-    [setScanJob]
+    [setScanJob],
   );
 
   useEffect(() => {
-    if (canvasMode !== "3D" && creationGoal !== "scan") {
+    if (activeLane !== "scan") {
       setOpen(false);
     }
-  }, [canvasMode, creationGoal]);
+  }, [activeLane]);
 
   useEffect(() => {
     const scanId = searchParams.get("scanJob");
@@ -123,9 +173,10 @@ export function ScanStudioPanel() {
       return;
     }
 
+    setActiveLane("scan");
     setOpen(true);
     void refreshScanJob(scanId, true);
-  }, [refreshScanJob, searchParams]);
+  }, [refreshScanJob, searchParams, setActiveLane]);
 
   useEffect(() => {
     if (!open || !scanJob?.id) {
@@ -141,26 +192,35 @@ export function ScanStudioPanel() {
     }, delay);
 
     return () => window.clearInterval(intervalId);
-  }, [open, refreshScanJob, scanJob?.captureStatus, scanJob?.id, scanJob?.state]);
+  }, [
+    open,
+    refreshScanJob,
+    scanJob?.captureStatus,
+    scanJob?.id,
+    scanJob?.state,
+  ]);
 
   const coverage = useMemo<CoverageCell[]>(
     () => scanJob?.coverage ?? emptyCoverage(),
-    [scanJob?.coverage]
+    [scanJob?.coverage],
   );
   const overallCoverage = surfaceCoverageConfidence(coverage);
   const previewImage = previewImageForJob(scanJob);
   const sceneExport = preferredSceneExport(scanJob);
+  const manifestAsset = metadataAsset(scanJob, "manifest.json");
+  const repairLogAsset = metadataAsset(scanJob, "repair-log.json");
   const isTerminal = scanJob ? terminalStates.has(scanJob.state) : false;
   const keyframeCount =
     scanJob?.uploads.filter((upload) => upload.kind === "keyframe").length ?? 0;
   const progressPercent = Math.round((scanJob?.progress ?? 0) * 100);
 
-  if (canvasMode === "WEB" && creationGoal !== "scan") {
+  if (activeLane !== "scan") {
     return null;
   }
 
   const startScan = async () => {
     setStarting(true);
+    setActiveLane("scan");
     setCreationGoal("scan");
 
     try {
@@ -169,15 +229,19 @@ export function ScanStudioPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           promptHint:
-            useYiiyaStore.getState().activeBrief?.summary ?? "Scan a real object"
-        })
+            useYiiyaStore.getState().activeBrief?.summary ??
+            "Scan a real object",
+        }),
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { job?: ScanJobSummary; error?: string }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        job?: ScanJobSummary;
+        error?: string;
+      } | null;
 
       if (!response.ok || !payload?.job?.id) {
-        throw new Error(payload?.error ?? `Scan start failed with ${response.status}`);
+        throw new Error(
+          payload?.error ?? `Scan start failed with ${response.status}`,
+        );
       }
 
       setScanJob(payload.job);
@@ -185,7 +249,9 @@ export function ScanStudioPanel() {
       setOpen(true);
       addLog("[SCAN]: Durable scan job created.");
     } catch (error) {
-      addLog(`[SCAN]: ${error instanceof Error ? error.message : "Unable to start scan."}`);
+      addLog(
+        `[SCAN]: ${error instanceof Error ? error.message : "Unable to start scan."}`,
+      );
     } finally {
       setStarting(false);
     }
@@ -199,11 +265,7 @@ export function ScanStudioPanel() {
     setLoadingIntoScene(true);
 
     try {
-      if (canvasMode === "WEB") {
-        setCanvasMode("HYBRID");
-      }
-
-      setCreationGoal("scan");
+      setActiveLane("mesh");
       addSceneObject({
         source: "scan",
         scanResultId: scanJob.id,
@@ -219,10 +281,10 @@ export function ScanStudioPanel() {
         color: "#EDEDED",
         animation: "float",
         position: [0, 0.8, 0],
-        scale: [1, 1, 1]
+        scale: [1, 1, 1],
       });
       addLog(
-        `[SCAN]: Loaded ${sceneExport.tier} ${sceneExport.format.toUpperCase()} into the scene.`
+        `[SCAN]: Loaded ${sceneExport.tier} ${sceneExport.format.toUpperCase()} into the scene.`,
       );
     } finally {
       setLoadingIntoScene(false);
@@ -238,7 +300,7 @@ export function ScanStudioPanel() {
 
     try {
       const response = await fetch(`/api/scan/jobs/${scanJob.id}/cancel`, {
-        method: "POST"
+        method: "POST",
       });
       const payload = (await response.json().catch(() => null)) as
         | ScanJobSummary
@@ -249,14 +311,16 @@ export function ScanStudioPanel() {
         throw new Error(
           payload && "error" in payload && typeof payload.error === "string"
             ? payload.error
-            : `Cancel failed with ${response.status}`
+            : `Cancel failed with ${response.status}`,
         );
       }
 
       setScanJob(payload);
       addLog("[SCAN]: Scan job cancelled.");
     } catch (error) {
-      addLog(`[SCAN]: ${error instanceof Error ? error.message : "Cancel failed."}`);
+      addLog(
+        `[SCAN]: ${error instanceof Error ? error.message : "Cancel failed."}`,
+      );
     } finally {
       setCancelling(false);
     }
@@ -290,8 +354,9 @@ export function ScanStudioPanel() {
       {!open ? (
         <div className="mt-3 grid gap-2">
           <p className="text-[10px] leading-relaxed text-white/42">
-            Use after the core Web + 3D hero path is working. Scan jobs stay
-            queued outside the main generator so experiments do not block publish.
+            Use a phone capture to reconstruct a real object. Scan jobs stay
+            queued outside the quick generator so heavy reconstruction does not
+            block export.
           </p>
           <button
             type="button"
@@ -342,7 +407,7 @@ export function ScanStudioPanel() {
                 <div
                   className="h-24 border border-terminalBorder bg-cover bg-center"
                   style={{
-                    backgroundImage: `url(${previewImage})`
+                    backgroundImage: `url(${previewImage})`,
                   }}
                 />
               ) : null}
@@ -353,10 +418,12 @@ export function ScanStudioPanel() {
                     key={cell.id}
                     className="h-8 border"
                     style={{
-                      borderColor: cell.covered ? "rgba(57,255,20,0.45)" : "#1A1A1A",
+                      borderColor: cell.covered
+                        ? "rgba(57,255,20,0.45)"
+                        : "#1A1A1A",
                       background: cell.covered
                         ? "rgba(57,255,20,0.14)"
-                        : "rgba(255,255,255,0.02)"
+                        : "rgba(255,255,255,0.02)",
                     }}
                     title={cell.label}
                   />
@@ -369,8 +436,12 @@ export function ScanStudioPanel() {
                     key={cell.id}
                     className="border px-2 py-2 text-center"
                     style={{
-                      borderColor: cell.covered ? "rgba(239,159,39,0.35)" : "#1A1A1A",
-                      color: cell.covered ? "#EF9F27" : "rgba(255,255,255,0.32)"
+                      borderColor: cell.covered
+                        ? "rgba(239,159,39,0.35)"
+                        : "#1A1A1A",
+                      color: cell.covered
+                        ? "#EF9F27"
+                        : "rgba(255,255,255,0.32)",
                     }}
                   >
                     {cell.label.replace("-depth", "")}
@@ -383,7 +454,8 @@ export function ScanStudioPanel() {
                   Capture {scanJob.captureStatus} · {scanJob.state}
                 </p>
                 <p>
-                  Stage {stageLabel(scanJob.stage)} · Progress {progressPercent}%
+                  Stage {stageLabel(scanJob.stage)} · Progress {progressPercent}
+                  %
                 </p>
                 <p>
                   Surface {Math.round(overallCoverage * 100)}% · Depth{" "}
@@ -417,6 +489,60 @@ export function ScanStudioPanel() {
                 </div>
               ) : null}
 
+              {scanJob.stageReports.length > 0 ? (
+                <div className="grid gap-2 border border-white/10 bg-white/[0.02] p-2">
+                  <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.14em] text-white/40">
+                    <span>Pipeline notes</span>
+                    {scanJob.repairSummary?.usedFallbackMesh ? (
+                      <span className="text-amber/80">fallback mesh</span>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-1">
+                    {scanJob.stageReports.map((report) => (
+                      <div
+                        key={`${report.stage}-${report.status}`}
+                        className="border px-2 py-2 text-[10px]"
+                        style={reportTone(report.status)}
+                      >
+                        <div className="flex items-center justify-between gap-2 uppercase tracking-[0.12em]">
+                          <span>{stageLabel(report.stage)}</span>
+                          <span>{report.status}</span>
+                        </div>
+                        {report.detail ? (
+                          <p className="mt-1 leading-relaxed text-white/58">
+                            {report.detail}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  {manifestAsset?.url || repairLogAsset?.url ? (
+                    <div className="flex flex-wrap gap-3 text-[10px]">
+                      {manifestAsset?.url ? (
+                        <a
+                          href={manifestAsset.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-white/58 underline decoration-white/15 underline-offset-4 hover:text-bone"
+                        >
+                          Capture manifest
+                        </a>
+                      ) : null}
+                      {repairLogAsset?.url ? (
+                        <a
+                          href={repairLogAsset.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-amber underline decoration-amber/30 underline-offset-4"
+                        >
+                          Repair log
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="grid gap-2 border border-white/10 bg-white/[0.02] p-2">
                 <p className="text-[10px] uppercase tracking-[0.14em] text-white/40">
                   Exports
@@ -445,7 +571,9 @@ export function ScanStudioPanel() {
                         </a>
                       ) : (
                         <span className="text-white/32">
-                          {exportItem.status === "failed" ? "failed" : "pending"}
+                          {exportItem.status === "failed"
+                            ? "failed"
+                            : "pending"}
                         </span>
                       )}
                     </div>
@@ -472,7 +600,9 @@ export function ScanStudioPanel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void navigator.clipboard?.writeText(scanJob.mobileUrl)}
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(scanJob.mobileUrl)
+                  }
                   className="h-9 border border-terminalBorder text-[11px] uppercase tracking-[0.12em] text-white/52 transition hover:border-white/20 hover:text-bone"
                 >
                   Copy Mobile Link

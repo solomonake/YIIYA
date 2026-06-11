@@ -64,14 +64,17 @@ export async function POST(request: NextRequest) {
     const qa_log = guardWarnings.length
       ? [...output.qa_log, ...guardWarnings]
       : output.qa_log;
+    const assetPlan = output.assetPlan;
 
     return withTrace(
       NextResponse.json({
-        summary: output.summary,
-        lane: output.lane,
-        destination: output.destination,
-        assetBrief: output.assetBrief,
-        routePlan: output.routePlan,
+        summary: assetPlan.summary,
+        lane: assetPlan.brief.lane,
+        destination: assetPlan.brief.destination,
+        assetPlan,
+        assetBrief: assetPlan.brief,
+        assetSummary: assetPlan.summary,
+        routePlan: assetPlan.routePlan,
         actions: safeActions,
         qa_log,
       }),

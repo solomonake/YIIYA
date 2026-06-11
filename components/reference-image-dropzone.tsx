@@ -1,10 +1,17 @@
 "use client";
 
-import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
-import { captureTimelineSnapshot } from "@/lib/timeline-snapshots";
-import { runYiiyaActions } from "@/lib/action-runner";
-import { useYiiyaStore, type ReferenceImage, type YiiyaAction } from "@/lib/store";
-import type { CreativeBrief } from "@/lib/creative-brief";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  useYiiyaStore,
+  type ReferenceImage,
+} from "@/lib/store";
+import { runTranscriptThroughYiiya } from "@/lib/use-speech-interpreter";
 
 type ExtractedPalette = {
   dominantColor: string;
@@ -76,11 +83,12 @@ async function extractPalette(dataUrl: string): Promise<ExtractedPalette> {
       const x = Math.min(width - 1, Math.floor(((col + 0.5) / 5) * width));
       const y = Math.min(height - 1, Math.floor(((row + 0.5) / 5) * height));
       const pixel = context.getImageData(x, y, 1, 1).data;
-      const r = pixel[0] ?? 0;
-      const g = pixel[1] ?? 0;
-      const b = pixel[2] ?? 0;
 
-      samples.push({ r, g, b });
+      samples.push({
+        r: pixel[0] ?? 0,
+        g: pixel[1] ?? 0,
+        b: pixel[2] ?? 0,
+      });
     }
   }
 
@@ -88,14 +96,14 @@ async function extractPalette(dataUrl: string): Promise<ExtractedPalette> {
     (acc, sample) => ({
       r: acc.r + sample.r,
       g: acc.g + sample.g,
-      b: acc.b + sample.b
+      b: acc.b + sample.b,
     }),
-    { r: 0, g: 0, b: 0 }
+    { r: 0, g: 0, b: 0 },
   );
   const dominant = {
     r: average.r / samples.length,
     g: average.g / samples.length,
-    b: average.b / samples.length
+    b: average.b / samples.length,
   };
   const brightness =
     dominant.r * 0.299 + dominant.g * 0.587 + dominant.b * 0.114;
@@ -103,7 +111,7 @@ async function extractPalette(dataUrl: string): Promise<ExtractedPalette> {
     saturation(sample.r, sample.g, sample.b) >
     saturation(best.r, best.g, best.b)
       ? sample
-      : best
+      : best,
   );
 
   const imageData = context.getImageData(0, 0, width, height).data;
@@ -140,7 +148,7 @@ async function extractPalette(dataUrl: string): Promise<ExtractedPalette> {
           x: minX / width,
           y: minY / height,
           width: (maxX - minX) / width,
-          height: (maxY - minY) / height
+          height: (maxY - minY) / height,
         }
       : { x: 0.18, y: 0.12, width: 0.64, height: 0.76 };
 
@@ -148,8 +156,11 @@ async function extractPalette(dataUrl: string): Promise<ExtractedPalette> {
     dominantColor: rgbToHex(dominant.r, dominant.g, dominant.b),
     accentCandidate: rgbToHex(accent.r, accent.g, accent.b),
     extractedMode: brightness < 128 ? "dark" : "light",
-    aspectRatio: Math.max(0.3, Math.min(3, silhouette.height / Math.max(0.1, silhouette.width))),
-    silhouette
+    aspectRatio: Math.max(
+      0.3,
+      Math.min(3, silhouette.height / Math.max(0.1, silhouette.width)),
+    ),
+    silhouette,
   };
 }
 
@@ -159,78 +170,29 @@ function readImageAsReference(file: File) {
     mediaType: string;
     name: string;
     dataUrl: string;
-  }>(
-    (resolve, reject) => {
-      const reader = new FileReader();
+  }>((resolve, reject) => {
+    const reader = new FileReader();
 
-      reader.onload = () => {
-        const result = reader.result;
+    reader.onload = () => {
+      const result = reader.result;
 
-        if (typeof result !== "string") {
-          reject(new Error("Unable to read image"));
-          return;
-        }
-
-        const [, base64 = ""] = result.split(",");
-        resolve({
-          base64,
-          mediaType: file.type || "image/png",
-          name: file.name,
-          dataUrl: result
-        });
-      };
-
-      reader.onerror = () => reject(new Error("Unable to read image"));
-      reader.readAsDataURL(file);
-    }
-  );
-}
-
-function isYiiyaActionArray(value: unknown): value is YiiyaAction[] {
-  return (
-    Array.isArray(value) &&
-    value.every((item) => {
-      if (!item || typeof item !== "object") {
-        return false;
+      if (typeof result !== "string") {
+        reject(new Error("Unable to read image"));
+        return;
       }
 
-      const action = item as { type?: unknown; payload?: unknown };
+      const [, base64 = ""] = result.split(",");
+      resolve({
+        base64,
+        mediaType: file.type || "image/png",
+        name: file.name,
+        dataUrl: result,
+      });
+    };
 
-      return typeof action.type === "string" && typeof action.payload === "object";
-    })
-  );
-}
-
-function isInterpretPayload(
-  value: unknown
-): value is { actions: YiiyaAction[]; qa_log?: string[] } {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const payload = value as { actions?: unknown; qa_log?: unknown };
-
-  return (
-    isYiiyaActionArray(payload.actions) &&
-    (payload.qa_log === undefined ||
-      (Array.isArray(payload.qa_log) &&
-        payload.qa_log.every((item) => typeof item === "string")))
-  );
-}
-
-function buildCurrentCanvasJson() {
-  const state = useYiiyaStore.getState();
-
-  return {
-    projectId: state.currentProjectId,
-    projectSlug: state.currentProjectSlug,
-    projectName: state.projectName,
-    selectedElementId: state.selectedElementId,
-    sections: state.sections,
-    sceneObjects: state.sceneObjects,
-    themeState: state.themeState,
-    layers: state.layers
-  };
+    reader.onerror = () => reject(new Error("Unable to read image"));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function ReferenceImageDropzone() {
@@ -238,189 +200,120 @@ export function ReferenceImageDropzone() {
   const [isScanning, setScanning] = useState(false);
   const dragDepthRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeLane = useYiiyaStore((state) => state.activeLane);
+  const setActiveLane = useYiiyaStore((state) => state.setActiveLane);
   const setReferenceImage = useYiiyaStore((state) => state.setReferenceImage);
   const setThemeState = useYiiyaStore((state) => state.setThemeState);
-  const canvasMode = useYiiyaStore((state) => state.canvasMode);
   const addLog = useYiiyaStore((state) => state.addLog);
-  const addActionLogs = useYiiyaStore((state) => state.addActionLogs);
-  const addMessage = useYiiyaStore((state) => state.addMessage);
   const morphBlob = useYiiyaStore((state) => state.morphBlob);
-  const setActiveBrief = useYiiyaStore((state) => state.setActiveBrief);
-  const creationGoal = useYiiyaStore((state) => state.creationGoal);
-  const starterPromptId = useYiiyaStore((state) => state.starterPromptId);
-  const scanJob = useYiiyaStore((state) => state.scanJob);
   const triggerLabel =
-    canvasMode === "WEB"
-      ? "↑ Website Shot"
-      : canvasMode === "3D"
-        ? "↑ Object Image"
-        : "↑ Reference";
+    activeLane === "cad"
+      ? "↑ CAD Reference"
+      : activeLane === "scan"
+        ? "↑ Mesh Reference"
+        : "↑ Model Reference";
 
-  const applyPalette = useCallback((extractedPalette: ExtractedPalette) => {
-    const foreground =
-      extractedPalette.extractedMode === "dark" ? "#FFFFFF" : "#000000";
+  const applyPalette = useCallback(
+    (extractedPalette: ExtractedPalette) => {
+      const foreground =
+        extractedPalette.extractedMode === "dark" ? "#FFFFFF" : "#000000";
 
-    setThemeState({
-      background: extractedPalette.dominantColor,
-      foreground,
-      mutedForeground:
-        extractedPalette.extractedMode === "dark"
-          ? "rgba(255, 255, 255, 0.68)"
-          : "rgba(0, 0, 0, 0.68)",
-      surface:
-        extractedPalette.extractedMode === "dark"
-          ? "rgba(255, 255, 255, 0.06)"
-          : "rgba(255, 255, 255, 0.72)",
-      border:
-        extractedPalette.extractedMode === "dark"
-          ? "rgba(255, 255, 255, 0.14)"
-          : "rgba(0, 0, 0, 0.14)",
-      primaryAccent: extractedPalette.accentCandidate,
-      palette: [
-        extractedPalette.dominantColor,
+      setThemeState({
+        background: extractedPalette.dominantColor,
         foreground,
-        extractedPalette.accentCandidate
-      ]
-    });
-    addLog("SYSTEM: Theme extracted from reference image — applying palette.");
-  }, [addLog, setThemeState]);
+        mutedForeground:
+          extractedPalette.extractedMode === "dark"
+            ? "rgba(255, 255, 255, 0.68)"
+            : "rgba(0, 0, 0, 0.68)",
+        surface:
+          extractedPalette.extractedMode === "dark"
+            ? "rgba(255, 255, 255, 0.06)"
+            : "rgba(255, 255, 255, 0.72)",
+        border:
+          extractedPalette.extractedMode === "dark"
+            ? "rgba(255, 255, 255, 0.14)"
+            : "rgba(0, 0, 0, 0.14)",
+        primaryAccent: extractedPalette.accentCandidate,
+        palette: [
+          extractedPalette.dominantColor,
+          foreground,
+          extractedPalette.accentCandidate,
+        ],
+      });
+      addLog(
+        "SYSTEM: Theme extracted from reference image — applying palette.",
+      );
+    },
+    [addLog, setThemeState],
+  );
 
-  const sendVisionInterpret = useCallback(async (
-    referenceImage: ReferenceImage,
-    imageMode: "web" | "3d"
-  ) => {
-    const { previewUrl: _previewUrl, ...serverReferenceImage } = referenceImage;
-    const transcript =
-      imageMode === "web"
-        ? "Generate a full landing page inspired by this reference image."
-        : "Analyze this reference image and reshape the blob toward its primary object.";
-    const currentCanvasJson = buildCurrentCanvasJson();
-    const response = await fetch("/api/interpret", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transcript,
-        activeElementId: useYiiyaStore.getState().selectedElementId,
-        currentScene: currentCanvasJson,
-        current_canvas_json: currentCanvasJson,
-        history: useYiiyaStore.getState().conversationHistory.slice(-5),
-        referenceImage: { ...serverReferenceImage, imageMode },
-        image_mode: imageMode,
-        creationGoal,
-        canvasMode,
-        starterPromptId,
-        scanJobId: scanJob?.id ?? null
-      })
-    });
+  const processImage = useCallback(
+    async (image: File) => {
+      setScanning(true);
 
-    if (!response.ok) {
-      throw new Error(`Vision request failed with ${response.status}`);
-    }
+      try {
+        const referenceImage = await readImageAsReference(image);
+        const extractedPalette = await extractPalette(referenceImage.dataUrl);
+        const resolvedLane = activeLane === "scan" ? "mesh" : activeLane;
+        const referencePayload: ReferenceImage = {
+          base64: referenceImage.base64,
+          mediaType: referenceImage.mediaType,
+          name: referenceImage.name,
+          previewUrl: referenceImage.dataUrl,
+          ...extractedPalette,
+          imageMode: "3d",
+        };
 
-    const payload: unknown = await response.json();
+        if (activeLane === "scan") {
+          addLog(
+            "[VISION]: Still images route into mesh or CAD generation, so Yiiya is switching back to mesh preview.",
+          );
+          setActiveLane("mesh");
+        }
 
-    if (!isInterpretPayload(payload)) {
-      throw new Error("Vision response was not an action payload");
-    }
+        setReferenceImage(referencePayload);
+        applyPalette(extractedPalette);
 
-    runYiiyaActions(payload.actions);
-    const briefPayload = payload as {
-      brief?: CreativeBrief | null;
-      fallbackPath?: string | null;
-    };
-    if (briefPayload.brief) {
-      setActiveBrief(briefPayload.brief, briefPayload.fallbackPath ?? null);
-    }
-    addActionLogs(payload.actions);
-    payload.qa_log?.forEach((log) => addLog(log));
-    addMessage({
-      role: "assistant",
-      content:
-        imageMode === "web"
-          ? "Generated image-inspired web layout."
-          : "Analyzed image geometry for 3D blob."
-    });
-    await captureTimelineSnapshot(
-      imageMode === "web" ? "reference web" : "reference 3d",
-      briefPayload.brief?.summary ??
-        (imageMode === "web"
-          ? "Generated image-inspired web layout."
-          : "Analyzed image geometry for 3D blob.")
-    );
-  }, [
-    addActionLogs,
-    addLog,
-    addMessage,
-    canvasMode,
-    creationGoal,
-    scanJob,
-    setActiveBrief,
-    starterPromptId
-  ]);
+        morphBlob({
+          targetShape:
+            extractedPalette.aspectRatio > 1.45
+              ? "bottle"
+              : extractedPalette.aspectRatio < 0.78
+                ? "cube"
+                : "organic",
+          distort: 0.38,
+          speed: 2.15,
+          aspectRatio: extractedPalette.aspectRatio,
+          morphProgress: 0.55,
+          material: "glass",
+          silhouette: extractedPalette.silhouette,
+        });
 
-  const processImage = useCallback(async (image: File) => {
-    setScanning(true);
-    window.setTimeout(() => {
-      setScanning(false);
-      addLog("[VISION]: Analysis complete.");
-    }, 1500);
+        addLog(
+          resolvedLane === "cad"
+            ? "[VISION]: CAD lane — extracting hard-surface intent from the reference."
+            : "[VISION]: Mesh lane — extracting form and material intent from the reference.",
+        );
 
-    const referenceImage = await readImageAsReference(image);
-    const extractedPalette = await extractPalette(referenceImage.dataUrl);
-    const mode = canvasMode;
-    const referencePayload: ReferenceImage = {
-      base64: referenceImage.base64,
-      mediaType: referenceImage.mediaType,
-      name: referenceImage.name,
-      previewUrl: referenceImage.dataUrl,
-      ...extractedPalette,
-      imageMode: mode === "3D" ? "3d" : mode === "WEB" ? "web" : "hybrid"
-    };
-
-    setReferenceImage(referencePayload);
-
-    morphBlob({
-      targetShape:
-        extractedPalette.aspectRatio > 1.45
-          ? "bottle"
-          : extractedPalette.aspectRatio < 0.78
-            ? "cube"
-            : "organic",
-      distort: 0.38,
-      speed: 2.15,
-      aspectRatio: extractedPalette.aspectRatio,
-      morphProgress: 0.55,
-      material: "glass",
-      silhouette: extractedPalette.silhouette
-    });
-
-    if (mode === "WEB") {
-      addLog("[VISION]: Web mode — extracting design DNA...");
-      applyPalette(extractedPalette);
-      await sendVisionInterpret(referencePayload, "web");
-      return;
-    }
-
-    if (mode === "3D") {
-      addLog("[VISION]: 3D mode — analyzing object geometry...");
-      await sendVisionInterpret(referencePayload, "3d");
-      return;
-    }
-
-    addLog("[VISION]: Hybrid mode — applying to both layers...");
-    applyPalette(extractedPalette);
-    await Promise.all([
-      sendVisionInterpret(referencePayload, "web"),
-      sendVisionInterpret(referencePayload, "3d")
-    ]);
-  }, [
-    addLog,
-    applyPalette,
-    canvasMode,
-    sendVisionInterpret,
-    setReferenceImage,
-    morphBlob
-  ]);
+        await runTranscriptThroughYiiya(
+          resolvedLane === "cad"
+            ? "Turn this reference image into a bounded CAD-ready hard-surface concept with named parts and editable exports."
+            : "Turn this reference image into a clean 3D asset with a fast preview and Blender-ready handoff.",
+        );
+        addLog("[VISION]: Analysis complete.");
+      } finally {
+        setScanning(false);
+      }
+    },
+    [
+      activeLane,
+      addLog,
+      applyPalette,
+      morphBlob,
+      setActiveLane,
+      setReferenceImage,
+    ],
+  );
 
   useEffect(() => {
     const handleDragEnter = (event: DragEvent) => {
@@ -465,7 +358,7 @@ export function ReferenceImageDropzone() {
       setDraggingImage(false);
 
       const image = Array.from(event.dataTransfer?.files ?? []).find((file) =>
-        file.type.startsWith("image/")
+        file.type.startsWith("image/"),
       );
 
       if (!image) {
@@ -478,7 +371,7 @@ export function ReferenceImageDropzone() {
         addLog(`[SYSTEM]: Reference image attached: ${image.name}.`);
       } catch (error) {
         addLog(
-          `[SYSTEM]: ${error instanceof Error ? error.message : "Unable to read image."}`
+          `[SYSTEM]: ${error instanceof Error ? error.message : "Unable to read image."}`,
         );
       }
     };
@@ -494,11 +387,11 @@ export function ReferenceImageDropzone() {
       window.removeEventListener("dragleave", handleDragLeave);
       window.removeEventListener("drop", handleDrop);
     };
-  }, [addLog, canvasMode, processImage]);
+  }, [addLog, processImage]);
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const image = Array.from(event.target.files ?? []).find((file) =>
-      file.type.startsWith("image/")
+      file.type.startsWith("image/"),
     );
 
     event.target.value = "";
@@ -512,7 +405,7 @@ export function ReferenceImageDropzone() {
       addLog(`[SYSTEM]: Reference image attached: ${image.name}.`);
     } catch (error) {
       addLog(
-        `[SYSTEM]: ${error instanceof Error ? error.message : "Unable to read image."}`
+        `[SYSTEM]: ${error instanceof Error ? error.message : "Unable to read image."}`,
       );
     }
   };

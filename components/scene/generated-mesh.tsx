@@ -7,8 +7,9 @@
  *   - LOD switching when /low, /mid, /high variants are available.
  *   - Suspense fallback (renders nothing — particle dissolve covers the gap).
  *
- * Drei's useGLTF auto-attaches DRACOLoader/MeshoptDecoder when imported with
- * its `.preload` static — we just preload once on first render.
+ * Drei's useGLTF auto-attaches DRACOLoader/MeshoptDecoder for supported GLB
+ * URLs. Avoid synthetic data URL preloads here; they trip CSP and do not warm a
+ * real asset path.
  */
 import { useGLTF, Detailed } from "@react-three/drei";
 import { useEffect, useMemo } from "react";
@@ -86,10 +87,4 @@ function SingleGlb({
   }, [scene, promoteTransmission]);
 
   return <primitive object={scene} scale={scale} position={position} />;
-}
-
-// Preload the loaders so the first GLB doesn't pay decoder-init cost.
-// Safe to call multiple times — drei dedupes.
-if (typeof window !== "undefined") {
-  useGLTF.preload("data:model/gltf-binary;base64,Z2xURg=="); // no-op preload
 }

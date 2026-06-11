@@ -5,6 +5,11 @@ import {
   inferSpatialAssetFamily,
   type CreativeBrief
 } from "@/lib/creative-brief";
+import {
+  compileAssetPlan,
+  type AssetLane,
+  type AssetPlan
+} from "@/lib/asset-compiler";
 import { compileLocalIntent } from "@/lib/local-intent-compiler";
 import type { YiiyaAction } from "@/lib/store";
 import type { CursorTarget } from "@/lib/scene/types";
@@ -36,6 +41,7 @@ export type InterpretRequestBody = {
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   referenceImage?: ReferenceImageInput | null;
   image_mode?: "web" | "3d" | "hybrid";
+  activeLane?: AssetLane | null;
   partial?: boolean;
   strategyMode?: boolean;
   creationGoal?: "web" | "spatial" | "scan";
@@ -64,6 +70,7 @@ export type PipelineEvent =
       model: string;
       log: string;
       brief?: CreativeBrief | null;
+      assetPlan?: AssetPlan | null;
       confidence?: number;
       fallbackPath?: string | null;
     }
@@ -76,6 +83,7 @@ export type PipelineEvent =
       actions: YiiyaAction[];
       qa_log: string[];
       brief?: CreativeBrief | null;
+      assetPlan?: AssetPlan | null;
       confidence?: number;
       fallbackPath?: string | null;
     }
@@ -161,6 +169,38 @@ function requireEnv(name: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeAssetLane(value: unknown): AssetLane | null {
+  return value === "mesh" || value === "cad" || value === "scan" ? value : null;
+}
+
+function activeLaneFromBody(body: InterpretRequestBody) {
+  return (
+    normalizeAssetLane(body.activeLane) ??
+    (body.creationGoal === "scan" ? "scan" : null)
+  );
+}
+
+function sceneObjectCountFromBody(body: InterpretRequestBody) {
+  const canvas = isRecord(body.current_canvas_json)
+    ? body.current_canvas_json
+    : isRecord(body.currentScene)
+      ? body.currentScene
+      : null;
+  const sceneObjects = canvas?.sceneObjects;
+
+  return Array.isArray(sceneObjects) ? sceneObjects.length : 0;
+}
+
+function assetPlanFromBody(body: InterpretRequestBody) {
+  return compileAssetPlan({
+    transcript: body.transcript,
+    activeLane: activeLaneFromBody(body),
+    hasReferenceImage: Boolean(body.referenceImage),
+    hasScanJob: Boolean(body.scanJobId || body.scanSessionId),
+    sceneObjectCount: sceneObjectCountFromBody(body)
+  });
 }
 
 export function isInterpretRequest(value: unknown): value is InterpretRequestBody {
@@ -1067,6 +1107,7 @@ Ask exactly one short, targeted clarifying question to gather missing context (l
     }
 
     const { brief } = await runCreativeBrief(body, intent, researchBrief);
+    const assetPlan = assetPlanFromBody(body);
     const routerLog = `[ROUTER]: Intent classified as ${intent} → routing to ${modelForIntent(intent)} | brief ${Math.round(brief.confidence * 100)}% ${brief.fallbackPath}.`;
 
     yield {
@@ -1075,6 +1116,7 @@ Ask exactly one short, targeted clarifying question to gather missing context (l
       model: modelForIntent(intent),
       log: routerLog,
       brief,
+      assetPlan,
       confidence: brief.confidence,
       fallbackPath: brief.fallbackPath
     };
@@ -1085,6 +1127,7 @@ Ask exactly one short, targeted clarifying question to gather missing context (l
         actions: [],
         qa_log: ["[CONDUCTOR]: Speculative pass complete."],
         brief,
+        assetPlan,
         confidence: brief.confidence,
         fallbackPath: brief.fallbackPath
       };
@@ -1119,6 +1162,7 @@ Ask exactly one short, targeted clarifying question to gather missing context (l
       actions: criticOutput.actions,
       qa_log: criticOutput.qa_log,
       brief,
+      assetPlan,
       confidence: brief.confidence,
       fallbackPath: brief.fallbackPath
     };
@@ -1136,6 +1180,7 @@ Ask exactly one short, targeted clarifying question to gather missing context (l
       }),
       fallbackPath: "local-compiler" as const
     };
+    const fallbackAssetPlan = assetPlanFromBody(body);
 
     if (fallbackActions.length > 0) {
       yield {
@@ -1150,6 +1195,7 @@ Ask exactly one short, targeted clarifying question to gather missing context (l
         actions: fallbackActions,
         qa_log: ["[QA]: Critic skipped — recovery compiler output."],
         brief: fallbackBrief,
+        assetPlan: fallbackAssetPlan,
         confidence: fallbackBrief.confidence,
         fallbackPath: fallbackBrief.fallbackPath
       };
@@ -1164,6 +1210,7 @@ export async function runInterpretOnce(body: InterpretRequestBody) {
   let actions: YiiyaAction[] = [];
   const qa_log: string[] = [];
   let brief: CreativeBrief | null = null;
+  let assetPlan: AssetPlan | null = null;
   let confidence = 0;
   let fallbackPath: string | null = null;
   const events: PipelineEvent[] = [];
@@ -1174,6 +1221,7 @@ export async function runInterpretOnce(body: InterpretRequestBody) {
     if (event.type === "router") {
       qa_log.push(event.log);
       brief = event.brief ?? brief;
+      assetPlan = event.assetPlan ?? assetPlan;
       confidence = event.confidence ?? confidence;
       fallbackPath = event.fallbackPath ?? fallbackPath;
     }
@@ -1197,6 +1245,7 @@ export async function runInterpretOnce(body: InterpretRequestBody) {
     if (event.type === "done") {
       actions = event.actions;
       brief = event.brief ?? brief;
+      assetPlan = event.assetPlan ?? assetPlan;
       confidence = event.confidence ?? confidence;
       fallbackPath = event.fallbackPath ?? fallbackPath;
     }
@@ -1206,5 +1255,20 @@ export async function runInterpretOnce(body: InterpretRequestBody) {
     }
   }
 
-  return { actions, qa_log, events, brief, confidence, fallbackPath };
+  const resolvedAssetPlan = assetPlan ?? assetPlanFromBody(body);
+
+  return {
+    actions,
+    qa_log,
+    events,
+    brief,
+    assetPlan: resolvedAssetPlan,
+    summary: resolvedAssetPlan.summary,
+    lane: resolvedAssetPlan.brief.lane,
+    destination: resolvedAssetPlan.brief.destination,
+    assetBrief: resolvedAssetPlan.brief,
+    routePlan: resolvedAssetPlan.routePlan,
+    confidence,
+    fallbackPath
+  };
 }

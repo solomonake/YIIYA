@@ -6,19 +6,19 @@ import {
   type PropsWithChildren,
   useEffect,
   useRef,
-  useState
+  useState,
 } from "react";
 import { motion } from "framer-motion";
 import {
   compileYiiyaTheme,
   mergeYiiyaTheme,
   type CompiledYiiyaTheme,
-  type YiiyaTheme
+  type YiiyaTheme,
 } from "@/lib/designSystem";
 import {
   type SectionContent,
   type YiiyaSection,
-  useYiiyaStore
+  useYiiyaStore,
 } from "@/lib/store";
 
 type SelectableProps = PropsWithChildren<{
@@ -84,7 +84,11 @@ function colorBrightness(color: string) {
   return r * 0.299 + g * 0.587 + b * 0.114;
 }
 
-function textFrom(content: Record<string, unknown>, keys: string[], fallback: string) {
+function textFrom(
+  content: Record<string, unknown>,
+  keys: string[],
+  fallback: string,
+) {
   for (const key of keys) {
     const value = content[key];
 
@@ -99,20 +103,23 @@ function textFrom(content: Record<string, unknown>, keys: string[], fallback: st
 function listFrom(
   content: SectionContent,
   key: string,
-  fallback: string[]
+  fallback: string[],
 ): FeatureItem[] {
   const value = content[key];
 
   if (!Array.isArray(value)) {
     return fallback.map((item) => ({
       heading: item,
-      subtext: "Generated from your voice prompt."
+      subtext: "Generated from your voice prompt.",
     }));
   }
 
   return value.map((item) => {
     if (typeof item === "string" || typeof item === "number") {
-      return { heading: String(item), subtext: "Generated from your voice prompt." };
+      return {
+        heading: String(item),
+        subtext: "Generated from your voice prompt.",
+      };
     }
 
     if (item && typeof item === "object") {
@@ -122,8 +129,8 @@ function listFrom(
         subtext: textFrom(
           record,
           ["subtext", "description", "body", "text"],
-          "Generated from your voice prompt."
-        )
+          "Generated from your voice prompt.",
+        ),
       };
     }
 
@@ -134,7 +141,7 @@ function listFrom(
 function stringListFrom(
   content: SectionContent,
   key: string,
-  fallback: string[]
+  fallback: string[],
 ) {
   const value = content[key];
 
@@ -144,7 +151,9 @@ function stringListFrom(
 
   return value
     .map((item) =>
-      typeof item === "string" || typeof item === "number" ? String(item) : null
+      typeof item === "string" || typeof item === "number"
+        ? String(item)
+        : null,
     )
     .filter((item): item is string => Boolean(item));
 }
@@ -152,7 +161,7 @@ function stringListFrom(
 function recordsFrom(
   content: SectionContent,
   key: string,
-  fallback: Array<Record<string, unknown>>
+  fallback: Array<Record<string, unknown>>,
 ) {
   const value = content[key];
 
@@ -164,7 +173,7 @@ function recordsFrom(
     .map((item) =>
       item && typeof item === "object" && !Array.isArray(item)
         ? (item as Record<string, unknown>)
-        : null
+        : null,
     )
     .filter((item): item is Record<string, unknown> => Boolean(item));
 }
@@ -181,7 +190,9 @@ function visualImageUrl(content: SectionContent, fallback?: string) {
   const visual = objectFrom(content, "visual");
   const imageUrl = visual.imageUrl;
 
-  return typeof imageUrl === "string" && imageUrl.length > 0 ? imageUrl : fallback;
+  return typeof imageUrl === "string" && imageUrl.length > 0
+    ? imageUrl
+    : fallback;
 }
 
 function Selectable({
@@ -190,13 +201,17 @@ function Selectable({
   className,
   style,
   type,
-  children
+  children,
 }: SelectableProps) {
   const selectedElementId = useYiiyaStore((state) => state.selectedElementId);
   const selectedElements = useYiiyaStore((state) => state.selectedElements);
   const hoveredElementId = useYiiyaStore((state) => state.hoveredElementId);
-  const setSelectedElementId = useYiiyaStore((state) => state.setSelectedElementId);
-  const setSelectedElements = useYiiyaStore((state) => state.setSelectedElements);
+  const setSelectedElementId = useYiiyaStore(
+    (state) => state.setSelectedElementId,
+  );
+  const setSelectedElements = useYiiyaStore(
+    (state) => state.setSelectedElements,
+  );
   const isHovered = hoveredElementId === id;
   const isSelected = selectedElementId === id || selectedElements.includes(id);
   const Component = as;
@@ -273,7 +288,9 @@ function sectionTheme(section: YiiyaSection, themeState: YiiyaTheme) {
     sectionOverrides.primaryAccent = accent;
   }
 
-  const compiled = compileYiiyaTheme(mergeYiiyaTheme(themeState, sectionOverrides));
+  const compiled = compileYiiyaTheme(
+    mergeYiiyaTheme(themeState, sectionOverrides),
+  );
   const backgroundBrightness = colorBrightness(compiled.background);
   const foregroundBrightness = colorBrightness(compiled.foreground);
 
@@ -288,7 +305,7 @@ function sectionTheme(section: YiiyaSection, themeState: YiiyaTheme) {
       mutedForeground:
         backgroundBrightness < 128
           ? "rgba(247, 242, 232, 0.68)"
-          : "rgba(5, 5, 5, 0.64)"
+          : "rgba(5, 5, 5, 0.64)",
     };
   }
 
@@ -308,7 +325,7 @@ function sectionShellStyle(theme: CompiledYiiyaTheme): CSSProperties {
     "--yiiya-radius": `${theme.borderRadius}px`,
     backgroundColor: "var(--yiiya-bg)",
     color: "var(--yiiya-fg)",
-    padding: "var(--yiiya-section-y) var(--yiiya-section-x)"
+    padding: "var(--yiiya-section-y) var(--yiiya-section-x)",
   } as CSSProperties;
 }
 
@@ -324,7 +341,7 @@ function editorialCtaStyle(theme: CompiledYiiyaTheme): CSSProperties {
     color: "var(--yiiya-bg)",
     fontFamily: "inherit",
     fontSize: fluid(13, 1.1, 15),
-    padding: `${theme.spacing.sm}px ${theme.spacing.md}px`
+    padding: `${theme.spacing.sm}px ${theme.spacing.md}px`,
   };
 }
 
@@ -332,7 +349,7 @@ function ButtonLike({
   id,
   children,
   theme,
-  variant = "filled"
+  variant = "filled",
 }: PropsWithChildren<{
   id: string;
   theme: CompiledYiiyaTheme;
@@ -347,10 +364,11 @@ function ButtonLike({
       style={{
         borderRadius: theme.borderRadius,
         border: `1px solid ${theme.primaryAccent}`,
-        backgroundColor: variant === "filled" ? theme.primaryAccent : "transparent",
+        backgroundColor:
+          variant === "filled" ? theme.primaryAccent : "transparent",
         color: variant === "filled" ? theme.background : theme.primaryAccent,
         fontSize: fluid(16, 1.3, 18),
-        padding: `${theme.spacing.sm}px ${theme.spacing.md}px`
+        padding: `${theme.spacing.sm}px ${theme.spacing.md}px`,
       }}
     >
       {children}
@@ -361,7 +379,7 @@ function ButtonLike({
 function InteractiveBlock({
   id,
   content,
-  theme
+  theme,
 }: {
   id: string;
   content: SectionContent;
@@ -391,7 +409,7 @@ function InteractiveBlock({
       style={{
         borderColor: theme.border,
         backgroundColor: theme.surface,
-        padding: theme.spacing.md
+        padding: theme.spacing.md,
       }}
     >
       <Selectable
@@ -400,7 +418,7 @@ function InteractiveBlock({
         style={{
           color: theme.primaryAccent,
           fontSize: fluid(11, 1, 13),
-          letterSpacing: "0.16em"
+          letterSpacing: "0.16em",
         }}
       >
         {label}
@@ -424,7 +442,9 @@ function InteractiveBlock({
             <button
               key={option}
               type="button"
-              onClick={() => setValue(option === "Calm" ? 24 : option === "Sharp" ? 62 : 92)}
+              onClick={() =>
+                setValue(option === "Calm" ? 24 : option === "Sharp" ? 62 : 92)
+              }
               className="h-8 border border-terminalBorder text-[11px] uppercase tracking-[0.12em] text-white/55 transition hover:border-amber/70 hover:text-amber"
             >
               {option}
@@ -439,16 +459,28 @@ function InteractiveBlock({
 function NavbarSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
   const projectName = useYiiyaStore((state) => state.projectName);
-  const brand = textFrom(section.content, ["brand", "heading", "title"], projectName);
-  const links = stringListFrom(section.content, "links", ["Work", "About", "Contact"]);
-  const cta = textFrom(section.content, ["cta", "button", "buttonText"], "Start");
+  const brand = textFrom(
+    section.content,
+    ["brand", "heading", "title"],
+    projectName,
+  );
+  const links = stringListFrom(section.content, "links", [
+    "Work",
+    "About",
+    "Contact",
+  ]);
+  const cta = textFrom(
+    section.content,
+    ["cta", "button", "buttonText"],
+    "Start",
+  );
 
   return (
     <Selectable
@@ -460,7 +492,7 @@ function NavbarSection({
         color: theme.foreground,
         borderColor: theme.border,
         gap: theme.spacing.md,
-        padding: `${theme.spacing.sm}px ${theme.spacing.sectionX}px`
+        padding: `${theme.spacing.sm}px ${theme.spacing.sectionX}px`,
       }}
     >
       <Selectable
@@ -479,7 +511,10 @@ function NavbarSection({
           <Selectable
             key={`${link}-${linkIndex}`}
             id={`navbar-link-${index}-${linkIndex + 1}`}
-            style={{ color: theme.mutedForeground, fontSize: fluid(16, 1.3, 18) }}
+            style={{
+              color: theme.mutedForeground,
+              fontSize: fluid(16, 1.3, 18),
+            }}
           >
             {link}
           </Selectable>
@@ -495,31 +530,43 @@ function NavbarSection({
 function HeroSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const referencePreviewUrl = useYiiyaStore((state) => state.referenceImage?.previewUrl);
-  const heading = textFrom(section.content, ["heading", "title"], "Build by speaking.");
+  const referencePreviewUrl = useYiiyaStore(
+    (state) => state.referenceImage?.previewUrl,
+  );
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Build by speaking.",
+  );
   const eyebrow = textFrom(section.content, ["eyebrow", "kicker"], "");
   const subtext = textFrom(
     section.content,
     ["subtext", "subtitle", "body", "description"],
-    "Create websites and 3D scenes with plain language."
+    "Create websites and 3D scenes with plain language.",
   );
-  const cta = textFrom(section.content, ["cta", "button", "buttonText"], "Start creating");
+  const cta = textFrom(
+    section.content,
+    ["cta", "button", "buttonText"],
+    "Start creating",
+  );
   const variant = section.layoutVariant ?? "CENTERED_IMPACT";
   const imageUrl = visualImageUrl(section.content, referencePreviewUrl);
   const visual = objectFrom(section.content, "visual");
   const overlay =
-    typeof visual.overlay === "number" ? Math.max(0.25, Math.min(0.82, visual.overlay)) : 0.58;
+    typeof visual.overlay === "number"
+      ? Math.max(0.25, Math.min(0.82, visual.overlay))
+      : 0.58;
   const heroBackground = imageUrl
     ? {
         backgroundImage: `linear-gradient(90deg, rgba(5,5,5,${overlay}) 0%, rgba(5,5,5,${Math.max(0.28, overlay - 0.22)}) 45%, rgba(5,5,5,0.18) 100%), url(${imageUrl})`,
         backgroundSize: "cover",
-        backgroundPosition: "center"
+        backgroundPosition: "center",
       }
     : { background: "var(--yiiya-bg)" };
 
@@ -534,7 +581,7 @@ function HeroSection({
           ...heroBackground,
           gap: 80,
           paddingTop: 120,
-          paddingBottom: 80
+          paddingBottom: 80,
         }}
       >
         <Selectable id={`hero-copy-${index}`} className="self-center">
@@ -545,7 +592,7 @@ function HeroSection({
               style={{
                 color: "var(--yiiya-accent)",
                 fontSize: fluid(11, 1, 13),
-                letterSpacing: "0.16em"
+                letterSpacing: "0.16em",
               }}
             >
               {eyebrow}
@@ -559,7 +606,7 @@ function HeroSection({
               fontSize: fluid(60, 7, 80),
               fontWeight: 800,
               lineHeight: 0.9,
-              letterSpacing: "-0.03em"
+              letterSpacing: "-0.03em",
             }}
           >
             {heading}
@@ -573,7 +620,7 @@ function HeroSection({
               color: "var(--yiiya-muted)",
               fontSize: fluid(16, 1.6, 18),
               fontWeight: 300,
-              maxWidth: 480
+              maxWidth: 480,
             }}
           >
             {subtext}
@@ -598,7 +645,7 @@ function HeroSection({
             fontSize: fluid(13, 1.2, 15),
             backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
             backgroundSize: "cover",
-            backgroundPosition: "center"
+            backgroundPosition: "center",
           }}
         >
           {imageUrl ? (
@@ -627,7 +674,7 @@ function HeroSection({
             '"headline headline visual" "stat1 stat2 visual" "cta cta visual"',
           gridTemplateColumns: "1.1fr 0.9fr 1fr",
           gridTemplateRows: "auto minmax(130px, 0.6fr) auto",
-          gap: 16
+          gap: 16,
         }}
       >
         <Selectable
@@ -636,7 +683,7 @@ function HeroSection({
           style={{
             gridArea: "headline",
             borderColor: "var(--yiiya-border)",
-            padding: theme.spacing.lg
+            padding: theme.spacing.lg,
           }}
         >
           <Selectable
@@ -646,7 +693,7 @@ function HeroSection({
               fontSize: fluid(56, 8, 104),
               fontWeight: 800,
               lineHeight: 0.9,
-              letterSpacing: "-0.03em"
+              letterSpacing: "-0.03em",
             }}
           >
             {heading}
@@ -654,7 +701,7 @@ function HeroSection({
         </Selectable>
         {[
           ["4x", "faster drafts", "stat1"],
-          ["11", "section types", "stat2"]
+          ["11", "section types", "stat2"],
         ].map(([value, label, area], statIndex) => (
           <Selectable
             key={value}
@@ -663,7 +710,7 @@ function HeroSection({
             style={{
               gridArea: area,
               borderColor: "var(--yiiya-border)",
-              padding: theme.spacing.md
+              padding: theme.spacing.md,
             }}
           >
             <Selectable
@@ -673,7 +720,7 @@ function HeroSection({
                 color: "var(--yiiya-accent)",
                 fontSize: fluid(36, 4, 56),
                 fontWeight: 800,
-                lineHeight: 1
+                lineHeight: 1,
               }}
             >
               {value}
@@ -684,7 +731,7 @@ function HeroSection({
               style={{
                 color: "var(--yiiya-muted)",
                 fontSize: fluid(13, 1.2, 16),
-                marginTop: theme.spacing.xs
+                marginTop: theme.spacing.xs,
               }}
             >
               {label}
@@ -702,7 +749,7 @@ function HeroSection({
             fontSize: fluid(13, 1.2, 15),
             backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
             backgroundSize: "cover",
-            backgroundPosition: "center"
+            backgroundPosition: "center",
           }}
         >
           {imageUrl ? "" : "[ VISUAL ]"}
@@ -713,18 +760,24 @@ function HeroSection({
           style={{
             gridArea: "cta",
             borderColor: "var(--yiiya-border)",
-            padding: theme.spacing.lg
+            padding: theme.spacing.lg,
           }}
         >
           <Selectable
             as="p"
             id={`hero-subtext-${index}`}
             className="leading-7"
-            style={{ color: "var(--yiiya-muted)", fontSize: fluid(16, 1.4, 18) }}
+            style={{
+              color: "var(--yiiya-muted)",
+              fontSize: fluid(16, 1.4, 18),
+            }}
           >
             {subtext}
           </Selectable>
-          <Selectable id={`hero-cta-wrap-${index}`} style={{ marginTop: theme.spacing.md }}>
+          <Selectable
+            id={`hero-cta-wrap-${index}`}
+            style={{ marginTop: theme.spacing.md }}
+          >
             <Selectable
               as="button"
               id={`hero-cta-${index}`}
@@ -754,7 +807,7 @@ function HeroSection({
             style={{
               color: "var(--yiiya-accent)",
               fontSize: fluid(11, 1, 13),
-              letterSpacing: "0.16em"
+              letterSpacing: "0.16em",
             }}
           >
             {eyebrow}
@@ -767,7 +820,7 @@ function HeroSection({
             fontSize: "clamp(72px, 10vw, 140px)",
             fontWeight: 800,
             lineHeight: 0.9,
-            letterSpacing: "-0.03em"
+            letterSpacing: "-0.03em",
           }}
         >
           {heading}
@@ -781,7 +834,7 @@ function HeroSection({
             color: "var(--yiiya-muted)",
             fontSize: fluid(16, 1.5, 20),
             fontWeight: 300,
-            maxWidth: 480
+            maxWidth: 480,
           }}
         >
           {subtext}
@@ -804,17 +857,21 @@ function HeroSection({
 function AboutSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const heading = textFrom(section.content, ["heading", "title"], "Designed for fast iteration.");
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Designed for fast iteration.",
+  );
   const subtext = textFrom(
     section.content,
     ["subtext", "body", "description"],
-    "Describe the structure, mood, and details you want. Yiiya turns intent into editable website sections."
+    "Describe the structure, mood, and details you want. Yiiya turns intent into editable website sections.",
   );
 
   return (
@@ -839,7 +896,7 @@ function AboutSection({
           style={{
             marginTop: theme.spacing.md,
             color: theme.mutedForeground,
-            fontSize: fluid(16, 1.3, 18)
+            fontSize: fluid(16, 1.3, 18),
           }}
         >
           {subtext}
@@ -851,7 +908,7 @@ function AboutSection({
         style={{
           borderRadius: theme.borderRadius,
           borderColor: theme.border,
-          backgroundColor: theme.surface
+          backgroundColor: theme.surface,
         }}
       />
     </Selectable>
@@ -861,17 +918,21 @@ function AboutSection({
 function FeaturesSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const heading = textFrom(section.content, ["heading", "title"], "Everything stays editable.");
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Everything stays editable.",
+  );
   const features = listFrom(section.content, "features", [
     "Voice instructions",
     "Live sections",
-    "3D-ready canvas"
+    "3D-ready canvas",
   ]);
   const variant = section.layoutVariant ?? "FEATURES_GRID";
 
@@ -897,45 +958,51 @@ function FeaturesSection({
         }
         style={{ marginTop: theme.spacing.lg, gap: theme.spacing.md }}
       >
-        {features.slice(0, variant === "FEATURES_HORIZONTAL" ? 6 : 3).map((feature, featureIndex) => (
-          <Selectable
-            key={`${feature.heading}-${featureIndex}`}
-            id={`feature-card-${index}-${featureIndex + 1}`}
-            className="min-h-[180px] shrink-0 border"
-            style={{
-              width: variant === "FEATURES_HORIZONTAL" ? 320 : undefined,
-              borderRadius: theme.borderRadius,
-              borderColor: theme.border,
-              padding: theme.spacing.md,
-              backgroundColor: theme.surface
-            }}
-          >
+        {features
+          .slice(0, variant === "FEATURES_HORIZONTAL" ? 6 : 3)
+          .map((feature, featureIndex) => (
             <Selectable
-              as="h2"
-              id={`feature-title-${index}-${featureIndex + 1}`}
+              key={`${feature.heading}-${featureIndex}`}
+              id={`feature-card-${index}-${featureIndex + 1}`}
+              className="min-h-[180px] shrink-0 border"
               style={{
-                fontSize: theme.type.body * 1.22,
-                fontWeight: theme.fontWeight
+                width: variant === "FEATURES_HORIZONTAL" ? 320 : undefined,
+                borderRadius: theme.borderRadius,
+                borderColor: theme.border,
+                padding: theme.spacing.md,
+                backgroundColor: theme.surface,
               }}
             >
-              {feature.heading}
+              <Selectable
+                as="h2"
+                id={`feature-title-${index}-${featureIndex + 1}`}
+                style={{
+                  fontSize: theme.type.body * 1.22,
+                  fontWeight: theme.fontWeight,
+                }}
+              >
+                {feature.heading}
+              </Selectable>
+              <Selectable
+                as="p"
+                id={`feature-subtext-${index}-${featureIndex + 1}`}
+                className="leading-6"
+                style={{
+                  marginTop: theme.spacing.sm,
+                  color: theme.mutedForeground,
+                  fontSize: fluid(16, 1.3, 18),
+                }}
+              >
+                {feature.subtext}
+              </Selectable>
             </Selectable>
-            <Selectable
-              as="p"
-              id={`feature-subtext-${index}-${featureIndex + 1}`}
-              className="leading-6"
-              style={{
-                marginTop: theme.spacing.sm,
-                color: theme.mutedForeground,
-                fontSize: fluid(16, 1.3, 18)
-              }}
-            >
-              {feature.subtext}
-            </Selectable>
-          </Selectable>
-        ))}
+          ))}
       </Selectable>
-      <InteractiveBlock id={`features-${index}`} content={section.content} theme={theme} />
+      <InteractiveBlock
+        id={`features-${index}`}
+        content={section.content}
+        theme={theme}
+      />
     </Selectable>
   );
 }
@@ -943,17 +1010,21 @@ function FeaturesSection({
 function ServicesSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const heading = textFrom(section.content, ["heading", "title"], "Services built for momentum.");
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Services built for momentum.",
+  );
   const services = listFrom(section.content, "services", [
     "Launch strategy",
     "Visual system",
-    "Conversion page"
+    "Conversion page",
   ]);
 
   return (
@@ -983,7 +1054,7 @@ function ServicesSection({
               borderColor: theme.border,
               borderRadius: theme.borderRadius,
               padding: theme.spacing.lg,
-              backgroundColor: theme.surface
+              backgroundColor: theme.surface,
             }}
           >
             <Selectable
@@ -993,7 +1064,7 @@ function ServicesSection({
                 width: theme.spacing.lg,
                 height: theme.spacing.lg,
                 borderColor: theme.primaryAccent,
-                borderRadius: Math.max(2, theme.borderRadius * 0.35)
+                borderRadius: Math.max(2, theme.borderRadius * 0.35),
               }}
             />
             <Selectable
@@ -1002,7 +1073,7 @@ function ServicesSection({
               style={{
                 marginTop: theme.spacing.md,
                 fontSize: theme.type.body * 1.2,
-                fontWeight: theme.fontWeight
+                fontWeight: theme.fontWeight,
               }}
             >
               {service.heading}
@@ -1014,7 +1085,7 @@ function ServicesSection({
               style={{
                 marginTop: theme.spacing.sm,
                 color: theme.mutedForeground,
-                fontSize: fluid(16, 1.3, 18)
+                fontSize: fluid(16, 1.3, 18),
               }}
             >
               {service.subtext}
@@ -1029,7 +1100,7 @@ function ServicesSection({
 function MetricsSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
@@ -1039,7 +1110,7 @@ function MetricsSection({
     { value: "2,400+", label: "Projects created" },
     { value: "18k", label: "Voice edits" },
     { value: "96%", label: "Faster drafts" },
-    { value: "11", label: "Section types" }
+    { value: "11", label: "Section types" },
   ]);
 
   return (
@@ -1057,7 +1128,7 @@ function MetricsSection({
             style={{
               borderColor: theme.border,
               padding: theme.spacing.md,
-              textAlign: "center"
+              textAlign: "center",
             }}
           >
             <Selectable
@@ -1066,7 +1137,7 @@ function MetricsSection({
               style={{
                 color: theme.primaryAccent,
                 fontSize: theme.type.body * 2.5,
-                fontWeight: theme.fontWeight
+                fontWeight: theme.fontWeight,
               }}
             >
               {textFrom(metric, ["value", "number"], "10x")}
@@ -1077,7 +1148,7 @@ function MetricsSection({
               style={{
                 marginTop: theme.spacing.xs,
                 color: theme.mutedForeground,
-                fontSize: fluid(16, 1.3, 18)
+                fontSize: fluid(16, 1.3, 18),
               }}
             >
               {textFrom(metric, ["label", "caption"], "Projects created")}
@@ -1092,7 +1163,7 @@ function MetricsSection({
 function LogoStripSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
@@ -1104,7 +1175,7 @@ function LogoStripSection({
     "Vanta",
     "Echelon",
     "Monarch",
-    "Kepler"
+    "Kepler",
   ]);
 
   return (
@@ -1116,7 +1187,10 @@ function LogoStripSection({
       <Selectable
         id={`logo-strip-row-${index}`}
         className="grid text-center md:grid-cols-6"
-        style={{ borderTop: `1px solid ${theme.border}`, borderBottom: `1px solid ${theme.border}` }}
+        style={{
+          borderTop: `1px solid ${theme.border}`,
+          borderBottom: `1px solid ${theme.border}`,
+        }}
       >
         {logos.slice(0, 6).map((logo, logoIndex) => (
           <Selectable
@@ -1127,7 +1201,7 @@ function LogoStripSection({
               borderColor: theme.border,
               color: theme.mutedForeground,
               fontSize: fluid(16, 1.3, 18),
-              padding: `${theme.spacing.md}px ${theme.spacing.sm}px`
+              padding: `${theme.spacing.md}px ${theme.spacing.sm}px`,
             }}
           >
             {logo}
@@ -1141,32 +1215,36 @@ function LogoStripSection({
 function TestimonialsSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const heading = textFrom(section.content, ["heading", "title"], "Proof from real buyers.");
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Proof from real buyers.",
+  );
   const testimonials = recordsFrom(section.content, "testimonials", [
     {
       quote:
         "The first draft gave us enough clarity to pitch the direction immediately. Every edit stayed structured and fast.",
       name: "Amina Cole",
-      role: "Founder"
+      role: "Founder",
     },
     {
       quote:
         "It felt like a creative director and front-end team in the same room. The canvas made iteration visible.",
       name: "David Lin",
-      role: "Agency lead"
+      role: "Agency lead",
     },
     {
       quote:
         "We moved from a rough brief to a page we could review with clients. The voice loop changed the meeting.",
       name: "Nia Brooks",
-      role: "Producer"
-    }
+      role: "Producer",
+    },
   ]);
 
   return (
@@ -1205,7 +1283,7 @@ function TestimonialsSection({
                 borderColor: theme.border,
                 borderRadius: theme.borderRadius,
                 padding: theme.spacing.md,
-                backgroundColor: theme.surface
+                backgroundColor: theme.surface,
               }}
             >
               <Selectable
@@ -1217,7 +1295,7 @@ function TestimonialsSection({
                   backgroundColor: theme.primaryAccent,
                   color: theme.background,
                   fontSize: fluid(16, 1.3, 18),
-                  fontWeight: theme.fontWeight
+                  fontWeight: theme.fontWeight,
                 }}
               >
                 {initials}
@@ -1229,10 +1307,14 @@ function TestimonialsSection({
                 style={{
                   marginTop: theme.spacing.md,
                   color: theme.foreground,
-                  fontSize: fluid(16, 1.3, 18)
+                  fontSize: fluid(16, 1.3, 18),
                 }}
               >
-                {textFrom(testimonial, ["quote", "text"], "Strong signal from the market.")}
+                {textFrom(
+                  testimonial,
+                  ["quote", "text"],
+                  "Strong signal from the market.",
+                )}
               </Selectable>
               <Selectable
                 as="h2"
@@ -1240,7 +1322,7 @@ function TestimonialsSection({
                 style={{
                   marginTop: theme.spacing.md,
                   fontSize: fluid(16, 1.3, 18),
-                  fontWeight: theme.fontWeight
+                  fontWeight: theme.fontWeight,
                 }}
               >
                 {name}
@@ -1248,7 +1330,10 @@ function TestimonialsSection({
               <Selectable
                 as="p"
                 id={`testimonial-role-${index}-${testimonialIndex + 1}`}
-                style={{ color: theme.mutedForeground, fontSize: fluid(16, 1.3, 18) }}
+                style={{
+                  color: theme.mutedForeground,
+                  fontSize: fluid(16, 1.3, 18),
+                }}
               >
                 {textFrom(testimonial, ["role", "title"], "Customer")}
               </Selectable>
@@ -1263,29 +1348,48 @@ function TestimonialsSection({
 function PricingSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const heading = textFrom(section.content, ["heading", "title"], "Simple pricing.");
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Simple pricing.",
+  );
   const plans = recordsFrom(section.content, "plans", [
     {
       name: "Starter",
       price: "$49",
-      features: ["One project", "Voice editing", "Local drafts", "Publish link"]
+      features: [
+        "One project",
+        "Voice editing",
+        "Local drafts",
+        "Publish link",
+      ],
     },
     {
       name: "Pro",
       price: "$149",
-      features: ["Unlimited projects", "3D scenes", "Reference images", "Sync history"]
+      features: [
+        "Unlimited projects",
+        "3D scenes",
+        "Reference images",
+        "Sync history",
+      ],
     },
     {
       name: "Studio",
       price: "$399",
-      features: ["Team projects", "Client review", "Custom themes", "Priority support"]
-    }
+      features: [
+        "Team projects",
+        "Client review",
+        "Custom themes",
+        "Priority support",
+      ],
+    },
   ]);
 
   return (
@@ -1313,10 +1417,15 @@ function PricingSection({
                 .map((item) =>
                   typeof item === "string" || typeof item === "number"
                     ? String(item)
-                    : null
+                    : null,
                 )
                 .filter((item): item is string => Boolean(item))
-            : ["Design system", "Production handoff", "Fast publish", "Support"];
+            : [
+                "Design system",
+                "Production handoff",
+                "Fast publish",
+                "Support",
+              ];
 
           return (
             <Selectable
@@ -1328,7 +1437,7 @@ function PricingSection({
                 borderWidth: isPro ? 1.5 : 1,
                 borderRadius: theme.borderRadius,
                 padding: theme.spacing.md,
-                backgroundColor: theme.surface
+                backgroundColor: theme.surface,
               }}
             >
               {isPro ? (
@@ -1340,7 +1449,7 @@ function PricingSection({
                     backgroundColor: theme.primaryAccent,
                     color: theme.background,
                     fontSize: fluid(16, 1.3, 18),
-                    padding: `${theme.spacing.xs / 2}px ${theme.spacing.sm}px`
+                    padding: `${theme.spacing.xs / 2}px ${theme.spacing.sm}px`,
                   }}
                 >
                   Most popular
@@ -1352,7 +1461,7 @@ function PricingSection({
                 style={{
                   marginTop: isPro ? theme.spacing.md : 0,
                   fontSize: theme.type.body * 1.25,
-                  fontWeight: theme.fontWeight
+                  fontWeight: theme.fontWeight,
                 }}
               >
                 {textFrom(plan, ["name", "title"], "Plan")}
@@ -1364,7 +1473,7 @@ function PricingSection({
                   marginTop: theme.spacing.sm,
                   color: theme.primaryAccent,
                   fontSize: fluid(32, 4, 56),
-                  fontWeight: theme.fontWeight
+                  fontWeight: theme.fontWeight,
                 }}
               >
                 {textFrom(plan, ["price", "cost"], "$149")}
@@ -1382,10 +1491,11 @@ function PricingSection({
                     id={`pricing-feature-${index}-${planIndex + 1}-${featureIndex + 1}`}
                     style={{
                       color: theme.mutedForeground,
-                      fontSize: fluid(16, 1.3, 18)
+                      fontSize: fluid(16, 1.3, 18),
                     }}
                   >
-                    <span style={{ color: theme.primaryAccent }}>✓</span> {feature}
+                    <span style={{ color: theme.primaryAccent }}>✓</span>{" "}
+                    {feature}
                   </Selectable>
                 ))}
               </Selectable>
@@ -1412,34 +1522,43 @@ function PricingSection({
 function FAQSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const heading = textFrom(section.content, ["heading", "title"], "Questions before launch.");
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Questions before launch.",
+  );
   const faqs = recordsFrom(section.content, "faqs", [
     {
       question: "Can this be edited after publish?",
-      answer: "Yes. Yiiya keeps project state structured so future edits can target sections and elements."
+      answer:
+        "Yes. Yiiya keeps project state structured so future edits can target sections and elements.",
     },
     {
       question: "Can I mix websites and 3D?",
-      answer: "Yes. The spatial layer can sit behind, above, or beside the generated web sections."
+      answer:
+        "Yes. The spatial layer can sit behind, above, or beside the generated web sections.",
     },
     {
       question: "Does reference imagery affect the theme?",
-      answer: "Dropped images immediately update the palette before the model responds."
+      answer:
+        "Dropped images immediately update the palette before the model responds.",
     },
     {
       question: "Do guests get the full canvas?",
-      answer: "Guest users can use the full canvas, with local drafts and watermarked publishing."
+      answer:
+        "Guest users can use the full canvas, with local drafts and watermarked publishing.",
     },
     {
       question: "Is there an accordion?",
-      answer: "Not yet. Answers stay visible so the first pass remains simple and editable."
-    }
+      answer:
+        "Not yet. Answers stay visible so the first pass remains simple and editable.",
+    },
   ]);
 
   return (
@@ -1455,7 +1574,10 @@ function FAQSection({
       >
         {heading}
       </Selectable>
-      <Selectable id={`faq-list-${index}`} style={{ marginTop: theme.spacing.lg }}>
+      <Selectable
+        id={`faq-list-${index}`}
+        style={{ marginTop: theme.spacing.lg }}
+      >
         {faqs.slice(0, 5).map((faq, faqIndex) => (
           <Selectable
             key={`${textFrom(faq, ["question"], "question")}-${faqIndex}`}
@@ -1463,7 +1585,7 @@ function FAQSection({
             className="border-b"
             style={{
               borderColor: theme.border,
-              padding: `${theme.spacing.md}px 0`
+              padding: `${theme.spacing.md}px 0`,
             }}
           >
             <Selectable
@@ -1480,7 +1602,7 @@ function FAQSection({
               style={{
                 marginTop: theme.spacing.xs,
                 color: theme.mutedForeground,
-                fontSize: fluid(16, 1.3, 18)
+                fontSize: fluid(16, 1.3, 18),
               }}
             >
               {textFrom(faq, ["answer", "subtext", "body"], "Answer")}
@@ -1495,17 +1617,21 @@ function FAQSection({
 function ContactSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
-  const heading = textFrom(section.content, ["heading", "title"], "Start a conversation.");
+  const heading = textFrom(
+    section.content,
+    ["heading", "title"],
+    "Start a conversation.",
+  );
   const subtext = textFrom(
     section.content,
     ["subtext", "body", "description"],
-    "Leave a note and the next step can become part of the canvas."
+    "Leave a note and the next step can become part of the canvas.",
   );
 
   return (
@@ -1530,7 +1656,7 @@ function ContactSection({
           style={{
             marginTop: theme.spacing.md,
             color: theme.mutedForeground,
-            fontSize: fluid(16, 1.3, 18)
+            fontSize: fluid(16, 1.3, 18),
           }}
         >
           {subtext}
@@ -1552,7 +1678,7 @@ function ContactSection({
               backgroundColor: theme.surface,
               color: theme.mutedForeground,
               padding: `0 ${theme.spacing.md}px`,
-              fontSize: fluid(16, 1.3, 18)
+              fontSize: fluid(16, 1.3, 18),
             }}
           >
             {label}
@@ -1567,7 +1693,7 @@ function ContactSection({
             backgroundColor: theme.surface,
             color: theme.mutedForeground,
             padding: `${theme.spacing.sm}px ${theme.spacing.md}px`,
-            fontSize: fluid(16, 1.3, 18)
+            fontSize: fluid(16, 1.3, 18),
           }}
         >
           Message
@@ -1576,7 +1702,11 @@ function ContactSection({
           Send
         </ButtonLike>
       </Selectable>
-      <InteractiveBlock id={`contact-${index}`} content={section.content} theme={theme} />
+      <InteractiveBlock
+        id={`contact-${index}`}
+        content={section.content}
+        theme={theme}
+      />
     </Selectable>
   );
 }
@@ -1584,21 +1714,29 @@ function ContactSection({
 function FooterSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
   theme: CompiledYiiyaTheme;
 }) {
   const projectName = useYiiyaStore((state) => state.projectName);
-  const brand = textFrom(section.content, ["brand", "heading", "title"], projectName);
-  const subtext = textFrom(section.content, ["subtext", "body"], "Built with Yiiya.");
+  const brand = textFrom(
+    section.content,
+    ["brand", "heading", "title"],
+    projectName,
+  );
+  const subtext = textFrom(
+    section.content,
+    ["subtext", "body"],
+    "Built with Yiiya.",
+  );
   const links = stringListFrom(section.content, "links", [
     "Work",
     "About",
     "Services",
     "Pricing",
-    "Contact"
+    "Contact",
   ]);
 
   return (
@@ -1610,7 +1748,7 @@ function FooterSection({
         backgroundColor: theme.background,
         color: theme.foreground,
         borderColor: theme.border,
-        padding: `${theme.spacing.lg}px ${theme.spacing.sectionX}px`
+        padding: `${theme.spacing.lg}px ${theme.spacing.sectionX}px`,
       }}
     >
       <Selectable
@@ -1633,7 +1771,7 @@ function FooterSection({
             style={{
               marginTop: theme.spacing.sm,
               color: theme.mutedForeground,
-              fontSize: fluid(16, 1.3, 18)
+              fontSize: fluid(16, 1.3, 18),
             }}
           >
             {subtext}
@@ -1643,7 +1781,10 @@ function FooterSection({
           <Selectable
             as="h2"
             id={`footer-links-title-${index}`}
-            style={{ fontSize: fluid(16, 1.3, 18), fontWeight: theme.fontWeight }}
+            style={{
+              fontSize: fluid(16, 1.3, 18),
+              fontWeight: theme.fontWeight,
+            }}
           >
             Links
           </Selectable>
@@ -1656,7 +1797,10 @@ function FooterSection({
               <Selectable
                 key={`${link}-${linkIndex}`}
                 id={`footer-link-${index}-${linkIndex + 1}`}
-                style={{ color: theme.mutedForeground, fontSize: fluid(16, 1.3, 18) }}
+                style={{
+                  color: theme.mutedForeground,
+                  fontSize: fluid(16, 1.3, 18),
+                }}
               >
                 {link}
               </Selectable>
@@ -1667,7 +1811,10 @@ function FooterSection({
           <Selectable
             as="h2"
             id={`footer-contact-title-${index}`}
-            style={{ fontSize: fluid(16, 1.3, 18), fontWeight: theme.fontWeight }}
+            style={{
+              fontSize: fluid(16, 1.3, 18),
+              fontWeight: theme.fontWeight,
+            }}
           >
             Contact
           </Selectable>
@@ -1677,7 +1824,7 @@ function FooterSection({
             style={{
               marginTop: theme.spacing.sm,
               color: theme.mutedForeground,
-              fontSize: fluid(16, 1.3, 18)
+              fontSize: fluid(16, 1.3, 18),
             }}
           >
             hello@example.com
@@ -1691,7 +1838,10 @@ function FooterSection({
               <Selectable
                 key={social}
                 id={`footer-social-${index}-${social.toLowerCase()}`}
-                style={{ color: theme.primaryAccent, fontSize: fluid(16, 1.3, 18) }}
+                style={{
+                  color: theme.primaryAccent,
+                  fontSize: fluid(16, 1.3, 18),
+                }}
               >
                 {social}
               </Selectable>
@@ -1708,7 +1858,7 @@ function FooterSection({
           paddingTop: theme.spacing.sm,
           borderColor: theme.border,
           color: theme.mutedForeground,
-          fontSize: fluid(16, 1.3, 18)
+          fontSize: fluid(16, 1.3, 18),
         }}
       >
         Copyright 2026 {brand}. All rights reserved.
@@ -1720,7 +1870,7 @@ function FooterSection({
 function RenderSection({
   section,
   index,
-  theme
+  theme,
 }: {
   section: YiiyaSection;
   index: number;
@@ -1751,7 +1901,9 @@ function RenderSection({
   }
 
   if (section.sectionType === "TESTIMONIALS") {
-    return <TestimonialsSection section={section} index={index} theme={theme} />;
+    return (
+      <TestimonialsSection section={section} index={index} theme={theme} />
+    );
   }
 
   if (section.sectionType === "PRICING") {
@@ -1780,7 +1932,7 @@ function closestYiiyaElement(element: Element | null) {
 function closestBlockYiiyaElement(element: HTMLElement | null) {
   return (
     element?.closest<HTMLElement>(
-      "section[data-yiiya-id], nav[data-yiiya-id], footer[data-yiiya-id], form[data-yiiya-id], div[data-yiiya-id]"
+      "section[data-yiiya-id], nav[data-yiiya-id], footer[data-yiiya-id], form[data-yiiya-id], div[data-yiiya-id]",
     ) ?? null
   );
 }
@@ -1798,9 +1950,15 @@ export function WebsiteLayer() {
   const sections = useYiiyaStore((state) => state.sections);
   const themeState = useYiiyaStore((state) => state.themeState);
   const canvasMode = useYiiyaStore((state) => state.canvasMode);
-  const setSelectedElementId = useYiiyaStore((state) => state.setSelectedElementId);
-  const setSelectedElements = useYiiyaStore((state) => state.setSelectedElements);
-  const setHoveredElementId = useYiiyaStore((state) => state.setHoveredElementId);
+  const setSelectedElementId = useYiiyaStore(
+    (state) => state.setSelectedElementId,
+  );
+  const setSelectedElements = useYiiyaStore(
+    (state) => state.setSelectedElements,
+  );
+  const setHoveredElementId = useYiiyaStore(
+    (state) => state.setHoveredElementId,
+  );
   const addLog = useYiiyaStore((state) => state.addLog);
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const addSpatialAnchor = useYiiyaStore((state) => state.addSpatialAnchor);
@@ -1809,7 +1967,9 @@ export function WebsiteLayer() {
   const [dragRect, setDragRect] = useState<CSSProperties | null>(null);
 
   useEffect(() => {
-    const anchoredObjects = sceneObjects.filter((object) => object.anchorSection);
+    const anchoredObjects = sceneObjects.filter(
+      (object) => object.anchorSection,
+    );
 
     if (anchoredObjects.length === 0 || typeof ResizeObserver === "undefined") {
       return;
@@ -1822,7 +1982,7 @@ export function WebsiteLayer() {
         }
 
         const element = document.querySelector<HTMLElement>(
-          `[data-yiiya-id="${CSS.escape(object.anchorSection)}"]`
+          `[data-yiiya-id="${CSS.escape(object.anchorSection)}"]`,
         );
 
         if (!element) {
@@ -1830,14 +1990,16 @@ export function WebsiteLayer() {
         }
 
         const rect = element.getBoundingClientRect();
-        const x = ((rect.left + rect.width / 2) / window.innerWidth - 0.5) * 5.2;
-        const y = (0.5 - (rect.top + rect.height / 2) / window.innerHeight) * 3.4;
+        const x =
+          ((rect.left + rect.width / 2) / window.innerWidth - 0.5) * 5.2;
+        const y =
+          (0.5 - (rect.top + rect.height / 2) / window.innerHeight) * 3.4;
 
         addSpatialAnchor({
           objectId: object.id,
           elementId: object.anchorSection,
           placement: "behind",
-          worldPosition: [x, y, -0.8]
+          worldPosition: [x, y, -0.8],
         });
       });
     };
@@ -1849,7 +2011,7 @@ export function WebsiteLayer() {
       }
 
       const element = document.querySelector<HTMLElement>(
-        `[data-yiiya-id="${CSS.escape(object.anchorSection)}"]`
+        `[data-yiiya-id="${CSS.escape(object.anchorSection)}"]`,
       );
 
       if (element) {
@@ -1869,7 +2031,7 @@ export function WebsiteLayer() {
 
   const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
     const target = closestYiiyaElement(
-      document.elementFromPoint(event.clientX, event.clientY)
+      document.elementFromPoint(event.clientX, event.clientY),
     );
     const block = closestBlockYiiyaElement(target);
 
@@ -1914,12 +2076,14 @@ export function WebsiteLayer() {
       Math.min(start.x, event.clientX),
       Math.min(start.y, event.clientY),
       width,
-      height
+      height,
     );
     const selected = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-yiiya-id]")
+      document.querySelectorAll<HTMLElement>("[data-yiiya-id]"),
     )
-      .filter((element) => rectsIntersect(dragBox, element.getBoundingClientRect()))
+      .filter((element) =>
+        rectsIntersect(dragBox, element.getBoundingClientRect()),
+      )
       .map((element) => element.dataset.yiiyaId)
       .filter((id): id is string => Boolean(id));
 
@@ -1937,7 +2101,7 @@ export function WebsiteLayer() {
       className="absolute inset-0 z-10 overflow-auto px-5 pb-28 pt-6 transition-opacity sm:px-8"
       style={{
         opacity: 1,
-        pointerEvents: "auto"
+        pointerEvents: "auto",
       }}
       onMouseMove={handleMouseMove}
       onMouseDown={handleMouseDown}
@@ -1953,8 +2117,8 @@ export function WebsiteLayer() {
         <div className="grid h-full place-items-center">
           <p className="text-sm font-medium text-white/42">
             {canvasMode === "HYBRID"
-              ? "Speak the site and hero object together"
-              : "Speak a landing page idea or upload a website screenshot"}
+              ? "Use this presentation layer only after the model direction is clear"
+              : "Optional web mode: describe a page or upload a presentation reference"}
           </p>
         </div>
       ) : (
@@ -1975,13 +2139,15 @@ export function WebsiteLayer() {
             style={{
               backgroundColor: baseTheme.background,
               borderColor: baseTheme.border,
-              color: baseTheme.mutedForeground
+              color: baseTheme.mutedForeground,
             }}
           >
             <span className="h-2 w-2 rounded-full bg-black/18" />
             <span className="h-2 w-2 rounded-full bg-black/18" />
             <span className="h-2 w-2 rounded-full bg-black/18" />
-            <span className="ml-2 font-mono">yiiya.app - landing page</span>
+            <span className="ml-2 font-mono">
+              yiiya.app - presentation layer
+            </span>
           </div>
           {sections.map((section, index) => (
             <RenderSection
