@@ -431,39 +431,50 @@ async function maybeGenerateTrellisMesh(body: InterpretRequestBody): Promise<Yii
     return [];
   }
 
-  fal.config({ credentials: requireEnv("FAL_KEY") });
-  const result = (await fal.subscribe(process.env.FAL_TRELLIS_MODEL ?? "fal-ai/trellis-2", {
-    input: {
-      image_url: `data:${image.mediaType};base64,${image.base64}`,
-      texture_size: "1024"
-    },
-    logs: false
-  })) as {
-    data?: { model_glb?: { url?: string }; model_mesh?: { url?: string } };
-    model_glb?: { url?: string };
-    model_mesh?: { url?: string };
-  };
-  const url =
-    result.data?.model_glb?.url ??
-    result.data?.model_mesh?.url ??
-    result.model_glb?.url ??
-    result.model_mesh?.url;
-
-  if (!url) {
+  const falKey = process.env.FAL_KEY;
+  if (!falKey) {
+    console.warn("FAL_KEY not configured, skipping 3D mesh generation");
     return [];
   }
 
-  return [
-    {
-      type: "LOAD_3D_MESH",
-      payload: {
-        url,
-        material: "matte",
-        scale: [1, 1, 1],
-        position: [0, 0.8, 0]
-      }
-    } as YiiyaAction
-  ];
+  fal.config({ credentials: falKey });
+  try {
+    const result = (await fal.subscribe(process.env.FAL_TRELLIS_MODEL ?? "fal-ai/trellis-2", {
+      input: {
+        image_url: `data:${image.mediaType};base64,${image.base64}`,
+        texture_size: "1024"
+      },
+      logs: false
+    })) as {
+      data?: { model_glb?: { url?: string }; model_mesh?: { url?: string } };
+      model_glb?: { url?: string };
+      model_mesh?: { url?: string };
+    };
+    const url =
+      result.data?.model_glb?.url ??
+      result.data?.model_mesh?.url ??
+      result.model_glb?.url ??
+      result.model_mesh?.url;
+
+    if (!url) {
+      return [];
+    }
+
+    return [
+      {
+        type: "LOAD_3D_MESH",
+        payload: {
+          url,
+          material: "matte",
+          scale: [1, 1, 1],
+          position: [0, 0.8, 0]
+        }
+      } as YiiyaAction
+    ];
+  } catch (error) {
+    console.error("Failed to generate 3D mesh with Trellis:", error);
+    return [];
+  }
 }
 
 async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaType: string }> {
