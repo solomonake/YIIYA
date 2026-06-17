@@ -36,7 +36,7 @@ create table if not exists public.usage_events (
   metadata          jsonb not null default '{}'::jsonb
 );
 create index if not exists usage_events_user_day_idx
-  on public.usage_events (user_id, date_trunc('day', occurred_at));
+  on public.usage_events (user_id, (occurred_at AT TIME ZONE 'UTC')::date);
 create index if not exists usage_events_trace_idx on public.usage_events (trace_id);
 
 alter table public.usage_events enable row level security;
