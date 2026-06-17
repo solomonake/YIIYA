@@ -466,6 +466,52 @@ async function maybeGenerateTrellisMesh(body: InterpretRequestBody): Promise<Yii
   ];
 }
 
+async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaType: string }> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Failed to fetch image");
+  const buffer = await response.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString("base64");
+  const mediaType = response.headers.get("content-type") ?? "image/jpeg";
+  return { base64, mediaType };
+}
+
+async function generateReferenceImage(prompt: string): Promise<ReferenceImageInput> {
+  let imageUrl: string | undefined;
+
+  try {
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) throw new Error("Missing FAL_KEY");
+    fal.config({ credentials: falKey });
+    const result = (await fal.subscribe("fal-ai/flux/schnell", {
+      input: { prompt, image_size: "square" },
+      logs: false
+    })) as { images?: Array<{ url?: string }> };
+    
+    imageUrl = result.images?.[0]?.url;
+    if (!imageUrl) throw new Error("Fal returned no image");
+  } catch (falError) {
+    console.warn("Fal FLUX generation failed, falling back to DALL-E 3...", falError);
+    const client = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
+    const response = await client.images.generate({
+      model: "dall-e-3",
+      prompt,
+      n: 1,
+      size: "1024x1024"
+    });
+    imageUrl = response.data?.[0]?.url;
+    if (!imageUrl) throw new Error("OpenAI returned no image");
+  }
+
+  const { base64, mediaType } = await fetchImageAsBase64(imageUrl);
+
+  return {
+    base64,
+    mediaType,
+    name: "generated-reference.jpg",
+    imageMode: "3d"
+  };
+}
+
 function commandActions(transcript: string): YiiyaAction[] {
   const text = transcript.toLowerCase();
 
@@ -1080,6 +1126,33 @@ Ask exactly one short, targeted clarifying question to gather missing context (l
       };
       yield { type: "question", question: text.replace(/^["']|["']$/g, "") };
       return;
+    }
+
+    if (intent === "SPATIAL" && !body.referenceImage && body.transcript.length > 3) {
+      const textLower = body.transcript.toLowerCase();
+      const isEditCommand = ["move", "rotate", "spin", "delete", "remove", "make it", "color", "gold", "glass"].some(word => textLower.includes(word));
+      
+      if (!isEditCommand || textLower.includes("generate") || textLower.includes("create")) {
+        yield {
+          type: "router",
+          intent,
+          model: "system",
+          log: `[PLANNER]: User wants an image of a ${body.transcript}. Handing off to Text-to-Image agent...`,
+        };
+        
+        yield {
+          type: "qa",
+          qa_log: [`[ALCHEMIST]: Generating 2D reference image for: ${body.transcript}`]
+        };
+
+        try {
+          body.referenceImage = await generateReferenceImage(body.transcript);
+          body.image_mode = "3d";
+        } catch (err) {
+           yield { type: "error", message: "Failed to generate reference image: " + (err as Error).message };
+           return;
+        }
+      }
     }
 
     let researchBrief: ResearchBrief | null = null;
