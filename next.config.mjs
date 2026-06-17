@@ -44,7 +44,7 @@ const nextConfig = {
   productionBrowserSourceMaps: true,
   experimental: {
     instrumentationHook: true,
-    serverComponentsExternalPackages: ["@gltf-transform/core", "@gltf-transform/functions"]
+    serverComponentsExternalPackages: ["@gltf-transform/core", "@gltf-transform/functions", "@opentelemetry/sdk-node"]
   },
   images: {
     remotePatterns: [

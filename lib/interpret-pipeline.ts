@@ -477,13 +477,14 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaT
 
 async function generateReferenceImage(prompt: string): Promise<ReferenceImageInput> {
   let imageUrl: string | undefined;
+  const enhancedPrompt = `A high quality, photorealistic 3D render of a single object described as: "${prompt}". The object must be centered, fully visible, isolated on a clean white background, and optimally lit for 3D modeling reference. Do not generate literal text or words.`;
 
   try {
     const falKey = process.env.FAL_KEY;
     if (!falKey) throw new Error("Missing FAL_KEY");
     fal.config({ credentials: falKey });
     const result = (await fal.subscribe("fal-ai/flux/schnell", {
-      input: { prompt, image_size: "square" },
+      input: { prompt: enhancedPrompt, image_size: "square" },
       logs: false
     })) as { images?: Array<{ url?: string }> };
     
@@ -494,7 +495,7 @@ async function generateReferenceImage(prompt: string): Promise<ReferenceImageInp
     const client = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
     const response = await client.images.generate({
       model: "dall-e-3",
-      prompt,
+      prompt: enhancedPrompt,
       n: 1,
       size: "1024x1024"
     });
