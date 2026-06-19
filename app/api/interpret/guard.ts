@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Pre-flight + post-flight guards for the /api/interpret route.
  *

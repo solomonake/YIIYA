@@ -10,7 +10,7 @@ import {
 } from "@react-three/drei";
 import { Physics, RigidBody } from "@react-three/rapier";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import type { Group, Object3D } from "three";
 import { Raycaster, Vector2 } from "three";
 import { styleMaterialPack } from "@/lib/scene/styles";
@@ -547,7 +547,7 @@ function QuietStarterMarker() {
 
 function CursorRaycaster() {
   const { camera, scene, size } = useThree();
-  const updateCursor3D = useYiiyaStore((state) => state.updateCursor3D);
+  const setCursorTarget = useYiiyaStore((state) => state.setCursorTarget);
   const raycasterRef = useRef(new Raycaster());
   const pointerRef = useRef(new Vector2(2, 2));
   const lastHitIdRef = useRef<string | null>(null);
@@ -572,24 +572,51 @@ function CursorRaycaster() {
     const hitId = hit?.object.userData?.yiiyaObjectId ?? null;
     if (hitId !== lastHitIdRef.current) {
       lastHitIdRef.current = hitId;
-      updateCursor3D({
+      setCursorTarget(hitId ? {
+        screenX: 0,
+        screenY: 0,
+        domElementId: null,
+        domTextContent: null,
         sceneObjectId: hitId,
-        scenePoint: hit ? [hit.point.x, hit.point.y, hit.point.z] : null
-      });
+        scenePoint: hit ? [hit.point.x, hit.point.y, hit.point.z] as [number, number, number] : null,
+        targetKind: "scene-object",
+        description: `Scene object: ${hitId}`
+      } : null);
     }
   });
 
   return null;
 }
 
+function ActiveGlbViewer({ url }: { url: string }) {
+  const gltf = useGLTF(url);
+  const clone = useMemo(() => gltf.scene.clone(), [gltf.scene]);
+  const { actions } = useAnimations(gltf.animations, clone);
+
+  useEffect(() => {
+    if (gltf.animations.length > 0) {
+      const name = gltf.animations[0].name;
+      actions[name]?.play();
+    }
+  }, [gltf.animations, actions]);
+
+  return (
+    <Float speed={1.2} rotationIntensity={0.4} floatIntensity={0.4}>
+      <primitive object={clone} scale={1} position={[0, 0, 0]} />
+    </Float>
+  );
+}
+
 function StarterScene({
   objects,
   anchors,
-  stage
+  stage,
+  activeGlbUrl
 }: {
   objects: SceneObject[];
   anchors: SpatialAnchor[];
   stage: StageState;
+  activeGlbUrl?: string | null;
 }) {
   const anchorMap = useMemo(
     () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
@@ -615,12 +642,18 @@ function StarterScene({
   // is active; fall back to the QuietStarterMarker only when nothing has
   // been asked yet (stage.kind === "EMPTY"). Once any real SceneObject
   // exists we render the actual objects below and skip both.
-  const showPlaceholder = objects.length === 0;
+  const showPlaceholder = objects.length === 0 && !activeGlbUrl;
 
   return (
     <>
       {showPlaceholder ? (
         stage.kind === "EMPTY" ? <QuietStarterMarker /> : <StagePlaceholder state={stage} />
+      ) : null}
+
+      {activeGlbUrl ? (
+        <Suspense fallback={null}>
+          <ActiveGlbViewer url={activeGlbUrl} />
+        </Suspense>
       ) : null}
 
       {objects.map((object, index) => {
@@ -657,12 +690,11 @@ function StarterScene({
   );
 }
 
-export function SceneCanvas() {
+export function SceneCanvas({ activeGlbUrl }: { activeGlbUrl?: string | null }) {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
   const stage = useYiiyaStore((state) => state.stage);
   const rootGroupRef = useRef<Group>(null);
-  const canvasMode = "3D" as const;
 
   useEffect(() => {
     registerExportRoot(rootGroupRef.current);
@@ -697,6 +729,7 @@ export function SceneCanvas() {
               objects={sceneObjects}
               anchors={spatialAnchors}
               stage={stage}
+              activeGlbUrl={activeGlbUrl}
             />
           </group>
         </Physics>

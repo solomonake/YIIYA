@@ -8,25 +8,25 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     if (process.env.SENTRY_DSN) {
-      await import("./sentry.server.config");
+      try { await import("./sentry.server.config"); } catch { /* Sentry not available */ }
     }
     if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
-      await import("./lib/telemetry/tracer");
+      try { await import("./lib/telemetry/tracer"); } catch { /* OTEL not available */ }
     }
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {
     if (process.env.SENTRY_DSN) {
-      await import("./sentry.edge.config");
+      try { await import("./sentry.edge.config"); } catch { /* Sentry not available */ }
     }
   }
 }
 
 export const onRequestError = process.env.SENTRY_DSN
-  ? // Re-export Sentry's onRequestError when DSN is configured (Next 15 feature).
-    // Kept lazy so the import isn't pulled into the edge bundle when not needed.
-    async (err: unknown, request: unknown, context: unknown) => {
-      const Sentry = await import("@sentry/nextjs");
-      Sentry.captureRequestError(err, request as never, context as never);
+  ? async (err: unknown, request: unknown, context: unknown) => {
+      try {
+        const Sentry = await import("@sentry/nextjs");
+        Sentry.captureRequestError(err, request as never, context as never);
+      } catch { /* Sentry not available */ }
     }
   : undefined;

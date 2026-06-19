@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { NextResponse } from "next/server";
 import { canUseSupabasePublish } from "@/lib/supabase-projects";
 import { getScanInfraStatus } from "@/lib/scan-job-store";

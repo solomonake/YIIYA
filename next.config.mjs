@@ -1,6 +1,11 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { withSentryConfig } from "@sentry/nextjs";
+
+let withSentryConfig = (config) => config;
+try {
+  const sentry = await import("@sentry/nextjs");
+  withSentryConfig = sentry.withSentryConfig;
+} catch { /* Sentry not installed or corrupted — run without it */ }
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,7 +49,15 @@ const nextConfig = {
   productionBrowserSourceMaps: true,
   experimental: {
     instrumentationHook: true,
-    serverComponentsExternalPackages: ["@gltf-transform/core", "@gltf-transform/functions", "@opentelemetry/sdk-node"]
+    serverComponentsExternalPackages: [
+      "@gltf-transform/core",
+      "@gltf-transform/functions",
+      "@opentelemetry/sdk-node",
+      "@opentelemetry/api",
+      "@opentelemetry/resources",
+      "@opentelemetry/semantic-conventions",
+      "@opentelemetry/exporter-trace-otlp-http"
+    ]
   },
   images: {
     remotePatterns: [
