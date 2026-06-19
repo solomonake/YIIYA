@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";

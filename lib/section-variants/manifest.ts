@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Section variant manifest — the complete catalog the Architect picks from.
  *

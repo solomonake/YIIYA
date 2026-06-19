@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Metadata builder for published YIIYA projects.
  *

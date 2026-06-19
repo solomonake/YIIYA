@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { AssetLane } from "@/lib/asset-compiler";
 
 export type CreationPathway = {

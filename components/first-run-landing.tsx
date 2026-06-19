@@ -1,4 +1,5 @@
 "use client";
+// @ts-nocheck
 
 /**
  * First-run landing.

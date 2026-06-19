@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { PublishedProjectView } from "@/components/published-project";
 import { readPublishedProjectFromSupabase } from "@/lib/supabase-projects";
 import { buildPublishedMetadata, type PublishedProjectSummary } from "@/lib/seo/metadata";

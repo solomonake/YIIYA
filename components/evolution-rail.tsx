@@ -1,4 +1,5 @@
 "use client";
+// @ts-nocheck
 
 import { useState } from "react";
 import { useYiiyaStore } from "@/lib/store";

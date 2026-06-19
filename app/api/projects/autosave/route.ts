@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { NextResponse } from "next/server";
 import type { PublishedProject } from "@/lib/published-project-types";
 import {

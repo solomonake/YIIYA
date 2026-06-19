@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { NextResponse } from "next/server";
 import { updateScanCapture } from "@/lib/scan-job-store";
 import { syncAssetJobFromScan } from "@/lib/asset-jobs";

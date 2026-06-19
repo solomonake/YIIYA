@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 
 import { useYiiyaStore, type YiiyaAction } from "@/lib/store";

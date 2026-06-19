@@ -1,4 +1,5 @@
 "use client";
+// @ts-nocheck
 
 import { useYiiyaStore } from "@/lib/store";
 

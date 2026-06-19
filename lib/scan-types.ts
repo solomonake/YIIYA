@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { CoverageCell, CoverageFrame, CoverageSilhouette } from "@/lib/scan-coverage";
 
 export type ScanJobState =

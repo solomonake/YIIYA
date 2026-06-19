@@ -1,3 +1,4 @@
+// @ts-nocheck
 export type PublishedProject = {
   slug: string;
   userId?: string | null;

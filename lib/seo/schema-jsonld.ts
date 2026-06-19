@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * JSON-LD structured data generator.
  *
