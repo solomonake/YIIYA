@@ -328,7 +328,7 @@ export function YiiyaWorkspace() {
     try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch { /* ignore */ }
     addLog("[SYSTEM] YIIYA 3D Studio ready.");
     addLog("[SYSTEM] Hold SPACE to speak · Drop image for photo-to-3D");
-    addLog("[SYSTEM] Pipeline: Gemini Director → Pollinations → Hunyuan3D-2.5");
+    addLog("[SYSTEM] Pipeline: Gemini → Pollinations studio photo → TRELLIS-2 / Hunyuan3D-2.5 / InstantMesh cascade");
   }, [addLog]);
 
   const activeGlbUrl = (() => {

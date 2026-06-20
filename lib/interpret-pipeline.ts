@@ -288,30 +288,29 @@ async function runPhotoAnalyst(image: ReferenceImageInput): Promise<{
   }
 }
 
-// ─── Agent 2b — Multi-View Synthesizer (Pollinations.ai, free) ────────────────
+// ─── Agent 2b — Studio Photo Grounding (Pollinations.ai, free) ────────────────
+//
+// Image-to-3D models (TRELLIS, Hunyuan3D, InstantMesh) are trained on clean,
+// centered, well-lit single-object photos — not orthographic technical views.
+// Feeding 4 ortho views to a single-image generator was wasted bandwidth and
+// usually produced confused output. We now synthesize ONE clean studio photo
+// and let the generator's own multi-view diffusion handle the geometry.
 
-function pollinationsUrl(prompt: string, w = 512, h = 512): string {
+function pollinationsUrl(prompt: string, w = 768, h = 768): string {
   const seed = Math.floor(Math.random() * 99999);
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&enhance=true&seed=${seed}`;
 }
 
-async function runMultiViewSynthesizer(brief: ThreeDBrief): Promise<ReferenceGroundingResult> {
+async function runStudioPhotoGrounding(brief: ThreeDBrief): Promise<ReferenceGroundingResult> {
   const obj = brief.primaryObject;
   const style = brief.styleTags.join(", ") || "realistic";
   const mat = brief.materialBrief.textureStyle;
-  const base = `single isolated ${obj}, ${style}, ${mat}, studio white background, neutral lighting, no shadows, product photography`;
-
-  const referenceImages = [
-    pollinationsUrl(`front orthographic view, ${base}`, 512, 512),
-    pollinationsUrl(`right side orthographic view, ${base}`, 512, 512),
-    pollinationsUrl(`back orthographic view, ${base}`, 512, 512),
-    pollinationsUrl(`top-down orthographic view, ${base}`, 512, 512)
-  ];
+  const prompt = `single isolated ${obj}, ${style}, ${mat}, centered three-quarter view, pure white background, no shadow, studio product photography, eye-level, soft neutral lighting, photorealistic, sharp focus, high detail, no text, no watermark`;
 
   return {
-    referenceImages,
+    referenceImages: [pollinationsUrl(prompt, 768, 768)],
     materialBrief: brief.materialBrief,
-    analysisNotes: `${referenceImages.length} orthographic reference views via Pollinations.ai`
+    analysisNotes: "1 studio reference photo (single-image grounding)"
   };
 }
 
@@ -364,19 +363,26 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaT
 
 const HUNYUAN3D_SPACE = "tencent/Hunyuan3D-2";
 const HUNYUAN3D_URL = "https://tencent-hunyuan3d-2.hf.space/";
+const TRELLIS_SPACE = "trellis-community/TRELLIS";
+const TRELLIS_URL = "https://trellis-community-trellis.hf.space/";
+const INSTANTMESH_SPACE = "TencentARC/InstantMesh";
+const INSTANTMESH_URL = "https://tencentarc-instantmesh.hf.space/";
 
-let hunyuanWarmupPromise: Promise<void> | null = null;
-function warmupHunyuan3D(): Promise<void> {
-  if (!hunyuanWarmupPromise) {
-    hunyuanWarmupPromise = fetch(HUNYUAN3D_URL, {
-      method: "GET",
-      signal: AbortSignal.timeout(8_000)
-    })
-      .then(() => undefined)
-      .catch(() => undefined);
-  }
-  return hunyuanWarmupPromise;
+function spaceWarmer(url: string) {
+  let p: Promise<void> | null = null;
+  return () => {
+    if (!p) {
+      p = fetch(url, { method: "GET", signal: AbortSignal.timeout(8_000) })
+        .then(() => undefined)
+        .catch(() => undefined);
+    }
+    return p;
+  };
 }
+
+const warmupHunyuan3D = spaceWarmer(HUNYUAN3D_URL);
+const warmupTrellis = spaceWarmer(TRELLIS_URL);
+const warmupInstantMesh = spaceWarmer(INSTANTMESH_URL);
 
 export type GeneratorAttempt = { provider: string; ok: boolean; error?: string };
 
@@ -435,7 +441,105 @@ async function generateViaHunyuan3D(
   }
 }
 
-async function generateViaTrellis(refUrl: string): Promise<{ url: string | null; error: string | null }> {
+function extractGlbFromGradio(data: unknown): string | null {
+  const flat: unknown[] = Array.isArray(data) ? data : [data];
+  // Prefer textured GLB at index 1 if present
+  const ordered = flat.length > 1 ? [flat[1], flat[0], ...flat.slice(2)] : flat;
+  for (const item of ordered) {
+    if (typeof item === "string" && item.includes(".glb")) return item;
+    if (isRecord(item)) {
+      if (typeof item.url === "string" && item.url.includes(".glb")) return item.url;
+      if (typeof item.path === "string" && item.path.includes(".glb")) return item.path;
+      if (typeof item.value === "string" && item.value.includes(".glb")) return item.value;
+    }
+  }
+  return null;
+}
+
+async function generateViaTrellis2HF(
+  refUrl: string
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
+
+    void warmupTrellis();
+    const client = await Client.connect(TRELLIS_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
+
+    const imgData = await fetchImageAsBase64(refUrl);
+    if (!imgData) return { url: null, error: "Reference image fetch failed" };
+
+    const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
+
+    // TRELLIS pipeline: preprocess → generate_and_extract_glb.
+    const pre = (await client.predict("/preprocess_image", { image: blob })) as { data: unknown[] };
+    const preprocessed = pre.data?.[0];
+    if (!preprocessed) return { url: null, error: "TRELLIS preprocess returned no image" };
+
+    const result = (await client.predict("/generate_and_extract_glb", {
+      image: preprocessed,
+      multiimages: [],
+      seed: 42,
+      ss_guidance_strength: 7.5,
+      ss_sampling_steps: 12,
+      slat_guidance_strength: 3,
+      slat_sampling_steps: 12,
+      multiimage_algo: "stochastic",
+      mesh_simplify: 0.95,
+      texture_size: 1024
+    })) as { data: unknown };
+
+    const url = extractGlbFromGradio(result.data);
+    if (!url) return { url: null, error: "TRELLIS returned no GLB in response" };
+    return { url, error: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[TRELLIS-2 HF]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
+async function generateViaInstantMesh(
+  refUrl: string
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
+
+    void warmupInstantMesh();
+    const client = await Client.connect(INSTANTMESH_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
+
+    const imgData = await fetchImageAsBase64(refUrl);
+    if (!imgData) return { url: null, error: "Reference image fetch failed" };
+
+    const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
+
+    // InstantMesh pipeline: preprocess → generate_mvs → make3d
+    const pre = (await client.predict("/preprocess", {
+      input_image: blob,
+      do_remove_background: true
+    })) as { data: unknown[] };
+    const processed = pre.data?.[0];
+    if (!processed) return { url: null, error: "InstantMesh preprocess returned no image" };
+
+    await client.predict("/generate_mvs", {
+      input_image: processed,
+      sample_steps: 75,
+      sample_seed: 42
+    });
+
+    const result = (await client.predict("/make3d", {})) as { data: unknown };
+    const url = extractGlbFromGradio(result.data);
+    if (!url) return { url: null, error: "InstantMesh returned no GLB" };
+    return { url, error: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[INSTANTMESH]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
+async function generateViaFalTrellis(refUrl: string): Promise<{ url: string | null; error: string | null }> {
   try {
     const falKey = process.env.FAL_KEY;
     if (!falKey) return { url: null, error: "FAL_KEY not set (paid fallback skipped)" };
@@ -466,29 +570,47 @@ async function generateViaTrellis(refUrl: string): Promise<{ url: string | null;
 async function runSpatialGenerator(
   brief: ThreeDBrief,
   groundingResult: ReferenceGroundingResult,
-  userImageBase64?: string | null
+  userImageBase64?: string | null,
+  userImageMime?: string | null
 ): Promise<{ glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] }> {
   const attempts: GeneratorAttempt[] = [];
-  const primaryRef = groundingResult.referenceImages[0] ?? null;
 
-  if (primaryRef) {
-    const { url, error } = await generateViaHunyuan3D(primaryRef, brief);
-    attempts.push({ provider: "hunyuan3d (pollinations ref)", ok: Boolean(url), error: error ?? undefined });
-    if (url) return { glbUrl: url, tier: "hunyuan3d", attempts };
+  // When the user uploaded an image, feed it directly to image-to-3D models —
+  // never re-imagine it through Pollinations. For pure text prompts, use the
+  // single studio photo we grounded above.
+  const inputRef = userImageBase64
+    ? `data:${userImageMime ?? "image/jpeg"};base64,${userImageBase64}`
+    : groundingResult.referenceImages[0] ?? null;
+
+  if (!inputRef) {
+    attempts.push({ provider: "none", ok: false, error: "No reference image available" });
+    return {
+      glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
+      tier: "fallback",
+      attempts
+    };
   }
 
-  if (userImageBase64) {
-    const { url, error } = await generateViaHunyuan3D(`data:image/jpeg;base64,${userImageBase64}`, brief);
-    attempts.push({ provider: "hunyuan3d (user image)", ok: Boolean(url), error: error ?? undefined });
-    if (url) return { glbUrl: url, tier: "hunyuan3d", attempts };
-  }
+  // Cascade order (fastest free → best free → fallback → paid):
+  //   1. TRELLIS-2  — ~3s warm, native PBR
+  //   2. Hunyuan3D-2.5 — best quality, slower
+  //   3. InstantMesh — reliable feed-forward backup
+  //   4. fal-ai Trellis-2 — only if FAL_KEY is set (paid)
+  const trellis = await generateViaTrellis2HF(inputRef);
+  attempts.push({ provider: "trellis-2 (hf)", ok: Boolean(trellis.url), error: trellis.error ?? undefined });
+  if (trellis.url) return { glbUrl: trellis.url, tier: "trellis", attempts };
 
-  const trellisRef = primaryRef ?? (userImageBase64 ? `data:image/jpeg;base64,${userImageBase64}` : null);
-  if (trellisRef) {
-    const { url, error } = await generateViaTrellis(trellisRef);
-    attempts.push({ provider: "trellis (fal)", ok: Boolean(url), error: error ?? undefined });
-    if (url) return { glbUrl: url, tier: "trellis", attempts };
-  }
+  const hunyuan = await generateViaHunyuan3D(inputRef, brief);
+  attempts.push({ provider: "hunyuan3d-2.5 (hf)", ok: Boolean(hunyuan.url), error: hunyuan.error ?? undefined });
+  if (hunyuan.url) return { glbUrl: hunyuan.url, tier: "hunyuan3d", attempts };
+
+  const instant = await generateViaInstantMesh(inputRef);
+  attempts.push({ provider: "instantmesh (hf)", ok: Boolean(instant.url), error: instant.error ?? undefined });
+  if (instant.url) return { glbUrl: instant.url, tier: "library", attempts };
+
+  const fal = await generateViaFalTrellis(inputRef);
+  attempts.push({ provider: "trellis-2 (fal paid)", ok: Boolean(fal.url), error: fal.error ?? undefined });
+  if (fal.url) return { glbUrl: fal.url, tier: "trellis", attempts };
 
   return {
     glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
@@ -582,8 +704,22 @@ export async function* runInterpretPipeline(
       };
     }
 
-    const groundingResult = await runMultiViewSynthesizer(brief);
-    yield { type: "grounding", result: groundingResult, log: `[GROUNDER] ${groundingResult.referenceImages.length} views ready via Pollinations.ai` };
+    // Skip Pollinations entirely when the user uploaded an image —
+    // image-to-3D models need the real photo, not a re-imagined one.
+    const groundingResult = body.referenceImage
+      ? {
+          referenceImages: [],
+          materialBrief: brief.materialBrief,
+          analysisNotes: "User-uploaded reference image; Pollinations skipped"
+        }
+      : await runStudioPhotoGrounding(brief);
+    yield {
+      type: "grounding",
+      result: groundingResult,
+      log: body.referenceImage
+        ? "[GROUNDER] User photo will be fed directly to the generator"
+        : "[GROUNDER] 1 studio reference photo ready via Pollinations.ai"
+    };
 
     const styleMatch = body.transcript.match(/\b(lowpoly|low.poly|ps2|cartoon|toon|realistic|pbr|stylized|hand.painted|pixel|voxel|clay|flat)\b/i);
     if (body.sessionStyleDNA || styleMatch) {
@@ -602,9 +738,14 @@ export async function* runInterpretPipeline(
       const slot = slots[i];
       const slotBrief: ThreeDBrief = { ...brief, primaryObject: slot.name, description: slot.description, materialBrief: slot.materialBrief };
 
-      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) via Hunyuan3D-2.5...`, progress: 0.1 + 0.6 * (i / slots.length) };
+      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) — TRELLIS-2 → Hunyuan3D-2.5 → InstantMesh cascade...`, progress: 0.1 + 0.6 * (i / slots.length) };
 
-      const { glbUrl, tier, attempts } = await runSpatialGenerator(slotBrief, groundingResult, body.referenceImage?.base64 ?? null);
+      const { glbUrl, tier, attempts } = await runSpatialGenerator(
+        slotBrief,
+        groundingResult,
+        body.referenceImage?.base64 ?? null,
+        body.referenceImage?.mediaType ?? null
+      );
       for (const attempt of attempts) {
         if (!attempt.ok && attempt.error) {
           yield { type: "generating", log: `[GENERATOR ERROR] ${attempt.provider}: ${attempt.error}`, progress: 0.75 };
@@ -624,7 +765,7 @@ export async function* runInterpretPipeline(
       `[QA] Scale: 1 unit = 1 meter (Blender/UE5/Unity standard).`,
       ...(brief.needsLODChain ? ["[QA] LOD chain: /api/3d/lod?url={glbUrl}"] : []),
       ...(brief.needsPhysicsMetadata ? ["[QA] Physics metadata in USD export."] : []),
-      `[QA] Pipeline: Director → Grounder(Pollinations) → Hunyuan3D-2.5 → PBR → Packager`
+      `[QA] Pipeline: Director → Grounder → TRELLIS-2 → Hunyuan3D-2.5 → InstantMesh → PBR → Packager`
     ];
 
     yield { type: "qa", qa_log };
