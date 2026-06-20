@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
   const name = request.nextUrl.searchParams.get("name") ?? "object";
   const glb = buildMinimalGLB();
 
-  return new Response(glb, {
+  return new Response(new Uint8Array(glb), {
     status: 200,
     headers: {
       "Content-Type": "model/gltf-binary",
