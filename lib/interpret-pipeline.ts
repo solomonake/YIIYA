@@ -353,7 +353,7 @@ async function runStyleDNAEncoder(styleHint: string): Promise<StyleDNA> {
 
 async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaType: string } | null> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(25_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
     return { base64: Buffer.from(buf).toString("base64"), mediaType: res.headers.get("content-type") ?? "image/jpeg" };
@@ -362,50 +362,88 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaT
   }
 }
 
-async function generateViaHunyuan3D(refUrl: string, brief: ThreeDBrief): Promise<string | null> {
+const HUNYUAN3D_SPACE = "tencent/Hunyuan3D-2";
+const HUNYUAN3D_URL = "https://tencent-hunyuan3d-2.hf.space/";
+
+let hunyuanWarmupPromise: Promise<void> | null = null;
+function warmupHunyuan3D(): Promise<void> {
+  if (!hunyuanWarmupPromise) {
+    hunyuanWarmupPromise = fetch(HUNYUAN3D_URL, {
+      method: "GET",
+      signal: AbortSignal.timeout(8_000)
+    })
+      .then(() => undefined)
+      .catch(() => undefined);
+  }
+  return hunyuanWarmupPromise;
+}
+
+export type GeneratorAttempt = { provider: string; ok: boolean; error?: string };
+
+async function generateViaHunyuan3D(
+  refUrl: string,
+  brief: ThreeDBrief
+): Promise<{ url: string | null; error: string | null }> {
   try {
     const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
-    const opts = HF_TOKEN ? { hf_token: HF_TOKEN as `hf_${string}` } : {};
-    const client = await Client.connect("tencent/Hunyuan3D-2.1", opts);
+    if (!HF_TOKEN) {
+      return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
+    }
+
+    void warmupHunyuan3D();
+    const client = await Client.connect(HUNYUAN3D_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
 
     const imgData = await fetchImageAsBase64(refUrl);
-    if (!imgData) return null;
+    if (!imgData) return { url: null, error: "Reference image fetch failed (timeout or 4xx)" };
 
     const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
-    const result = await client.predict("/generate_3d", {
+    const result = await client.predict("/generation_all", {
+      caption: brief.description.slice(0, 200),
       image: blob,
+      mv_image_front: null,
+      mv_image_back: null,
+      mv_image_left: null,
+      mv_image_right: null,
       steps: brief.polygonBudget === "high" ? 50 : 30,
       guidance_scale: 7.5,
       seed: 42,
       octree_resolution: brief.polygonBudget === "high" ? 256 : 128,
-      remove_background: true,
+      check_box_rembg: true,
+      num_chunks: 8000,
       randomize_seed: false
     });
 
     const data = result.data as unknown;
+    // /generation_all returns [shape_glb, textured_glb, html, stats, seed].
+    // Prefer the textured GLB at index 1; fall back to shape at index 0.
     if (Array.isArray(data)) {
-      for (const item of data) {
-        if (typeof item === "string" && item.includes(".glb")) return item;
-        if (isRecord(item) && typeof item.url === "string") return item.url;
-        if (isRecord(item) && typeof item.value === "string") return item.value;
+      const candidates = [data[1], data[0]].filter((d) => d !== undefined && d !== null);
+      for (const item of candidates) {
+        if (typeof item === "string" && item.includes(".glb")) return { url: item, error: null };
+        if (isRecord(item)) {
+          if (typeof item.url === "string" && item.url.includes(".glb")) return { url: item.url, error: null };
+          if (typeof item.path === "string" && item.path.includes(".glb")) return { url: item.path, error: null };
+          if (typeof item.value === "string" && item.value.includes(".glb")) return { url: item.value, error: null };
+        }
       }
     }
-    return null;
+    return { url: null, error: "Hunyuan3D returned no GLB in response" };
   } catch (err) {
-    console.error("[HUNYUAN3D]", String(err));
-    return null;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[HUNYUAN3D]", msg);
+    return { url: null, error: msg.slice(0, 200) };
   }
 }
 
-async function generateViaTrellis(refUrl: string): Promise<string | null> {
+async function generateViaTrellis(refUrl: string): Promise<{ url: string | null; error: string | null }> {
   try {
     const falKey = process.env.FAL_KEY;
-    if (!falKey) return null;
+    if (!falKey) return { url: null, error: "FAL_KEY not set (paid fallback skipped)" };
     const { fal } = await import("@fal-ai/client");
     fal.config({ credentials: falKey });
 
     const imgData = await fetchImageAsBase64(refUrl);
-    if (!imgData) return null;
+    if (!imgData) return { url: null, error: "Reference image fetch failed for Trellis" };
 
     type FalResult = { data?: { model_glb?: { url?: string }; model_mesh?: { url?: string } } };
     const result = await (fal.subscribe as (m: string, o: unknown) => Promise<FalResult>)(
@@ -415,10 +453,13 @@ async function generateViaTrellis(refUrl: string): Promise<string | null> {
         logs: false
       }
     );
-    return result?.data?.model_glb?.url ?? result?.data?.model_mesh?.url ?? null;
+    const url = result?.data?.model_glb?.url ?? result?.data?.model_mesh?.url ?? null;
+    if (!url) return { url: null, error: "Trellis returned no GLB" };
+    return { url, error: null };
   } catch (err) {
-    console.error("[TRELLIS]", String(err));
-    return null;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[TRELLIS]", msg);
+    return { url: null, error: msg.slice(0, 200) };
   }
 }
 
@@ -426,28 +467,33 @@ async function runSpatialGenerator(
   brief: ThreeDBrief,
   groundingResult: ReferenceGroundingResult,
   userImageBase64?: string | null
-): Promise<{ glbUrl: string; tier: GeneratedAsset["tier"] }> {
+): Promise<{ glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] }> {
+  const attempts: GeneratorAttempt[] = [];
   const primaryRef = groundingResult.referenceImages[0] ?? null;
 
   if (primaryRef) {
-    const url = await generateViaHunyuan3D(primaryRef, brief);
-    if (url) return { glbUrl: url, tier: "hunyuan3d" };
+    const { url, error } = await generateViaHunyuan3D(primaryRef, brief);
+    attempts.push({ provider: "hunyuan3d (pollinations ref)", ok: Boolean(url), error: error ?? undefined });
+    if (url) return { glbUrl: url, tier: "hunyuan3d", attempts };
   }
 
   if (userImageBase64) {
-    const url = await generateViaHunyuan3D(`data:image/jpeg;base64,${userImageBase64}`, brief);
-    if (url) return { glbUrl: url, tier: "hunyuan3d" };
+    const { url, error } = await generateViaHunyuan3D(`data:image/jpeg;base64,${userImageBase64}`, brief);
+    attempts.push({ provider: "hunyuan3d (user image)", ok: Boolean(url), error: error ?? undefined });
+    if (url) return { glbUrl: url, tier: "hunyuan3d", attempts };
   }
 
   const trellisRef = primaryRef ?? (userImageBase64 ? `data:image/jpeg;base64,${userImageBase64}` : null);
   if (trellisRef) {
-    const url = await generateViaTrellis(trellisRef);
-    if (url) return { glbUrl: url, tier: "trellis" };
+    const { url, error } = await generateViaTrellis(trellisRef);
+    attempts.push({ provider: "trellis (fal)", ok: Boolean(url), error: error ?? undefined });
+    if (url) return { glbUrl: url, tier: "trellis", attempts };
   }
 
   return {
     glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
-    tier: "fallback"
+    tier: "fallback",
+    attempts
   };
 }
 
@@ -556,9 +602,14 @@ export async function* runInterpretPipeline(
       const slot = slots[i];
       const slotBrief: ThreeDBrief = { ...brief, primaryObject: slot.name, description: slot.description, materialBrief: slot.materialBrief };
 
-      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) via Hunyuan3D-2.1...`, progress: 0.1 + 0.6 * (i / slots.length) };
+      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) via Hunyuan3D-2.5...`, progress: 0.1 + 0.6 * (i / slots.length) };
 
-      const { glbUrl, tier } = await runSpatialGenerator(slotBrief, groundingResult, body.referenceImage?.base64 ?? null);
+      const { glbUrl, tier, attempts } = await runSpatialGenerator(slotBrief, groundingResult, body.referenceImage?.base64 ?? null);
+      for (const attempt of attempts) {
+        if (!attempt.ok && attempt.error) {
+          yield { type: "generating", log: `[GENERATOR ERROR] ${attempt.provider}: ${attempt.error}`, progress: 0.75 };
+        }
+      }
       yield { type: "generating", log: `[GENERATOR] Mesh ready (${tier}), texturing...`, progress: 0.8 };
 
       const textureUrls = await generatePBRTextures(slotBrief);
@@ -573,7 +624,7 @@ export async function* runInterpretPipeline(
       `[QA] Scale: 1 unit = 1 meter (Blender/UE5/Unity standard).`,
       ...(brief.needsLODChain ? ["[QA] LOD chain: /api/3d/lod?url={glbUrl}"] : []),
       ...(brief.needsPhysicsMetadata ? ["[QA] Physics metadata in USD export."] : []),
-      `[QA] Pipeline: Director → Grounder(Pollinations) → Hunyuan3D-2.1 → PBR → Packager`
+      `[QA] Pipeline: Director → Grounder(Pollinations) → Hunyuan3D-2.5 → PBR → Packager`
     ];
 
     yield { type: "qa", qa_log };
