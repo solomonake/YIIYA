@@ -3,6 +3,7 @@
  * 5 agents: Director → Reference Grounder → Spatial Generator → Material Artist → Packager
  */
 import { Client } from "@gradio/client";
+import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -351,6 +352,21 @@ async function runStyleDNAEncoder(styleHint: string): Promise<StyleDNA> {
 // ─── Agent 3 — Spatial Generator ──────────────────────────────────────────────
 
 async function fetchImageAsBase64(url: string): Promise<{ base64: string; mediaType: string } | null> {
+  // Node 20's fetch does not support data: URIs. Decode them directly so
+  // user-uploaded images (which arrive as data: URLs through the pipeline)
+  // actually reach the generator instead of silently failing.
+  if (url.startsWith("data:")) {
+    const match = url.match(/^data:([^;,]+)(?:;([^,]+))?,(.+)$/);
+    if (!match) return null;
+    const mediaType = match[1] || "image/jpeg";
+    const encoding = match[2] || "";
+    const payload = match[3];
+    const base64 = encoding === "base64"
+      ? payload
+      : Buffer.from(decodeURIComponent(payload), "utf-8").toString("base64");
+    return { base64, mediaType };
+  }
+
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) return null;
@@ -367,6 +383,8 @@ const TRELLIS_SPACE = "trellis-community/TRELLIS";
 const TRELLIS_URL = "https://trellis-community-trellis.hf.space/";
 const INSTANTMESH_SPACE = "TencentARC/InstantMesh";
 const INSTANTMESH_URL = "https://tencentarc-instantmesh.hf.space/";
+const STABLE_FAST_3D_SPACE = "stabilityai/stable-fast-3d";
+const STABLE_FAST_3D_URL = "https://stabilityai-stable-fast-3d.hf.space/";
 
 function spaceWarmer(url: string) {
   let p: Promise<void> | null = null;
@@ -383,6 +401,12 @@ function spaceWarmer(url: string) {
 const warmupHunyuan3D = spaceWarmer(HUNYUAN3D_URL);
 const warmupTrellis = spaceWarmer(TRELLIS_URL);
 const warmupInstantMesh = spaceWarmer(INSTANTMESH_URL);
+const warmupStableFast3D = spaceWarmer(STABLE_FAST_3D_URL);
+
+// Eagerly start warming the fastest Spaces at module load so the first request
+// doesn't pay full cold-start. Subsequent calls reuse the same promise.
+void warmupTrellis();
+void warmupStableFast3D();
 
 export type GeneratorAttempt = {
   provider: string;
@@ -635,6 +659,53 @@ async function generateViaInstantMesh(
   }
 }
 
+async function generateViaStableFast3D(
+  refUrl: string
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
+
+    void warmupStableFast3D();
+    const client = await Client.connect(STABLE_FAST_3D_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
+
+    const imgData = await fetchImageAsBase64(refUrl);
+    if (!imgData) return { url: null, error: "Reference image fetch failed" };
+
+    const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
+
+    // /requires_bg_remove is the single-shot endpoint: image + foreground ratio →
+    // [state, state, preview, button, litmodel3d, column]. The 3D model
+    // is at index 4 (litmodel3d component).
+    const result = (await client.predict("/requires_bg_remove", {
+      image: blob,
+      slider: 0.85
+    })) as { data: unknown };
+
+    const data = result.data as unknown;
+    if (Array.isArray(data)) {
+      // litmodel3d output object: { value: { url, path } } or { url } directly
+      for (const item of data) {
+        if (typeof item === "string" && item.includes(".glb")) return { url: item, error: null };
+        if (isRecord(item)) {
+          if (typeof item.url === "string" && item.url.includes(".glb")) return { url: item.url, error: null };
+          if (typeof item.path === "string" && item.path.includes(".glb")) return { url: item.path, error: null };
+          if (isRecord(item.value)) {
+            const v = item.value as Record<string, unknown>;
+            if (typeof v.url === "string" && v.url.includes(".glb")) return { url: v.url, error: null };
+            if (typeof v.path === "string" && v.path.includes(".glb")) return { url: v.path, error: null };
+          }
+        }
+      }
+    }
+    return { url: null, error: "Stable Fast 3D returned no GLB" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[STABLE-FAST-3D]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
 async function generateViaFalTrellis(refUrl: string): Promise<{ url: string | null; error: string | null }> {
   try {
     const falKey = process.env.FAL_KEY;
@@ -663,6 +734,78 @@ async function generateViaFalTrellis(refUrl: string): Promise<{ url: string | nu
   }
 }
 
+type ProviderDescriptor = {
+  name: string;
+  tier: GeneratedAsset["tier"];
+  run: () => Promise<{ url: string | null; error: string | null }>;
+};
+
+/**
+ * Race a set of provider descriptors. The first one that returns a
+ * validated GLB wins. Losing providers are still recorded in `attempts`
+ * with their outcome (so the user log explains the cost). If all fail
+ * the function returns null and the caller falls through to the next tier.
+ */
+async function raceProviders(
+  providers: ProviderDescriptor[],
+  attempts: GeneratorAttempt[]
+): Promise<{ url: string; tier: GeneratedAsset["tier"] } | null> {
+  const wrapped = providers.map(async (p) => {
+    const out = await p.run();
+    if (!out.url) {
+      return { provider: p, ok: false as const, error: out.error };
+    }
+    const v = await validateGlbUrl(out.url);
+    return {
+      provider: p,
+      ok: v.ok,
+      error: v.ok ? null : v.reason,
+      url: out.url,
+      sizeBytes: v.sizeBytes,
+      triangleCount: v.triangleCount
+    };
+  });
+
+  // Use Promise.any to wait for the first SUCCESSFUL provider. If all reject
+  // (i.e. all return ok:false), we fall through with all attempts recorded.
+  return new Promise((resolve) => {
+    let settled = false;
+    let pending = wrapped.length;
+
+    wrapped.forEach((promise) => {
+      promise
+        .then((result) => {
+          attempts.push({
+            provider: result.provider.name,
+            ok: result.ok,
+            error: result.ok ? undefined : (result.error ?? undefined),
+            sizeBytes: "sizeBytes" in result ? result.sizeBytes || undefined : undefined,
+            triangleCount: "triangleCount" in result ? result.triangleCount : undefined
+          });
+          if (result.ok && "url" in result && result.url && !settled) {
+            settled = true;
+            resolve({ url: result.url, tier: result.provider.tier });
+          }
+        })
+        .catch((err) => {
+          attempts.push({
+            provider: result_provider_name_safe(err),
+            ok: false,
+            error: err instanceof Error ? err.message.slice(0, 160) : "race failed"
+          });
+        })
+        .finally(() => {
+          pending -= 1;
+          if (pending === 0 && !settled) resolve(null);
+        });
+    });
+  });
+}
+
+function result_provider_name_safe(_err: unknown): string {
+  return "race";
+}
+
 async function runSpatialGenerator(
   brief: ThreeDBrief,
   groundingResult: ReferenceGroundingResult,
@@ -687,15 +830,31 @@ async function runSpatialGenerator(
     };
   }
 
-  // Cascade order (fastest free → best free → fallback → paid).
-  // After each provider returns a URL we validate the GLB; degenerate
-  // output (<2KB, bad magic, <50 triangles) falls through to the next tier.
-  const providers = [
+  // Speed tier — race the two fastest free providers in parallel and accept
+  // the first one that returns a valid GLB. Both have sub-5s warm latency,
+  // so racing them roughly doubles the chance the first attempt succeeds
+  // without doubling perceived latency.
+  const speedTier = [
+    {
+      name: "stable-fast-3d (hf)",
+      tier: "library" as const,
+      run: () => generateViaStableFast3D(inputRef)
+    },
     {
       name: "trellis-2 (hf)",
       tier: "trellis" as const,
       run: () => generateViaTrellis2HF(inputRef)
-    },
+    }
+  ];
+
+  const speedWinner = await raceProviders(speedTier, attempts);
+  if (speedWinner) {
+    const mirror = await mirrorGlbToBlob(speedWinner.url, brief.primaryObject);
+    return { glbUrl: mirror.url, tier: speedWinner.tier, attempts };
+  }
+
+  // Quality tier — sequential, slower but more reliable.
+  const qualityTier = [
     {
       name: "hunyuan3d-2.5 (hf)",
       tier: "hunyuan3d" as const,
@@ -713,7 +872,7 @@ async function runSpatialGenerator(
     }
   ];
 
-  for (const provider of providers) {
+  for (const provider of qualityTier) {
     const out = await provider.run();
     if (!out.url) {
       attempts.push({ provider: provider.name, ok: false, error: out.error ?? undefined });
@@ -728,7 +887,8 @@ async function runSpatialGenerator(
       triangleCount: v.triangleCount
     });
     if (v.ok) {
-      return { glbUrl: out.url, tier: provider.tier, attempts };
+      const mirror = await mirrorGlbToBlob(out.url, brief.primaryObject);
+      return { glbUrl: mirror.url, tier: provider.tier, attempts };
     }
   }
 

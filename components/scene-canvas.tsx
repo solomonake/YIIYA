@@ -11,12 +11,13 @@ import {
 import { Physics, RigidBody } from "@react-three/rapier";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import type { Group, Object3D } from "three";
-import { Raycaster, Vector2 } from "three";
+import type { Group, Mesh, Object3D } from "three";
+import { Box3, MeshStandardMaterial, Raycaster, Vector2, Vector3 } from "three";
 import { styleMaterialPack } from "@/lib/scene/styles";
 import { useYiiyaStore, type SceneObject, type SpatialAnchor } from "@/lib/store";
 import { registerExportObject, registerExportRoot } from "@/lib/spatial-export";
 import { Stage as StagePlaceholder } from "@/components/scene/stage";
+import { GlbErrorBoundary } from "@/components/scene/glb-error-boundary";
 import type { StageState } from "@/lib/scene/stage-state";
 
 function materialNode(
@@ -592,6 +593,36 @@ function ActiveGlbViewer({ url }: { url: string }) {
   const gltf = useGLTF(url);
   const clone = useMemo(() => gltf.scene.clone(), [gltf.scene]);
   const { actions } = useAnimations(gltf.animations, clone);
+  const groupRef = useRef<Group>(null);
+
+  // Many provider GLBs (Hunyuan shape-only, Stable Fast 3D in vertex-color
+  // mode) come back with no materials defined. Three.js renders those as
+  // black under the studio HDR. Walk the scene and ensure every mesh has a
+  // MeshStandardMaterial that uses vertex colors when present.
+  useEffect(() => {
+    clone.traverse((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      const hasVertexColors = Boolean((mesh.geometry?.attributes as Record<string, unknown> | undefined)?.color);
+      const needsReplacement =
+        !mesh.material ||
+        (Array.isArray(mesh.material) ? mesh.material.length === 0 : false);
+      if (needsReplacement) {
+        mesh.material = new MeshStandardMaterial({
+          color: hasVertexColors ? 0xffffff : 0xb0b3ba,
+          vertexColors: hasVertexColors,
+          roughness: 0.55,
+          metalness: 0.05
+        });
+      } else if (hasVertexColors) {
+        const single = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+        if (single && "vertexColors" in single) {
+          (single as MeshStandardMaterial).vertexColors = true;
+          single.needsUpdate = true;
+        }
+      }
+    });
+  }, [clone]);
 
   useEffect(() => {
     if (gltf.animations.length > 0) {
@@ -600,10 +631,49 @@ function ActiveGlbViewer({ url }: { url: string }) {
     }
   }, [gltf.animations, actions]);
 
+  // Auto-frame: scale and center the loaded mesh so it fills the viewport
+  // regardless of the units the provider chose (meters, mm, normalized, etc.).
+  const { autoScale, autoOffset } = useMemo(() => {
+    const box = new Box3().setFromObject(clone);
+    const size = box.getSize(new Vector3());
+    const center = box.getCenter(new Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const targetSize = 2.4;
+    const scale = targetSize / maxDim;
+    return {
+      autoScale: scale,
+      autoOffset: [-center.x * scale, -box.min.y * scale, -center.z * scale] as [number, number, number]
+    };
+  }, [clone]);
+
+  // Materializing: scale-up from 0 with a gentle ease on first reveal.
+  const mountedAtRef = useRef(Date.now());
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const elapsed = Math.min(1, (Date.now() - mountedAtRef.current) / 900);
+    const eased = 1 - Math.pow(1 - elapsed, 3);
+    const s = autoScale * (0.4 + 0.6 * eased);
+    groupRef.current.scale.set(s, s, s);
+  });
+
   return (
     <Float speed={1.2} rotationIntensity={0.4} floatIntensity={0.4}>
-      <primitive object={clone} scale={1} position={[0, 0, 0]} />
+      <group ref={groupRef} position={autoOffset}>
+        <primitive object={clone} />
+      </group>
     </Float>
+  );
+}
+
+function GlbLoadFailureFallback() {
+  return (
+    <group>
+      <mesh>
+        <icosahedronGeometry args={[0.74, 1]} />
+        <meshStandardMaterial color="#EF9F27" wireframe transparent opacity={0.4} />
+      </mesh>
+      <pointLight intensity={1.0} color="#EF9F27" distance={2.6} />
+    </group>
   );
 }
 
@@ -651,9 +721,11 @@ function StarterScene({
       ) : null}
 
       {activeGlbUrl ? (
-        <Suspense fallback={null}>
-          <ActiveGlbViewer url={activeGlbUrl} />
-        </Suspense>
+        <GlbErrorBoundary fallback={<GlbLoadFailureFallback />}>
+          <Suspense fallback={<GlbLoadFailureFallback />}>
+            <ActiveGlbViewer url={activeGlbUrl} />
+          </Suspense>
+        </GlbErrorBoundary>
       ) : null}
 
       {objects.map((object, index) => {
