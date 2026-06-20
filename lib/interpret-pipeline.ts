@@ -384,7 +384,103 @@ const warmupHunyuan3D = spaceWarmer(HUNYUAN3D_URL);
 const warmupTrellis = spaceWarmer(TRELLIS_URL);
 const warmupInstantMesh = spaceWarmer(INSTANTMESH_URL);
 
-export type GeneratorAttempt = { provider: string; ok: boolean; error?: string };
+export type GeneratorAttempt = {
+  provider: string;
+  ok: boolean;
+  error?: string;
+  sizeBytes?: number;
+  triangleCount?: number;
+};
+
+export type GlbValidation = {
+  ok: boolean;
+  reason: string | null;
+  sizeBytes: number;
+  triangleCount?: number;
+};
+
+// Minimum GLB size for a real mesh. The placeholder route returns ~120 bytes;
+// real provider outputs are typically ≥ 50KB even for low-poly assets.
+const MIN_GLB_BYTES = 2048;
+
+async function validateGlbUrl(url: string): Promise<GlbValidation> {
+  // Skip validation for our own placeholder route — it's intentionally tiny.
+  if (url.startsWith("/api/3d/placeholder") || url.includes("/placeholder?")) {
+    return { ok: false, reason: "Placeholder URL", sizeBytes: 0 };
+  }
+
+  try {
+    // Fetch the first 32KB. That's enough to read the GLB header + JSON chunk
+    // (where mesh primitives live) without downloading the whole binary payload.
+    const res = await fetch(url, {
+      headers: { Range: "bytes=0-32767" },
+      signal: AbortSignal.timeout(15_000)
+    });
+    if (!res.ok && res.status !== 206) {
+      return { ok: false, reason: `HTTP ${res.status}`, sizeBytes: 0 };
+    }
+
+    const contentRange = res.headers.get("content-range");
+    const totalSize = contentRange?.match(/\/(\d+)$/)?.[1]
+      ? Number(contentRange.match(/\/(\d+)$/)?.[1])
+      : Number(res.headers.get("content-length") ?? 0);
+    const buf = Buffer.from(await res.arrayBuffer());
+
+    if (totalSize > 0 && totalSize < MIN_GLB_BYTES) {
+      return { ok: false, reason: `File too small (${totalSize} bytes)`, sizeBytes: totalSize };
+    }
+
+    // GLB magic: 'glTF' = 0x46546C67 (little endian)
+    if (buf.length < 12 || buf.readUInt32LE(0) !== 0x46546c67) {
+      return { ok: false, reason: "Not a valid GLB (magic mismatch)", sizeBytes: totalSize || buf.length };
+    }
+
+    // Parse JSON chunk to count primitives.
+    let triangleCount: number | undefined;
+    try {
+      const jsonChunkLength = buf.readUInt32LE(12);
+      const jsonChunkType = buf.readUInt32LE(16); // 'JSON' = 0x4E4F534A
+      if (jsonChunkType === 0x4e4f534a && jsonChunkLength > 0 && jsonChunkLength < buf.length - 20) {
+        const jsonText = buf.subarray(20, 20 + jsonChunkLength).toString("utf-8");
+        const gltf = JSON.parse(jsonText) as {
+          meshes?: Array<{ primitives?: Array<{ indices?: number }> }>;
+          accessors?: Array<{ count?: number }>;
+        };
+        const meshes = gltf.meshes ?? [];
+        let totalIndices = 0;
+        for (const mesh of meshes) {
+          for (const prim of mesh.primitives ?? []) {
+            if (typeof prim.indices === "number" && gltf.accessors?.[prim.indices]?.count) {
+              totalIndices += gltf.accessors[prim.indices].count ?? 0;
+            }
+          }
+        }
+        if (totalIndices > 0) triangleCount = Math.floor(totalIndices / 3);
+      }
+    } catch {
+      // Header parse failed — not fatal; size + magic already passed.
+    }
+
+    if (triangleCount !== undefined && triangleCount < 50) {
+      return {
+        ok: false,
+        reason: `Degenerate mesh (${triangleCount} triangles)`,
+        sizeBytes: totalSize || buf.length,
+        triangleCount
+      };
+    }
+
+    return {
+      ok: true,
+      reason: null,
+      sizeBytes: totalSize || buf.length,
+      triangleCount
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: msg.slice(0, 100), sizeBytes: 0 };
+  }
+}
 
 async function generateViaHunyuan3D(
   refUrl: string,
@@ -591,26 +687,50 @@ async function runSpatialGenerator(
     };
   }
 
-  // Cascade order (fastest free → best free → fallback → paid):
-  //   1. TRELLIS-2  — ~3s warm, native PBR
-  //   2. Hunyuan3D-2.5 — best quality, slower
-  //   3. InstantMesh — reliable feed-forward backup
-  //   4. fal-ai Trellis-2 — only if FAL_KEY is set (paid)
-  const trellis = await generateViaTrellis2HF(inputRef);
-  attempts.push({ provider: "trellis-2 (hf)", ok: Boolean(trellis.url), error: trellis.error ?? undefined });
-  if (trellis.url) return { glbUrl: trellis.url, tier: "trellis", attempts };
+  // Cascade order (fastest free → best free → fallback → paid).
+  // After each provider returns a URL we validate the GLB; degenerate
+  // output (<2KB, bad magic, <50 triangles) falls through to the next tier.
+  const providers = [
+    {
+      name: "trellis-2 (hf)",
+      tier: "trellis" as const,
+      run: () => generateViaTrellis2HF(inputRef)
+    },
+    {
+      name: "hunyuan3d-2.5 (hf)",
+      tier: "hunyuan3d" as const,
+      run: () => generateViaHunyuan3D(inputRef, brief)
+    },
+    {
+      name: "instantmesh (hf)",
+      tier: "library" as const,
+      run: () => generateViaInstantMesh(inputRef)
+    },
+    {
+      name: "trellis-2 (fal paid)",
+      tier: "trellis" as const,
+      run: () => generateViaFalTrellis(inputRef)
+    }
+  ];
 
-  const hunyuan = await generateViaHunyuan3D(inputRef, brief);
-  attempts.push({ provider: "hunyuan3d-2.5 (hf)", ok: Boolean(hunyuan.url), error: hunyuan.error ?? undefined });
-  if (hunyuan.url) return { glbUrl: hunyuan.url, tier: "hunyuan3d", attempts };
-
-  const instant = await generateViaInstantMesh(inputRef);
-  attempts.push({ provider: "instantmesh (hf)", ok: Boolean(instant.url), error: instant.error ?? undefined });
-  if (instant.url) return { glbUrl: instant.url, tier: "library", attempts };
-
-  const fal = await generateViaFalTrellis(inputRef);
-  attempts.push({ provider: "trellis-2 (fal paid)", ok: Boolean(fal.url), error: fal.error ?? undefined });
-  if (fal.url) return { glbUrl: fal.url, tier: "trellis", attempts };
+  for (const provider of providers) {
+    const out = await provider.run();
+    if (!out.url) {
+      attempts.push({ provider: provider.name, ok: false, error: out.error ?? undefined });
+      continue;
+    }
+    const v = await validateGlbUrl(out.url);
+    attempts.push({
+      provider: provider.name,
+      ok: v.ok,
+      error: v.ok ? undefined : `${v.reason ?? "validation failed"} — retrying next provider`,
+      sizeBytes: v.sizeBytes || undefined,
+      triangleCount: v.triangleCount
+    });
+    if (v.ok) {
+      return { glbUrl: out.url, tier: provider.tier, attempts };
+    }
+  }
 
   return {
     glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
@@ -654,7 +774,8 @@ async function runPackager(
   brief: ThreeDBrief,
   glbUrl: string,
   tier: GeneratedAsset["tier"],
-  textureUrls: GeneratedAsset["textureUrls"]
+  textureUrls: GeneratedAsset["textureUrls"],
+  triangleCount?: number
 ): Promise<GeneratedAsset> {
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const exportUrls: GeneratedAsset["exportUrls"] = {};
@@ -674,6 +795,7 @@ async function runPackager(
     name: brief.primaryObject,
     glbUrl,
     tier,
+    triangleCount,
     materialBrief: brief.materialBrief,
     textureUrls,
     exportUrls,
@@ -751,10 +873,17 @@ export async function* runInterpretPipeline(
           yield { type: "generating", log: `[GENERATOR ERROR] ${attempt.provider}: ${attempt.error}`, progress: 0.75 };
         }
       }
-      yield { type: "generating", log: `[GENERATOR] Mesh ready (${tier}), texturing...`, progress: 0.8 };
+      const winning = attempts.find((a) => a.ok);
+      const sizeMb = winning?.sizeBytes ? (winning.sizeBytes / 1_048_576).toFixed(2) : null;
+      const triNote = winning?.triangleCount ? `~${winning.triangleCount.toLocaleString()} tris` : null;
+      const sizeNote = [sizeMb ? `${sizeMb}MB` : null, triNote].filter(Boolean).join(", ");
+      const meshReadyLog = sizeNote
+        ? `[GENERATOR] Mesh ready (${tier}, ${sizeNote}), texturing...`
+        : `[GENERATOR] Mesh ready (${tier}), texturing...`;
+      yield { type: "generating", log: meshReadyLog, progress: 0.8 };
 
       const textureUrls = await generatePBRTextures(slotBrief);
-      const asset = await runPackager(slotBrief, glbUrl, tier, textureUrls);
+      const asset = await runPackager(slotBrief, glbUrl, tier, textureUrls, winning?.triangleCount);
       generatedAssets.push(asset);
 
       yield { type: "asset_ready", asset, log: `[READY] "${asset.name}" — ${asset.tier}, ${asset.scaleMeters}m, ${Object.keys(asset.exportUrls).join("/")}` };

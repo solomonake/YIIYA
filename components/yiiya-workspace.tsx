@@ -26,7 +26,10 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
         <span className="text-[10px] text-zinc-200 font-mono truncate">{asset.name}</span>
         <span className={`text-[8px] font-mono shrink-0 ${tierColor}`}>{tierLabel}</span>
       </div>
-      <div className="text-[9px] text-zinc-600 font-mono mb-2">{asset.scaleMeters}m · {asset.isWatertight ? "watertight" : "approx"}</div>
+      <div className="text-[9px] text-zinc-600 font-mono mb-2">
+        {asset.scaleMeters}m · {asset.isWatertight ? "watertight" : "approx"}
+        {asset.triangleCount ? ` · ${asset.triangleCount >= 1000 ? `${(asset.triangleCount / 1000).toFixed(1)}k` : asset.triangleCount} tris` : ""}
+      </div>
       <div className="flex flex-wrap gap-1">
         {Object.entries(asset.exportUrls).map(([fmt, url]) =>
           url ? (
