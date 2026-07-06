@@ -4,6 +4,7 @@
  */
 import { Client } from "@gradio/client";
 import { mirrorGlbToBlob } from "@/lib/vercel-blob";
+import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -197,6 +198,12 @@ Return ONLY valid JSON:
 }
 
 Rules:
+- Interpret ordinary noun prompts as physical objects. If the user says "a car",
+  primaryObject must be the car object, not the words "a car".
+- Only create typography/letterform assets when the user explicitly asks for
+  text, words, letters, a phrase, typography, signage, or a wordmark.
+- For non-typographic object prompts, description must include "no text, no
+  letters, no typography".
 - hero_asset=high poly, environment_prop=mid poly, character_accessory=high poly
 - Unreal/UE5 -> targetPlatform=unreal, priorityFormat=fbx, needsLODChain=true
 - Unity -> targetPlatform=unity, priorityFormat=glb
@@ -205,8 +212,12 @@ Rules:
 - Populate sceneSlots only for multi_object_scene intent`;
 
 async function runDirector(body: InterpretRequestBody): Promise<ThreeDBrief> {
+  const promptIntent = classifyPromptSubject(body.transcript);
   const ctx = JSON.stringify({
-    userPrompt: body.transcript,
+    userPrompt: promptIntent.generationPrompt,
+    rawUserPrompt: body.transcript,
+    promptKind: promptIntent.kind,
+    promptSubject: promptIntent.subject,
     hasReferenceImage: Boolean(body.referenceImage),
     sessionStyle: body.sessionStyleDNA?.styleLabel ?? null,
     existingAssets: body.existingAssets ?? [],
@@ -218,10 +229,16 @@ async function runDirector(body: InterpretRequestBody): Promise<ThreeDBrief> {
   if (!isRecord(parsed)) throw new Error("Director returned invalid brief");
 
   const intent = (parsed.intent as ThreeDIntentType) ?? "single_object";
+  const primaryObject = promptIntent.kind === "object"
+    ? promptIntent.subject
+    : String(parsed.primaryObject ?? promptIntent.subject ?? "typography");
+  const description = String(parsed.description ?? promptIntent.generationPrompt);
   return {
     intent,
-    primaryObject: String(parsed.primaryObject ?? "object"),
-    description: String(parsed.description ?? body.transcript),
+    primaryObject,
+    description: promptIntent.kind === "object" && !/\bno\s+(?:text|letters|typography)\b/i.test(description)
+      ? `${description}. No text, no letters, no typography.`
+      : description,
     useCase: (parsed.useCase as ThreeDBrief["useCase"]) ?? "concept",
     polygonBudget: (parsed.polygonBudget as "high" | "mid" | "low") ?? "mid",
     targetPlatform: (parsed.targetPlatform as ThreeDBrief["targetPlatform"]) ?? "general",
@@ -299,17 +316,31 @@ async function runPhotoAnalyst(image: ReferenceImageInput): Promise<{
 
 function pollinationsUrl(prompt: string, w = 768, h = 768): string {
   const seed = Math.floor(Math.random() * 99999);
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&enhance=true&seed=${seed}`;
+  // `enhance=true` runs a slow server-side LLM prompt-rewrite (5–15s) and was a
+  // major source of pre-generation latency. Dropped. `model=turbo` is the fast
+  // path; the prompt we send is already studio-specific so we don't need rewrite.
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&model=turbo&seed=${seed}`;
+}
+
+// Fire a request at an image URL without awaiting it, so it is generated/cached
+// by the time a 3D provider fetches it. Never throws.
+function prewarmImage(url: string): void {
+  void fetch(url, { method: "GET", signal: AbortSignal.timeout(20_000) }).catch(() => undefined);
 }
 
 async function runStudioPhotoGrounding(brief: ThreeDBrief): Promise<ReferenceGroundingResult> {
-  const obj = brief.primaryObject;
+  const obj = objectGenerationPrompt(brief.primaryObject);
   const style = brief.styleTags.join(", ") || "realistic";
   const mat = brief.materialBrief.textureStyle;
   const prompt = `single isolated ${obj}, ${style}, ${mat}, centered three-quarter view, pure white background, no shadow, studio product photography, eye-level, soft neutral lighting, photorealistic, sharp focus, high detail, no text, no watermark`;
 
+  const url = pollinationsUrl(prompt, 768, 768);
+  // Start generating the reference image now so it is cached before the first
+  // 3D provider fetches it (cuts perceived latency).
+  prewarmImage(url);
+
   return {
-    referenceImages: [pollinationsUrl(prompt, 768, 768)],
+    referenceImages: [url],
     materialBrief: brief.materialBrief,
     analysisNotes: "1 studio reference photo (single-image grounding)"
   };
@@ -407,6 +438,55 @@ const warmupStableFast3D = spaceWarmer(STABLE_FAST_3D_URL);
 // doesn't pay full cold-start. Subsequent calls reuse the same promise.
 void warmupTrellis();
 void warmupStableFast3D();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Hard timeout wrapper. Guarantees a provider call can never hang the request:
+ * `@gradio/client` connect/predict and `fal.subscribe` have no built-in
+ * timeout, so a sleeping HF Space or stuck queue would otherwise block until
+ * Vercel kills the whole function. On timeout we reject and the caller advances
+ * to the next provider; the underlying promise is abandoned (harmless).
+ */
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+      ms
+    );
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Upload raw image bytes to Vercel Blob and return a public https URL. Tripo and
+ * Meshy accept an image *URL* only (not inline base64), so a user-uploaded photo
+ * must be hosted first. Returns null when Blob isn't configured.
+ */
+async function uploadImageToBlob(base64: string, mime: string): Promise<string | null> {
+  try {
+    const { isVercelBlobConfigured } = await import("@/lib/vercel-blob");
+    if (!isVercelBlobConfigured()) return null;
+    const { put } = await import("@vercel/blob");
+    const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+    const name = `ref/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const blob = await put(name, Buffer.from(base64, "base64"), {
+      access: "public",
+      contentType: mime,
+      addRandomSuffix: false
+    });
+    return blob.url;
+  } catch {
+    return null;
+  }
+}
 
 export type GeneratorAttempt = {
   provider: string;
@@ -734,6 +814,146 @@ async function generateViaFalTrellis(refUrl: string): Promise<{ url: string | nu
   }
 }
 
+// fal Hunyuan3D — fast, reliable managed image→3D with embedded PBR. Covered by
+// fal's free signup credits, then ~$0.16–0.22 a generation. Accepts a data URI,
+// so it works for both user uploads and synthesized studio photos.
+async function generateViaFalHunyuan(refUrl: string): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) return { url: null, error: "FAL_KEY not set" };
+    const { fal } = await import("@fal-ai/client");
+    fal.config({ credentials: falKey });
+
+    const imgData = await fetchImageAsBase64(refUrl);
+    if (!imgData) return { url: null, error: "Reference image fetch failed" };
+    const dataUri = `data:${imgData.mediaType};base64,${imgData.base64}`;
+
+    type FalResult = {
+      data?: {
+        model_glb?: { url?: string };
+        model_glb_pbr?: { url?: string };
+        model_mesh?: { url?: string };
+      };
+    };
+    const result = await (fal.subscribe as (m: string, o: unknown) => Promise<FalResult>)(
+      process.env.FAL_HUNYUAN_MODEL ?? "fal-ai/hunyuan3d/v2",
+      {
+        input: { input_image_url: dataUri, image_url: dataUri, textured_mesh: true },
+        logs: false
+      }
+    );
+    const url =
+      result?.data?.model_glb_pbr?.url ??
+      result?.data?.model_glb?.url ??
+      result?.data?.model_mesh?.url ??
+      null;
+    if (!url) return { url: null, error: "fal hunyuan returned no GLB" };
+    return { url, error: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[FAL-HUNYUAN]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
+// Tripo image→3D. Free tier ~200 credits/month; async create-then-poll. Needs a
+// public image URL (use uploadImageToBlob for user uploads). Contract mirrors
+// services/scene/providers/tripo.ts.
+async function generateViaTripo(publicUrl: string): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const key = process.env.TRIPO_API_KEY;
+    if (!key) return { url: null, error: "TRIPO_API_KEY not set" };
+    const base = process.env.TRIPO_API_URL ?? "https://api.tripo3d.ai/v2/openapi";
+
+    const createRes = await fetch(`${base}/task`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "image_to_model",
+        file: { type: "url", url: publicUrl },
+        model_version: process.env.TRIPO_MODEL_VERSION ?? "v2.5-20250123",
+        texture: true,
+        pbr: true
+      }),
+      signal: AbortSignal.timeout(20_000)
+    });
+    if (!createRes.ok) return { url: null, error: `tripo create ${createRes.status}` };
+    const created = (await createRes.json()) as { code?: number; data?: { task_id?: string } };
+    const taskId = created?.data?.task_id;
+    if (created?.code !== 0 || !taskId) return { url: null, error: "tripo returned no task_id" };
+
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      await sleep(2500);
+      const statusRes = await fetch(`${base}/task/${taskId}`, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(15_000)
+      }).catch(() => null);
+      if (!statusRes || !statusRes.ok) continue;
+      const status = (await statusRes.json()) as {
+        data?: { status?: string; output?: { pbr_model?: string; model?: string }; error?: { message?: string } };
+      };
+      const d = status?.data;
+      if (!d) continue;
+      if (d.status === "success") {
+        const glb = d.output?.pbr_model ?? d.output?.model;
+        return glb ? { url: glb, error: null } : { url: null, error: "tripo success but no model" };
+      }
+      if (d.status === "failed" || d.status === "banned" || d.status === "cancelled") {
+        return { url: null, error: `tripo ${d.status}: ${d.error?.message ?? ""}`.trim() };
+      }
+    }
+    return { url: null, error: "tripo timed out" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[TRIPO]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
+// Meshy image→3D. Free tier ~200 credits/month; async create-then-poll. Needs a
+// public image URL. Returns a textured GLB with PBR when enabled.
+async function generateViaMeshy(publicUrl: string): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const key = process.env.MESHY_API_KEY;
+    if (!key) return { url: null, error: "MESHY_API_KEY not set" };
+
+    const createRes = await fetch("https://api.meshy.ai/openapi/v1/image-to-3d", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ image_url: publicUrl, enable_pbr: true, should_texture: true }),
+      signal: AbortSignal.timeout(20_000)
+    });
+    if (!createRes.ok) return { url: null, error: `meshy create ${createRes.status}` };
+    const created = (await createRes.json()) as { result?: string; id?: string };
+    const taskId = created?.result ?? created?.id;
+    if (!taskId) return { url: null, error: "meshy returned no task id" };
+
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      await sleep(3000);
+      const statusRes = await fetch(`https://api.meshy.ai/openapi/v1/image-to-3d/${taskId}`, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(15_000)
+      }).catch(() => null);
+      if (!statusRes || !statusRes.ok) continue;
+      const d = (await statusRes.json()) as { status?: string; model_urls?: { glb?: string } };
+      if (d?.status === "SUCCEEDED") {
+        const glb = d.model_urls?.glb;
+        return glb ? { url: glb, error: null } : { url: null, error: "meshy succeeded but no glb" };
+      }
+      if (d?.status === "FAILED" || d?.status === "EXPIRED") {
+        return { url: null, error: `meshy ${d.status}` };
+      }
+    }
+    return { url: null, error: "meshy timed out" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[MESHY]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
 type ProviderDescriptor = {
   name: string;
   tier: GeneratedAsset["tier"];
@@ -746,65 +966,22 @@ type ProviderDescriptor = {
  * with their outcome (so the user log explains the cost). If all fail
  * the function returns null and the caller falls through to the next tier.
  */
-async function raceProviders(
-  providers: ProviderDescriptor[],
-  attempts: GeneratorAttempt[]
-): Promise<{ url: string; tier: GeneratedAsset["tier"] } | null> {
-  const wrapped = providers.map(async (p) => {
-    const out = await p.run();
-    if (!out.url) {
-      return { provider: p, ok: false as const, error: out.error };
-    }
-    const v = await validateGlbUrl(out.url);
-    return {
-      provider: p,
-      ok: v.ok,
-      error: v.ok ? null : v.reason,
-      url: out.url,
-      sizeBytes: v.sizeBytes,
-      triangleCount: v.triangleCount
-    };
-  });
+type CascadeEntry = ProviderDescriptor & { enabled: boolean; timeoutMs: number };
 
-  // Use Promise.any to wait for the first SUCCESSFUL provider. If all reject
-  // (i.e. all return ok:false), we fall through with all attempts recorded.
-  return new Promise((resolve) => {
-    let settled = false;
-    let pending = wrapped.length;
-
-    wrapped.forEach((promise) => {
-      promise
-        .then((result) => {
-          attempts.push({
-            provider: result.provider.name,
-            ok: result.ok,
-            error: result.ok ? undefined : (result.error ?? undefined),
-            sizeBytes: "sizeBytes" in result ? result.sizeBytes || undefined : undefined,
-            triangleCount: "triangleCount" in result ? result.triangleCount : undefined
-          });
-          if (result.ok && "url" in result && result.url && !settled) {
-            settled = true;
-            resolve({ url: result.url, tier: result.provider.tier });
-          }
-        })
-        .catch((err) => {
-          attempts.push({
-            provider: result_provider_name_safe(err),
-            ok: false,
-            error: err instanceof Error ? err.message.slice(0, 160) : "race failed"
-          });
-        })
-        .finally(() => {
-          pending -= 1;
-          if (pending === 0 && !settled) resolve(null);
-        });
-    });
-  });
-}
-
-function result_provider_name_safe(_err: unknown): string {
-  return "race";
-}
+// Default order: most reliable + fastest first, free fallbacks last. Each entry
+// is skipped instantly when its key is absent, so a deploy with only some keys
+// just uses what it has. Override with YIIYA_PROVIDER_ORDER (comma-separated
+// keys) to e.g. prefer free monthly tiers (tripo,meshy) over fal credits.
+const DEFAULT_PROVIDER_ORDER = [
+  "fal-hunyuan",
+  "fal-trellis",
+  "tripo",
+  "meshy",
+  "hf-trellis",
+  "hf-hunyuan",
+  "hf-stablefast",
+  "hf-instantmesh"
+];
 
 async function runSpatialGenerator(
   brief: ThreeDBrief,
@@ -813,90 +990,103 @@ async function runSpatialGenerator(
   userImageMime?: string | null
 ): Promise<{ glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] }> {
   const attempts: GeneratorAttempt[] = [];
+  const placeholder = (): { glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] } => ({
+    glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
+    tier: "fallback",
+    attempts
+  });
 
-  // When the user uploaded an image, feed it directly to image-to-3D models —
-  // never re-imagine it through Pollinations. For pure text prompts, use the
-  // single studio photo we grounded above.
+  // User upload → data URI fed directly to image-to-3D models (never re-imagined
+  // through Pollinations). Text prompt → the studio photo grounded above.
   const inputRef = userImageBase64
     ? `data:${userImageMime ?? "image/jpeg"};base64,${userImageBase64}`
     : groundingResult.referenceImages[0] ?? null;
 
   if (!inputRef) {
     attempts.push({ provider: "none", ok: false, error: "No reference image available" });
-    return {
-      glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
-      tier: "fallback",
-      attempts
-    };
+    return placeholder();
   }
 
-  // Speed tier — race the two fastest free providers in parallel and accept
-  // the first one that returns a valid GLB. Both have sub-5s warm latency,
-  // so racing them roughly doubles the chance the first attempt succeeds
-  // without doubling perceived latency.
-  const speedTier = [
-    {
-      name: "stable-fast-3d (hf)",
-      tier: "library" as const,
-      run: () => generateViaStableFast3D(inputRef)
-    },
-    {
-      name: "trellis-2 (hf)",
-      tier: "trellis" as const,
-      run: () => generateViaTrellis2HF(inputRef)
+  // Lazily resolve a public https URL for providers (Tripo/Meshy) that require
+  // one. Already-http refs (Pollinations) pass through; user data URIs are
+  // uploaded to Blob on first need only.
+  let publicUrlResolved: string | null | undefined;
+  const publicUrl = async (): Promise<string | null> => {
+    if (publicUrlResolved !== undefined) return publicUrlResolved;
+    if (inputRef.startsWith("http")) publicUrlResolved = inputRef;
+    else if (userImageBase64) publicUrlResolved = await uploadImageToBlob(userImageBase64, userImageMime ?? "image/jpeg");
+    else publicUrlResolved = null;
+    return publicUrlResolved;
+  };
+  const needsUrl = async (run: (u: string) => Promise<{ url: string | null; error: string | null }>) => {
+    const u = await publicUrl();
+    if (!u) return { url: null, error: "needs a public image URL (set BLOB_READ_WRITE_TOKEN)" };
+    return run(u);
+  };
+
+  const hasFal = Boolean(process.env.FAL_KEY);
+  const hasHf = Boolean(process.env.HUGGINGFACE_TOKEN);
+  const entries: Record<string, CascadeEntry> = {
+    "fal-hunyuan": { name: "hunyuan3d (fal)", tier: "hunyuan3d", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalHunyuan(inputRef) },
+    "fal-trellis": { name: "trellis-2 (fal)", tier: "trellis", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalTrellis(inputRef) },
+    "tripo": { name: "tripo", tier: "trellis", enabled: Boolean(process.env.TRIPO_API_KEY), timeoutMs: 95_000, run: () => needsUrl(generateViaTripo) },
+    "meshy": { name: "meshy", tier: "hunyuan3d", enabled: Boolean(process.env.MESHY_API_KEY), timeoutMs: 125_000, run: () => needsUrl(generateViaMeshy) },
+    "hf-trellis": { name: "trellis (hf)", tier: "trellis", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaTrellis2HF(inputRef) },
+    "hf-hunyuan": { name: "hunyuan3d (hf)", tier: "hunyuan3d", enabled: hasHf, timeoutMs: 90_000, run: () => generateViaHunyuan3D(inputRef, brief) },
+    "hf-stablefast": { name: "stable-fast-3d (hf)", tier: "library", enabled: hasHf, timeoutMs: 45_000, run: () => generateViaStableFast3D(inputRef) },
+    "hf-instantmesh": { name: "instantmesh (hf)", tier: "library", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaInstantMesh(inputRef) }
+  };
+
+  const order = (process.env.YIIYA_PROVIDER_ORDER?.split(",").map((s) => s.trim()).filter(Boolean)) ?? DEFAULT_PROVIDER_ORDER;
+
+  // Hard overall deadline (under the 300s function cap) so the whole cascade is
+  // guaranteed to terminate even if several providers each crawl to timeout.
+  const deadline = Date.now() + 270_000;
+
+  for (const key of order) {
+    const entry = entries[key];
+    if (!entry || !entry.enabled) continue;
+    const remaining = deadline - Date.now();
+    if (remaining < 8_000) break;
+
+    let out: { url: string | null; error: string | null };
+    try {
+      out = await withTimeout(entry.run(), Math.min(entry.timeoutMs, remaining), entry.name);
+    } catch (err) {
+      out = { url: null, error: err instanceof Error ? err.message : "provider error" };
     }
-  ];
 
-  const speedWinner = await raceProviders(speedTier, attempts);
-  if (speedWinner) {
-    const mirror = await mirrorGlbToBlob(speedWinner.url, brief.primaryObject);
-    return { glbUrl: mirror.url, tier: speedWinner.tier, attempts };
-  }
-
-  // Quality tier — sequential, slower but more reliable.
-  const qualityTier = [
-    {
-      name: "hunyuan3d-2.5 (hf)",
-      tier: "hunyuan3d" as const,
-      run: () => generateViaHunyuan3D(inputRef, brief)
-    },
-    {
-      name: "instantmesh (hf)",
-      tier: "library" as const,
-      run: () => generateViaInstantMesh(inputRef)
-    },
-    {
-      name: "trellis-2 (fal paid)",
-      tier: "trellis" as const,
-      run: () => generateViaFalTrellis(inputRef)
-    }
-  ];
-
-  for (const provider of qualityTier) {
-    const out = await provider.run();
     if (!out.url) {
-      attempts.push({ provider: provider.name, ok: false, error: out.error ?? undefined });
+      attempts.push({ provider: entry.name, ok: false, error: out.error ?? undefined });
       continue;
     }
-    const v = await validateGlbUrl(out.url);
+
+    const v = await validateGlbUrl(out.url).catch(
+      () => ({ ok: false, reason: "validation error", sizeBytes: 0 } as GlbValidation)
+    );
     attempts.push({
-      provider: provider.name,
+      provider: entry.name,
       ok: v.ok,
-      error: v.ok ? undefined : `${v.reason ?? "validation failed"} — retrying next provider`,
+      error: v.ok ? undefined : `${v.reason ?? "validation failed"} — trying next`,
       sizeBytes: v.sizeBytes || undefined,
       triangleCount: v.triangleCount
     });
     if (v.ok) {
-      const mirror = await mirrorGlbToBlob(out.url, brief.primaryObject);
-      return { glbUrl: mirror.url, tier: provider.tier, attempts };
+      const mirror = await mirrorGlbToBlob(out.url, brief.primaryObject).catch(
+        () => ({ url: out.url as string, mirrored: false, sizeBytes: 0 })
+      );
+      return { glbUrl: mirror.url, tier: entry.tier, attempts };
     }
   }
 
-  return {
-    glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
-    tier: "fallback",
-    attempts
-  };
+  if (attempts.length === 0) {
+    attempts.push({
+      provider: "none",
+      ok: false,
+      error: "No 3D provider configured. Set FAL_KEY, TRIPO_API_KEY, MESHY_API_KEY, or HUGGINGFACE_TOKEN."
+    });
+  }
+  return placeholder();
 }
 
 // ─── Agent 4 — Material Artist ────────────────────────────────────────────────
@@ -1020,7 +1210,7 @@ export async function* runInterpretPipeline(
       const slot = slots[i];
       const slotBrief: ThreeDBrief = { ...brief, primaryObject: slot.name, description: slot.description, materialBrief: slot.materialBrief };
 
-      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) — TRELLIS-2 → Hunyuan3D-2.5 → InstantMesh cascade...`, progress: 0.1 + 0.6 * (i / slots.length) };
+      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) — Hunyuan3D / TRELLIS / Tripo / Meshy cascade…`, progress: 0.1 + 0.6 * (i / slots.length) };
 
       const { glbUrl, tier, attempts } = await runSpatialGenerator(
         slotBrief,
@@ -1054,7 +1244,7 @@ export async function* runInterpretPipeline(
       `[QA] Scale: 1 unit = 1 meter (Blender/UE5/Unity standard).`,
       ...(brief.needsLODChain ? ["[QA] LOD chain: /api/3d/lod?url={glbUrl}"] : []),
       ...(brief.needsPhysicsMetadata ? ["[QA] Physics metadata in USD export."] : []),
-      `[QA] Pipeline: Director → Grounder → TRELLIS-2 → Hunyuan3D-2.5 → InstantMesh → PBR → Packager`
+      `[QA] Pipeline: Director → Grounder → Hunyuan3D / TRELLIS / Tripo / Meshy → PBR → Packager`
     ];
 
     yield { type: "qa", qa_log };

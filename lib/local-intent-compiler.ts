@@ -1,5 +1,6 @@
 import { themeFromVibe, type YiiyaTheme } from "@/lib/designSystem";
 import type { CursorTarget } from "@/lib/scene/types";
+import { classifyPromptSubject } from "@/lib/scene/prompt-intent";
 
 type LocalCompilerInput = {
   transcript: string;
@@ -586,6 +587,10 @@ function inferMaterial(text: string) {
 }
 
 function inferShape(text: string) {
+  if (hasAny(text, ["car", "vehicle", "truck", "sedan", "suv", "bike", "motorcycle"])) {
+    return "vehicle";
+  }
+
   if (text.includes("plane") || text.includes("panel")) {
     return "plane";
   }
@@ -623,6 +628,45 @@ function inferColor(text: string) {
   const hex = text.match(/#[0-9a-f]{6}\b/i)?.[0];
 
   return hex ?? "#EF9F27";
+}
+
+function inferSemanticFamily(text: string) {
+  if (hasAny(text, ["car", "vehicle", "truck", "sedan", "suv", "bike", "motorcycle"])) {
+    return "vehicle";
+  }
+
+  if (hasAny(text, ["chair", "table", "desk", "stool", "sofa", "lamp"])) {
+    return "furniture";
+  }
+
+  if (hasAny(text, ["bottle", "cup", "mug", "vase", "jar"])) {
+    return "vessel";
+  }
+
+  return "object";
+}
+
+function inferLibraryModelUrl(text: string) {
+  if (hasAny(text, ["car", "vehicle", "truck", "sedan", "suv"])) {
+    return "library://car";
+  }
+
+  const libraryKeys = [
+    "cup",
+    "bottle",
+    "laptop",
+    "phone",
+    "watch",
+    "chair",
+    "table",
+    "lamp",
+    "shoe",
+    "bag",
+    "plant",
+    "camera"
+  ];
+  const match = libraryKeys.find((key) => text.includes(key));
+  return match ? `library://${match}` : "";
 }
 
 function hasDirectReference(text: string) {
@@ -734,6 +778,7 @@ function compileElementModification(input: LocalCompilerInput, text: string) {
 
 export function compileLocalIntent(input: LocalCompilerInput) {
   const text = input.transcript.toLowerCase();
+  const promptIntent = classifyPromptSubject(input.transcript);
   const actions: LocalAction[] = [];
   const subject = inferBrandSubject(text);
   const archetype = inferCreativeArchetype(text, input);
@@ -742,6 +787,7 @@ export function compileLocalIntent(input: LocalCompilerInput) {
   const modifications = compileElementModification(input, text);
   const elementTarget = resolveElementTarget(input, text);
   const objectTarget = resolveObjectTarget(input);
+  const modelUrl = promptIntent.kind === "object" ? inferLibraryModelUrl(text) : "";
 
   if (requestedName) {
     actions.push({
@@ -828,7 +874,14 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     actions.push(...modifications);
   }
 
+  const wantsSpatialObject =
+    promptIntent.kind === "object" &&
+    !elementTarget &&
+    !hasDirectReference(text) &&
+    !hasAny(text, ["landing", "website", "site", "page", "section", "navbar", "footer"]);
+
   if (
+    wantsSpatialObject ||
     hasAny(text, [
       "3d",
       "sphere",
@@ -1027,7 +1080,11 @@ export function compileLocalIntent(input: LocalCompilerInput) {
     actions.push({
       type: "ADD_3D_OBJECT",
       payload: {
+        prompt: promptIntent.kind === "object" ? promptIntent.generationPrompt : input.transcript,
+        resolvedName: promptIntent.subject,
         shape: inferShape(text),
+        semanticFamily: inferSemanticFamily(text),
+        modelUrl,
         material: inferMaterial(text),
         color: inferColor(text),
         animation: hasAny(text, ["spin", "rotate", "rotating"]) ? "rotate" : "float",

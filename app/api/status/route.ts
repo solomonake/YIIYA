@@ -1,62 +1,40 @@
 // @ts-nocheck
 import { NextResponse } from "next/server";
+import {
+  evaluateProductionReadiness,
+  productionReadinessManifest
+} from "@/lib/production-readiness";
 import { canUseSupabasePublish } from "@/lib/supabase-projects";
 import { getScanInfraStatus } from "@/lib/scan-job-store";
 
-const coreRequiredEnv = [
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "GEMINI_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY"
-] as const;
-
-const labOptionalEnv = [
-  "FAL_KEY",
-  "UNSPLASH_ACCESS_KEY",
-  "BLOB_READ_WRITE_TOKEN",
-  "SCAN_RECONSTRUCTION_ENDPOINT",
-  "SCAN_RECONSTRUCTION_API_KEY",
-  "SCAN_RECONSTRUCTION_WEBHOOK_SECRET",
-  "SCAN_RECONSTRUCTION_APP_URL",
-  "SCAN_FAL_WEBHOOK_SECRET",
-  "CAD_WORKER_ENDPOINT",
-  "CAD_WORKER_API_KEY"
-] as const;
-
-function hasUsableValue(value: string | undefined) {
-  return Boolean(
-    value &&
-      !value.includes("your_") &&
-      !value.includes("YOUR_") &&
-      value.trim().length > 8
-  );
-}
-
 export function GET() {
-  const env = Object.fromEntries(
-    [...coreRequiredEnv, ...labOptionalEnv].map((name) => [
-      name,
-      hasUsableValue(process.env[name])
-    ])
-  ) as Record<
-    (typeof coreRequiredEnv)[number] | (typeof labOptionalEnv)[number],
-    boolean
-  >;
-  const missingCore = coreRequiredEnv.filter((name) => !env[name]);
-  const missingLab = labOptionalEnv.filter((name) => !env[name]);
-  const coreOk = missingCore.length === 0 && canUseSupabasePublish();
-  const labOk = missingLab.length === 0;
   const scanInfra = getScanInfraStatus();
+  const readiness = evaluateProductionReadiness(process.env, {
+    supabasePublishConfigured: canUseSupabasePublish()
+  });
+  const env = readiness.configured;
+  const missingCore = readiness.missingCore.map((item) => item.name);
+  const missingLab = readiness.missingLab.map((item) => item.name);
+  const missingDeploy = readiness.missingDeploy.map((item) => item.name);
+  const status = readiness.productionMode && !readiness.coreOk ? 503 : 200;
 
   return NextResponse.json({
-    ok: coreOk,
-    coreOk,
-    labOk,
-    missing: [...missingCore, ...missingLab],
+    ok: readiness.coreOk,
+    productionMode: readiness.productionMode,
+    productionReady: readiness.coreOk,
+    coreOk: readiness.coreOk,
+    labOk: readiness.labOk,
+    deployOk: readiness.deployOk,
+    missing: [...missingCore, ...missingLab, ...missingDeploy],
     missingCore,
     missingLab,
+    missingDeploy,
+    issues: {
+      core: readiness.missingCore,
+      lab: readiness.missingLab,
+      deploy: readiness.missingDeploy
+    },
+    required: productionReadinessManifest.required,
     ai: {
       conductor: {
         model: process.env.GEMINI_FLASH_MODEL ?? "gemini-2.5-flash",
@@ -111,5 +89,5 @@ export function GET() {
       workerConfigured: env.CAD_WORKER_ENDPOINT,
       workerAuthConfigured: env.CAD_WORKER_API_KEY
     }
-  });
+  }, { status });
 }

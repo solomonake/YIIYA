@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "path": "YIIYA.md",
+      "kind": "product_context",
+      "freshness": "2026-06-06",
+      "notes": "Product identity, phase history, provider defaults, and semantic action contract."
+    },
+    {
+      "path": "docs/PRODUCT_STRATEGY_3D_CAD.md",
+      "kind": "strategy",
+      "freshness": "repo-current",
+      "notes": "North-star positioning for CAD and 3D asset workflows."
+    },
+    {
+      "path": "docs/PRODUCTION_FOUNDATION.md",
+      "kind": "operations",
+      "freshness": "repo-current",
+      "notes": "Production setup, env requirements, tests, CI, telemetry, and guardrails."
+    },
+    {
+      "path": "package.json",
+      "kind": "commands",
+      "freshness": "repo-current",
+      "notes": "Supported Node engines and npm scripts."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "kind": "ci",
+      "freshness": "repo-current",
+      "notes": "Node 20 CI gates for typecheck, lint, test, and build."
+    }
+  ],
+  "rules": [
+    "Prefer repo-grounded evidence over generic advice.",
+    "Do not claim production success without proof.",
+    "Do not expose private consulting knowledge in this repo."
+  ]
+}

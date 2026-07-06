@@ -20,6 +20,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { generate3d } from "./providers/router";
 import type { GenerationRequest, GenerationResult } from "./providers/types";
+import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 
 export type TextTo3dRequest = {
   prompt: string;
@@ -35,7 +36,8 @@ export type TextTo3dResult =
 
 const LIBRARY_NOUNS = new Set([
   "cup", "mug", "bottle", "vase", "chair", "lamp", "candle", "book",
-  "phone", "laptop", "watch", "shoe", "bag", "plant", "pot", "frame"
+  "phone", "laptop", "watch", "shoe", "bag", "plant", "pot", "frame",
+  "car", "vehicle", "truck", "sedan", "suv"
 ]);
 
 const STATIC_LIBRARY_BASE = "/static-3d-library";
@@ -50,8 +52,11 @@ function genai(): GoogleGenAI | null {
 }
 
 export async function textTo3d(req: TextTo3dRequest): Promise<TextTo3dResult> {
+  const classifiedPrompt = classifyPromptSubject(req.prompt);
+  const providerPrompt = classifiedPrompt.generationPrompt;
+
   // Tier 0 — static library hit (no network).
-  const noun = pickLibraryNoun(req.prompt);
+  const noun = classifiedPrompt.kind === "object" ? pickLibraryNoun(classifiedPrompt.subject) : null;
   if (noun) {
     return {
       ok: true,
@@ -70,7 +75,7 @@ export async function textTo3d(req: TextTo3dRequest): Promise<TextTo3dResult> {
   if (req.intent === "preview") {
     const outcome = await generate3d({
       kind: "text-to-3d",
-      prompt: req.prompt,
+      prompt: providerPrompt,
       intent: "preview",
       pbr: true,
       userId: req.userId,
@@ -104,7 +109,7 @@ export async function textTo3d(req: TextTo3dRequest): Promise<TextTo3dResult> {
   // Final fallback — direct Tripo text-to-3D.
   const outcome = await generate3d({
     kind: "text-to-3d",
-    prompt: req.prompt,
+    prompt: providerPrompt,
     intent: "final",
     pbr: true,
     userId: req.userId,
@@ -119,6 +124,7 @@ export async function textTo3d(req: TextTo3dRequest): Promise<TextTo3dResult> {
 function pickLibraryNoun(prompt: string): string | null {
   const tokens = prompt.toLowerCase().split(/\W+/).filter(Boolean);
   for (const t of tokens) {
+    if (["vehicle", "truck", "sedan", "suv"].includes(t)) return "car";
     if (LIBRARY_NOUNS.has(t)) return t;
   }
   return null;
@@ -131,6 +137,7 @@ function detectTransparency(prompt: string): boolean {
 async function synthesizeStudioImage(prompt: string): Promise<string | null> {
   const c = genai();
   if (!c) return null;
+  const imagePrompt = objectGenerationPrompt(prompt);
   try {
     const result = await c.models.generateContent({
       // Image-capable Gemini model — see https://ai.google.dev/gemini-api/docs/image-generation
@@ -141,7 +148,7 @@ async function synthesizeStudioImage(prompt: string): Promise<string | null> {
           parts: [
             {
               text:
-                `Studio product photo of: ${prompt}. ` +
+                `Studio product photo of: ${imagePrompt}. ` +
                 "Pure white seamless background. Soft top-down studio lighting. " +
                 "Single isolated subject, centered, no shadows on the floor. " +
                 "Photorealistic, sharp focus, no text, no logo."

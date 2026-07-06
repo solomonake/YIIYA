@@ -37,6 +37,20 @@ Copy `.env.example` to `.env.local` and fill these (links inline):
 The TRELLIS.2 / Sparc3D / InstantMesh HuggingFace Spaces are public and require
 no key. A `HUGGINGFACE_TOKEN` simply gives priority queueing.
 
+Before shipping a production deployment, run the production readiness gate with
+the same environment variables that Vercel will use:
+
+```bash
+npm run check:production
+```
+
+That command fails if core production services are missing or still set to
+placeholder values. Add `-- --strict-lab` when you want the full 3D, scan, and
+CAD provider stack to be mandatory too. The runtime `/api/status` endpoint uses
+the same readiness manifest and returns `503` in production when core
+configuration is incomplete, so monitoring cannot mistake a partially configured
+deployment for a healthy one.
+
 ## 3. Run database migrations
 
 ```bash

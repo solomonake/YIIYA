@@ -8,6 +8,9 @@ try {
 } catch { /* Sentry not installed or corrupted — run without it */ }
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
+const enableInstrumentation =
+  process.env.NODE_ENV === "production" ||
+  process.env.YIIYA_ENABLE_INSTRUMENTATION === "1";
 
 const securityHeaders = [
   { key: "X-DNS-Prefetch-Control", value: "on" },
@@ -48,7 +51,7 @@ const nextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: true,
   experimental: {
-    instrumentationHook: true,
+    instrumentationHook: enableInstrumentation,
     serverComponentsExternalPackages: [
       "@gltf-transform/core",
       "@gltf-transform/functions",

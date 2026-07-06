@@ -1,0 +1,155 @@
+{
+  "required": {
+    "core": [
+      {
+        "name": "NEXT_PUBLIC_SITE_URL",
+        "label": "Production site origin",
+        "reason": "Canonical URLs, sitemap, robots, published project metadata, and callbacks need the real public origin."
+      },
+      {
+        "name": "NEXT_PUBLIC_SUPABASE_URL",
+        "label": "Supabase public URL",
+        "reason": "Authentication, project persistence, publishing, memory, and usage dashboards depend on Supabase."
+      },
+      {
+        "name": "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "label": "Supabase anon key",
+        "reason": "Browser and user-scoped Supabase calls need the anon key."
+      },
+      {
+        "name": "SUPABASE_SERVICE_ROLE_KEY",
+        "label": "Supabase service role key",
+        "reason": "Server-side publish, autosave, usage, and admin operations need the service role key."
+      },
+      {
+        "name": "GEMINI_API_KEY",
+        "label": "Gemini API key",
+        "reason": "The primary intent, creative director, research, and embedding paths use Gemini."
+      },
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "label": "Anthropic API key",
+        "reason": "Architecture and critique fallback paths use Anthropic."
+      },
+      {
+        "name": "OPENAI_API_KEY",
+        "label": "OpenAI API key",
+        "reason": "Vision fallback and moderation paths use OpenAI."
+      },
+      {
+        "name": "UPSTASH_REDIS_REST_URL",
+        "label": "Upstash Redis REST URL",
+        "reason": "Production rate limits need shared storage; the in-process fallback is development-only."
+      },
+      {
+        "name": "UPSTASH_REDIS_REST_TOKEN",
+        "label": "Upstash Redis REST token",
+        "reason": "Production rate limits need authenticated Upstash access."
+      },
+      {
+        "name": "SENTRY_DSN",
+        "label": "Sentry server DSN",
+        "reason": "Production server errors should be captured with request context."
+      },
+      {
+        "name": "NEXT_PUBLIC_SENTRY_DSN",
+        "label": "Sentry browser DSN",
+        "reason": "Production client errors should be captured with release context."
+      },
+      {
+        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "label": "OTEL exporter endpoint",
+        "reason": "Production AI and generation flows need distributed tracing."
+      },
+      {
+        "name": "LANGFUSE_PUBLIC_KEY",
+        "label": "Langfuse public key",
+        "reason": "Langfuse OTEL ingestion needs project credentials."
+      },
+      {
+        "name": "LANGFUSE_SECRET_KEY",
+        "label": "Langfuse secret key",
+        "reason": "Langfuse OTEL ingestion needs authenticated project credentials."
+      }
+    ],
+    "lab": [
+      {
+        "name": "HUGGINGFACE_TOKEN",
+        "label": "Hugging Face token",
+        "reason": "Priority and private 3D provider calls should not rely on anonymous public queues."
+      },
+      {
+        "name": "TRIPO_API_KEY",
+        "label": "Tripo API key",
+        "reason": "The reliable text/image-to-3D provider cascade needs a configured commercial provider."
+      },
+      {
+        "name": "FAL_KEY",
+        "label": "Fal API key",
+        "reason": "Managed 3D and scan fallback providers need Fal credentials."
+      },
+      {
+        "name": "UNSPLASH_ACCESS_KEY",
+        "label": "Unsplash access key",
+        "reason": "Reference image search should use authenticated provider access."
+      },
+      {
+        "name": "BLOB_READ_WRITE_TOKEN",
+        "label": "Vercel Blob token",
+        "reason": "Brand kit uploads, scan frames, and generated artifacts need persistent object storage."
+      },
+      {
+        "name": "SCAN_RECONSTRUCTION_ENDPOINT",
+        "label": "Scan reconstruction worker endpoint",
+        "reason": "Scan-to-asset reconstruction needs a deployed worker endpoint."
+      },
+      {
+        "name": "SCAN_RECONSTRUCTION_API_KEY",
+        "label": "Scan reconstruction worker key",
+        "reason": "The reconstruction worker should reject unauthenticated calls."
+      },
+      {
+        "name": "SCAN_RECONSTRUCTION_WEBHOOK_SECRET",
+        "label": "Scan reconstruction webhook secret",
+        "reason": "Worker callbacks need signed webhook verification."
+      },
+      {
+        "name": "SCAN_RECONSTRUCTION_APP_URL",
+        "label": "Scan reconstruction app URL",
+        "reason": "Workers need the production callback origin for artifact upload."
+      },
+      {
+        "name": "SCAN_FAL_WEBHOOK_SECRET",
+        "label": "Fal scan webhook secret",
+        "reason": "Fal callbacks need signed webhook verification."
+      },
+      {
+        "name": "CAD_WORKER_ENDPOINT",
+        "label": "CAD worker endpoint",
+        "reason": "CAD export and validation handoffs need a deployed worker."
+      },
+      {
+        "name": "CAD_WORKER_API_KEY",
+        "label": "CAD worker API key",
+        "reason": "The CAD worker should reject unauthenticated calls."
+      }
+    ],
+    "deploy": [
+      {
+        "name": "SENTRY_ORG",
+        "label": "Sentry org",
+        "reason": "Production source map upload needs the Sentry organization."
+      },
+      {
+        "name": "SENTRY_PROJECT",
+        "label": "Sentry project",
+        "reason": "Production source map upload needs the Sentry project."
+      },
+      {
+        "name": "SENTRY_AUTH_TOKEN",
+        "label": "Sentry auth token",
+        "reason": "Production source map upload needs an auth token."
+      }
+    ]
+  }
+}
