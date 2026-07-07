@@ -392,6 +392,12 @@ function Toolbar() {
       >
         ASSETS{assetCount > 0 ? ` (${assetCount})` : ""}
       </button>
+      <Link
+        href="/capture"
+        className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+      >
+        CAPTURE
+      </Link>
       {isConfigured && (
         <>
           <Link
@@ -430,8 +436,28 @@ export function YiiyaWorkspace() {
   const generatedAssets = useYiiyaStore(s => s.generatedAssets);
   const activeAssetId = useYiiyaStore(s => s.activeAssetId);
   const addLog = useYiiyaStore(s => s.addLog);
+  const referenceImage = useYiiyaStore(s => s.referenceImage);
+  const { submitManualTranscript: autoSubmit } = useSpeechInterpreter();
 
   useOpenAssetFromLibrary();
+
+  // One-tap mobile capture flow: /capture sets referenceImage in the store
+  // then navigates here with ?autoGenerate=1. Fire the generation once the
+  // image is actually in the store, then scrub the query param so a refresh
+  // doesn't re-trigger it.
+  useEffect(() => {
+    if (typeof window === "undefined" || !referenceImage) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("autoGenerate") !== "1") return;
+
+    params.delete("autoGenerate");
+    const url = new URL(window.location.href);
+    url.search = params.toString();
+    window.history.replaceState({}, "", url.toString());
+
+    autoSubmit("Generate a 3D model of this object.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceImage]);
 
   useEffect(() => {
     const key = "yiiya_3d_boot";
