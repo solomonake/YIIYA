@@ -48,6 +48,10 @@ export type ThreeDBrief = {
   priorityFormat: "glb" | "fbx" | "usd" | "obj";
   sceneSlots?: ThreeDObjectSlot[];
   confidence: number;
+  /** Short follow-up prompts a user can tap to refine this generation (material, style, or detail changes). */
+  suggestions?: string[];
+  /** Set only when the prompt was too vague to resolve confidently (e.g. "make something cool"). */
+  clarifyingQuestion?: string;
 };
 
 export type StyleDNA = {
@@ -218,7 +222,9 @@ Return ONLY valid JSON:
   "needsPhysicsMetadata": boolean,
   "priorityFormat": "glb" | "fbx" | "usd" | "obj",
   "sceneSlots": [],
-  "confidence": number
+  "confidence": number,
+  "suggestions": string[],
+  "clarifyingQuestion": string | null
 }
 
 Rules:
@@ -233,7 +239,16 @@ Rules:
 - Unity -> targetPlatform=unity, priorityFormat=glb
 - Blender -> targetPlatform=blender, priorityFormat=glb
 - 3d print -> targetPlatform=print, priorityFormat=obj
-- Populate sceneSlots only for multi_object_scene intent`;
+- Populate sceneSlots only for multi_object_scene intent
+- suggestions: exactly 3 short follow-up prompts (3-6 words each) the user
+  could tap next to refine THIS object — one about material/finish, one about
+  style, one about a physical detail. Write them as standalone commands, e.g.
+  "make it rusted metal", "make it lowpoly", "add a cracked lid". Never
+  suggest changing the subject entirely.
+- clarifyingQuestion: null unless the prompt is too vague to resolve into a
+  concrete object (e.g. "make something cool", "surprise me"). When set, keep
+  it to one short question and still fill in your best-guess primaryObject so
+  the pipeline has something to try.`;
 
 async function runDirector(body: InterpretRequestBody): Promise<ThreeDBrief> {
   const promptIntent = classifyPromptSubject(body.transcript);
@@ -281,7 +296,11 @@ async function runDirector(body: InterpretRequestBody): Promise<ThreeDBrief> {
           materialBrief: safeMaterial(slot.materialBrief)
         }))
       : undefined,
-    confidence: Number(parsed.confidence ?? 0.8)
+    confidence: Number(parsed.confidence ?? 0.8),
+    suggestions: Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.filter((s): s is string => typeof s === "string").slice(0, 3)
+      : undefined,
+    clarifyingQuestion: typeof parsed.clarifyingQuestion === "string" ? parsed.clarifyingQuestion : undefined
   };
 }
 
@@ -1289,6 +1308,9 @@ export async function* runInterpretPipeline(
       console.error("[DIRECTOR] falling back to local brief:", errMessage(err));
     }
     yield { type: "director", brief, log: `[DIRECTOR] ${brief.intent} → "${brief.primaryObject}" (${brief.useCase}, ${brief.polygonBudget} poly)${directorNote}` };
+    if (brief.clarifyingQuestion) {
+      yield { type: "generating", log: `[DIRECTOR] ${brief.clarifyingQuestion} (proceeding with best guess: "${brief.primaryObject}")`, progress: 0.05 };
+    }
 
     if (body.referenceImage) {
       const photo = await runPhotoAnalyst(body.referenceImage);
