@@ -20,6 +20,7 @@ import { Stage as StagePlaceholder } from "@/components/scene/stage";
 import { GlbErrorBoundary } from "@/components/scene/glb-error-boundary";
 import type { StageState } from "@/lib/scene/stage-state";
 import { capturePoster, hasCaptured } from "@/lib/assets/capture-poster";
+import { registerCanvasForRecording, registerSpinControl } from "@/lib/scene/turntable-recorder";
 
 function materialNode(
   object: SceneObject
@@ -651,12 +652,34 @@ function ActiveGlbViewer({ url, posterAssetId }: { url: string; posterAssetId?: 
   // Materializing: scale-up from 0 with a gentle ease on first reveal.
   const mountedAtRef = useRef(Date.now());
   const posterCapturedRef = useRef(false);
+
+  // Turntable recording: a registered spin control drives exactly one clean
+  // 360° revolution over a fixed duration, independent of Float's own subtle
+  // idle rotation (which keeps running underneath — a small added wobble,
+  // not worth the complexity of suppressing for a 4s clip).
+  const spinRef = useRef<{ startedAt: number; durationMs: number } | null>(null);
+  useEffect(() => {
+    registerSpinControl({
+      start: (durationMs) => {
+        spinRef.current = { startedAt: Date.now(), durationMs };
+      }
+    });
+    return () => registerSpinControl(null);
+  }, []);
+
   useFrame((state) => {
     if (!groupRef.current) return;
     const elapsed = Math.min(1, (Date.now() - mountedAtRef.current) / 900);
     const eased = 1 - Math.pow(1 - elapsed, 3);
     const s = autoScale * (0.4 + 0.6 * eased);
     groupRef.current.scale.set(s, s, s);
+
+    if (spinRef.current) {
+      const spinElapsed = Date.now() - spinRef.current.startedAt;
+      const progress = Math.min(1, spinElapsed / spinRef.current.durationMs);
+      groupRef.current.rotation.y = progress * Math.PI * 2;
+      if (progress >= 1) spinRef.current = null;
+    }
 
     // One-shot poster capture: wait for the materialize animation to finish
     // and one extra frame to render at full scale, then grab a thumbnail.
@@ -776,8 +799,21 @@ function StarterScene({
       />
       <Environment preset="studio" />
       <CursorRaycaster />
+      <CanvasRecordingRegistrar />
     </>
   );
+}
+
+// Registers the WebGL canvas element for turntable recording. Split out
+// because useThree() is only callable inside <Canvas>, while SceneCanvas
+// itself renders <Canvas> from the outside.
+function CanvasRecordingRegistrar() {
+  const { gl } = useThree();
+  useEffect(() => {
+    registerCanvasForRecording(gl.domElement);
+    return () => registerCanvasForRecording(null);
+  }, [gl]);
+  return null;
 }
 
 export function SceneCanvas({
