@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
-import { isInterpretRequest, runInterpretPipeline } from "@/lib/interpret-pipeline";
+import { isInterpretRequest, runInterpretPipeline, type GeneratedAsset } from "@/lib/interpret-pipeline";
+import { getUserIdFromAuthHeader } from "@/lib/auth/verify-request";
+import { saveGeneratedAsset } from "@/lib/assets/persist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,11 +30,26 @@ export async function POST(request: NextRequest) {
     return new Response(encodeEvent({ type: "error", message: "Expected { transcript: string }" }), { status: 400, headers: streamHeaders });
   }
 
+  // Optional — anonymous generation still works, it just isn't saved to
+  // /library. Resolved once up front so persistence never delays streaming.
+  const userId = await getUserIdFromAuthHeader(request);
+
   const stream = new ReadableStream({
     async start(controller) {
       const enc = (e: unknown) => new TextEncoder().encode(encodeEvent(e));
       try {
         for await (const event of runInterpretPipeline(body)) {
+          if (event.type === "asset_ready" && userId) {
+            // Awaited (not fire-and-forget): serverless functions can freeze
+            // background work the instant the response is sent, so the save
+            // must land before this event reaches the client.
+            const dbId = await saveGeneratedAsset(userId, body.transcript, null, event.asset).catch(
+              () => null
+            );
+            if (dbId) {
+              (event.asset as GeneratedAsset).dbId = dbId;
+            }
+          }
           controller.enqueue(enc(event));
           if (event.type === "done" || event.type === "error") break;
         }

@@ -19,6 +19,7 @@ import { registerExportObject, registerExportRoot } from "@/lib/spatial-export";
 import { Stage as StagePlaceholder } from "@/components/scene/stage";
 import { GlbErrorBoundary } from "@/components/scene/glb-error-boundary";
 import type { StageState } from "@/lib/scene/stage-state";
+import { capturePoster, hasCaptured } from "@/lib/assets/capture-poster";
 
 function materialNode(
   object: SceneObject
@@ -589,11 +590,12 @@ function CursorRaycaster() {
   return null;
 }
 
-function ActiveGlbViewer({ url }: { url: string }) {
+function ActiveGlbViewer({ url, posterAssetId }: { url: string; posterAssetId?: string }) {
   const gltf = useGLTF(url);
   const clone = useMemo(() => gltf.scene.clone(), [gltf.scene]);
   const { actions } = useAnimations(gltf.animations, clone);
   const groupRef = useRef<Group>(null);
+  const { gl } = useThree();
 
   // Many provider GLBs (Hunyuan shape-only, Stable Fast 3D in vertex-color
   // mode) come back with no materials defined. Three.js renders those as
@@ -648,12 +650,26 @@ function ActiveGlbViewer({ url }: { url: string }) {
 
   // Materializing: scale-up from 0 with a gentle ease on first reveal.
   const mountedAtRef = useRef(Date.now());
-  useFrame(() => {
+  const posterCapturedRef = useRef(false);
+  useFrame((state) => {
     if (!groupRef.current) return;
     const elapsed = Math.min(1, (Date.now() - mountedAtRef.current) / 900);
     const eased = 1 - Math.pow(1 - elapsed, 3);
     const s = autoScale * (0.4 + 0.6 * eased);
     groupRef.current.scale.set(s, s, s);
+
+    // One-shot poster capture: wait for the materialize animation to finish
+    // and one extra frame to render at full scale, then grab a thumbnail.
+    if (
+      !posterCapturedRef.current &&
+      elapsed >= 1 &&
+      posterAssetId &&
+      !hasCaptured(posterAssetId)
+    ) {
+      posterCapturedRef.current = true;
+      state.gl.render(state.scene, state.camera);
+      void capturePoster(posterAssetId, gl.domElement.toDataURL("image/png"));
+    }
   });
 
   return (
@@ -681,12 +697,14 @@ function StarterScene({
   objects,
   anchors,
   stage,
-  activeGlbUrl
+  activeGlbUrl,
+  activeAssetDbId
 }: {
   objects: SceneObject[];
   anchors: SpatialAnchor[];
   stage: StageState;
   activeGlbUrl?: string | null;
+  activeAssetDbId?: string;
 }) {
   const anchorMap = useMemo(
     () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
@@ -723,7 +741,7 @@ function StarterScene({
       {activeGlbUrl ? (
         <GlbErrorBoundary fallback={<GlbLoadFailureFallback />}>
           <Suspense fallback={<GlbLoadFailureFallback />}>
-            <ActiveGlbViewer url={activeGlbUrl} />
+            <ActiveGlbViewer url={activeGlbUrl} posterAssetId={activeAssetDbId} />
           </Suspense>
         </GlbErrorBoundary>
       ) : null}
@@ -762,7 +780,13 @@ function StarterScene({
   );
 }
 
-export function SceneCanvas({ activeGlbUrl }: { activeGlbUrl?: string | null }) {
+export function SceneCanvas({
+  activeGlbUrl,
+  activeAssetDbId
+}: {
+  activeGlbUrl?: string | null;
+  activeAssetDbId?: string;
+}) {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
   const stage = useYiiyaStore((state) => state.stage);
@@ -802,6 +826,7 @@ export function SceneCanvas({ activeGlbUrl }: { activeGlbUrl?: string | null }) 
               anchors={spatialAnchors}
               stage={stage}
               activeGlbUrl={activeGlbUrl}
+              activeAssetDbId={activeAssetDbId}
             />
           </group>
         </Physics>

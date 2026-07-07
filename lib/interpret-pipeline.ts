@@ -6,6 +6,7 @@ import { Client } from "@gradio/client";
 import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
+import { buildExportUrls } from "@/lib/scene/export-urls";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,8 @@ export type ReferenceGroundingResult = {
 
 export type GeneratedAsset = {
   id: string;
+  /** Supabase `assets.id` once saved for a signed-in user; undefined for anonymous or unsaved generations. */
+  dbId?: string;
   name: string;
   glbUrl: string;
   tier: "library" | "hunyuan3d" | "trellis" | "fallback";
@@ -1248,20 +1251,13 @@ async function runPackager(
   triangleCount?: number
 ): Promise<GeneratedAsset> {
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const exportUrls: GeneratedAsset["exportUrls"] = {};
-
-  if (glbUrl && tier !== "fallback" && !glbUrl.includes("placeholder")) {
-    exportUrls.glb = glbUrl;
-    const enc = encodeURIComponent(glbUrl);
-    // Only advertise formats /api/3d/convert genuinely produces. USD needs an
-    // external converter (lib/scene/usdz-export.ts) — offer it only when one
-    // is configured, so users never download a mislabeled file.
-    exportUrls.obj = `/api/3d/convert?from=${enc}&to=obj`;
-    exportUrls.stl = `/api/3d/convert?from=${enc}&to=stl`;
-    if (process.env.USDZ_CONVERTER_URL) {
-      exportUrls.usd = `/api/3d/convert?from=${enc}&to=usdz`;
-    }
-  }
+  // Only advertise formats /api/3d/convert genuinely produces. USD needs an
+  // external converter (lib/scene/usdz-export.ts) — offer it only when one
+  // is configured, so users never download a mislabeled file.
+  const exportUrls: GeneratedAsset["exportUrls"] =
+    tier === "fallback"
+      ? {}
+      : buildExportUrls(glbUrl, { usdzConfigured: Boolean(process.env.USDZ_CONVERTER_URL) });
 
   return {
     id,
