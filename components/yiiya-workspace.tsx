@@ -1,10 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useYiiyaStore } from "@/lib/store";
 import { useSpeechInterpreter } from "@/lib/use-speech-interpreter";
 import type { GeneratedAsset } from "@/lib/interpret-pipeline";
+import { useSupabaseSession } from "@/lib/auth/use-session";
+import { useOpenAssetFromLibrary } from "@/lib/assets/open-from-library";
+import { AuthSheet } from "@/components/auth/auth-sheet";
+import { signOut } from "@/lib/auth/actions";
 
 const SceneCanvas = dynamic(
   () => import("@/components/scene-canvas").then((m) => m.SceneCanvas),
@@ -303,6 +308,8 @@ function Toolbar() {
   const setLeft = useYiiyaStore(s => s.setLeftPanelOpen);
   const setRight = useYiiyaStore(s => s.setRightPanelOpen);
   const assetCount = useYiiyaStore(s => s.generatedAssets.length);
+  const { user, isConfigured } = useSupabaseSession();
+  const [showAuth, setShowAuth] = useState(false);
 
   return (
     <div className="absolute top-3 right-3 z-20 flex gap-1.5">
@@ -318,6 +325,32 @@ function Toolbar() {
       >
         ASSETS{assetCount > 0 ? ` (${assetCount})` : ""}
       </button>
+      {isConfigured && (
+        <>
+          <Link
+            href="/library"
+            className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+          >
+            LIBRARY
+          </Link>
+          {user ? (
+            <button
+              onClick={() => signOut()}
+              className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+            >
+              SIGN OUT
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowAuth(true)}
+              className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+            >
+              SIGN IN
+            </button>
+          )}
+        </>
+      )}
+      {showAuth ? <AuthSheet onClose={() => setShowAuth(false)} /> : null}
     </div>
   );
 }
@@ -331,6 +364,8 @@ export function YiiyaWorkspace() {
   const activeAssetId = useYiiyaStore(s => s.activeAssetId);
   const addLog = useYiiyaStore(s => s.addLog);
 
+  useOpenAssetFromLibrary();
+
   useEffect(() => {
     const key = "yiiya_3d_boot";
     try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch { /* ignore */ }
@@ -339,12 +374,10 @@ export function YiiyaWorkspace() {
     addLog("[SYSTEM] Pipeline: Gemini director → studio photo → TRELLIS.2 / Hunyuan3D / Tripo cascade → validated GLB");
   }, [addLog]);
 
-  const activeGlbUrl = (() => {
-    const active = generatedAssets.find(a => a.id === activeAssetId);
-    if (active) return active.glbUrl;
-    if (generatedAssets.length > 0) return generatedAssets[generatedAssets.length - 1].glbUrl;
-    return null;
-  })();
+  const activeAsset =
+    generatedAssets.find(a => a.id === activeAssetId) ??
+    (generatedAssets.length > 0 ? generatedAssets[generatedAssets.length - 1] : null);
+  const activeGlbUrl = activeAsset?.glbUrl ?? null;
 
   return (
     <div className="flex h-screen w-screen bg-black overflow-hidden">
@@ -353,7 +386,7 @@ export function YiiyaWorkspace() {
       <div className="relative flex-1 min-w-0">
         <Toolbar />
         <Suspense fallback={<div className="h-full w-full bg-black" />}>
-          <SceneCanvas activeGlbUrl={activeGlbUrl} />
+          <SceneCanvas activeGlbUrl={activeGlbUrl} activeAssetDbId={activeAsset?.dbId} />
         </Suspense>
         <GeneratingOverlay />
       </div>

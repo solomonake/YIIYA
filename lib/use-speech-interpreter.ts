@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useYiiyaStore } from "@/lib/store";
 import type { GeneratedAsset, PipelineEvent } from "@/lib/interpret-pipeline";
+import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 
 // ─── Web Speech API types ────────────────────────────────────────────────────
 
@@ -76,9 +77,17 @@ export function useSpeechInterpreter() {
     abortControllerRef.current = abortController;
 
     try {
+      // Signed-in users get their generations saved to /library; anonymous
+      // requests still generate normally, they just aren't persisted.
+      const client = getSupabaseBrowserClient();
+      const accessToken = client ? (await client.auth.getSession()).data.session?.access_token : null;
+
       const res = await fetch("/api/interpret/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
         body: JSON.stringify({
           transcript,
           referenceImage: store.referenceImage
