@@ -5,6 +5,7 @@
 import { Client } from "@gradio/client";
 import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
+import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,6 +124,26 @@ function requireEnv(name: string): string {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return Boolean(v && typeof v === "object" && !Array.isArray(v));
+}
+
+/**
+ * Human-readable message from any thrown value. The gradio client rejects
+ * with plain objects; String(obj) renders "[object Object]" which is what
+ * users used to see in the generator log.
+ */
+function errMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (isRecord(err)) {
+    const known = err.message ?? err.detail ?? err.error ?? err.title;
+    if (typeof known === "string" && known) return known;
+    try {
+      return JSON.stringify(err).slice(0, 200);
+    } catch {
+      return "provider error (unserializable)";
+    }
+  }
+  return String(err);
 }
 
 function parseJsonFromText(text: string): unknown {
@@ -258,6 +279,34 @@ async function runDirector(body: InterpretRequestBody): Promise<ThreeDBrief> {
         }))
       : undefined,
     confidence: Number(parsed.confidence ?? 0.8)
+  };
+}
+
+/**
+ * Deterministic Director fallback. When Gemini is unreachable (no key, rate
+ * limit, outage) the pipeline used to die before doing any work. The local
+ * prompt classifier already understands object-vs-typography intent, so we
+ * can still build a usable brief and let the provider cascade run.
+ */
+function localDirectorBrief(body: InterpretRequestBody): ThreeDBrief {
+  const promptIntent = classifyPromptSubject(body.transcript);
+  const description =
+    promptIntent.kind === "object"
+      ? `${promptIntent.generationPrompt}. No text, no letters, no typography.`
+      : promptIntent.generationPrompt;
+  return {
+    intent: "single_object",
+    primaryObject: promptIntent.subject,
+    description,
+    useCase: "concept",
+    polygonBudget: "mid",
+    targetPlatform: "general",
+    styleTags: [],
+    materialBrief: safeMaterial(null),
+    needsLODChain: false,
+    needsPhysicsMetadata: false,
+    priorityFormat: "glb",
+    confidence: 0.5
   };
 }
 
@@ -412,6 +461,8 @@ const HUNYUAN3D_SPACE = "tencent/Hunyuan3D-2";
 const HUNYUAN3D_URL = "https://tencent-hunyuan3d-2.hf.space/";
 const TRELLIS_SPACE = "trellis-community/TRELLIS";
 const TRELLIS_URL = "https://trellis-community-trellis.hf.space/";
+const TRELLIS2_SPACE = process.env.TRELLIS2_SPACE ?? "microsoft/TRELLIS.2";
+const TRELLIS2_URL = "https://microsoft-trellis-2.hf.space/";
 const INSTANTMESH_SPACE = "TencentARC/InstantMesh";
 const INSTANTMESH_URL = "https://tencentarc-instantmesh.hf.space/";
 const STABLE_FAST_3D_SPACE = "stabilityai/stable-fast-3d";
@@ -431,6 +482,7 @@ function spaceWarmer(url: string) {
 
 const warmupHunyuan3D = spaceWarmer(HUNYUAN3D_URL);
 const warmupTrellis = spaceWarmer(TRELLIS_URL);
+const warmupTrellis2 = spaceWarmer(TRELLIS2_URL);
 const warmupInstantMesh = spaceWarmer(INSTANTMESH_URL);
 const warmupStableFast3D = spaceWarmer(STABLE_FAST_3D_URL);
 
@@ -517,7 +569,7 @@ async function validateGlbUrl(url: string): Promise<GlbValidation> {
     // Fetch the first 32KB. That's enough to read the GLB header + JSON chunk
     // (where mesh primitives live) without downloading the whole binary payload.
     const res = await fetch(url, {
-      headers: { Range: "bytes=0-32767" },
+      headers: { Range: "bytes=0-32767", ...providerAuthHeaders(url) },
       signal: AbortSignal.timeout(15_000)
     });
     if (!res.ok && res.status !== 206) {
@@ -581,7 +633,7 @@ async function validateGlbUrl(url: string): Promise<GlbValidation> {
       triangleCount
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     return { ok: false, reason: msg.slice(0, 100), sizeBytes: 0 };
   }
 }
@@ -635,7 +687,7 @@ async function generateViaHunyuan3D(
     }
     return { url: null, error: "Hunyuan3D returned no GLB in response" };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[HUNYUAN3D]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -693,8 +745,67 @@ async function generateViaTrellis2HF(
     if (!url) return { url: null, error: "TRELLIS returned no GLB in response" };
     return { url, error: null };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[TRELLIS-2 HF]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
+/**
+ * Microsoft's official TRELLIS.2 Space (Dec 2025, MIT, ZeroGPU). Session-based
+ * gradio flow: start_session → preprocess_image → image_to_3d → extract_glb.
+ * State lives server-side per client session, so one Client instance must be
+ * used for the whole sequence.
+ */
+async function generateViaTrellis2Official(
+  refUrl: string,
+  brief: ThreeDBrief
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
+
+    void warmupTrellis2();
+    const client = await Client.connect(TRELLIS2_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
+
+    const imgData = await fetchImageAsBase64(refUrl);
+    if (!imgData) return { url: null, error: "Reference image fetch failed" };
+    const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
+
+    await client.predict("/start_session", {});
+    const pre = (await client.predict("/preprocess_image", { input: blob })) as { data: unknown[] };
+    const preprocessed = pre.data?.[0];
+    if (!preprocessed) return { url: null, error: "TRELLIS.2 preprocess returned no image" };
+
+    await client.predict("/image_to_3d", {
+      image: preprocessed,
+      seed: 42,
+      resolution: brief.polygonBudget === "high" ? "1536" : "1024",
+      ss_guidance_strength: 7.5,
+      ss_guidance_rescale: 0.7,
+      ss_sampling_steps: 12,
+      ss_rescale_t: 5.0,
+      shape_slat_guidance_strength: 7.5,
+      shape_slat_guidance_rescale: 0.5,
+      shape_slat_sampling_steps: 12,
+      shape_slat_rescale_t: 3.0,
+      tex_slat_guidance_strength: 1.0,
+      tex_slat_guidance_rescale: 0.0,
+      tex_slat_sampling_steps: 12,
+      tex_slat_rescale_t: 3.0
+    });
+
+    const result = (await client.predict("/extract_glb", {
+      decimation_target: brief.polygonBudget === "high" ? 300000 : 100000,
+      texture_size: brief.polygonBudget === "high" ? 2048 : 1024
+    })) as { data: unknown };
+
+    const url = extractGlbFromGradio(result.data);
+    if (!url) return { url: null, error: "TRELLIS.2 returned no GLB" };
+    return { url, error: null };
+  } catch (err) {
+    const msg = errMessage(err);
+    console.error("[TRELLIS.2]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
 }
@@ -733,7 +844,7 @@ async function generateViaInstantMesh(
     if (!url) return { url: null, error: "InstantMesh returned no GLB" };
     return { url, error: null };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[INSTANTMESH]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -780,7 +891,7 @@ async function generateViaStableFast3D(
     }
     return { url: null, error: "Stable Fast 3D returned no GLB" };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[STABLE-FAST-3D]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -808,7 +919,7 @@ async function generateViaFalTrellis(refUrl: string): Promise<{ url: string | nu
     if (!url) return { url: null, error: "Trellis returned no GLB" };
     return { url, error: null };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[TRELLIS]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -850,7 +961,7 @@ async function generateViaFalHunyuan(refUrl: string): Promise<{ url: string | nu
     if (!url) return { url: null, error: "fal hunyuan returned no GLB" };
     return { url, error: null };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[FAL-HUNYUAN]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -905,7 +1016,7 @@ async function generateViaTripo(publicUrl: string): Promise<{ url: string | null
     }
     return { url: null, error: "tripo timed out" };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[TRIPO]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -948,7 +1059,7 @@ async function generateViaMeshy(publicUrl: string): Promise<{ url: string | null
     }
     return { url: null, error: "meshy timed out" };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMessage(err);
     console.error("[MESHY]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -977,6 +1088,7 @@ const DEFAULT_PROVIDER_ORDER = [
   "fal-trellis",
   "tripo",
   "meshy",
+  "hf-trellis2",
   "hf-trellis",
   "hf-hunyuan",
   "hf-stablefast",
@@ -1031,6 +1143,7 @@ async function runSpatialGenerator(
     "fal-trellis": { name: "trellis-2 (fal)", tier: "trellis", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalTrellis(inputRef) },
     "tripo": { name: "tripo", tier: "trellis", enabled: Boolean(process.env.TRIPO_API_KEY), timeoutMs: 95_000, run: () => needsUrl(generateViaTripo) },
     "meshy": { name: "meshy", tier: "hunyuan3d", enabled: Boolean(process.env.MESHY_API_KEY), timeoutMs: 125_000, run: () => needsUrl(generateViaMeshy) },
+    "hf-trellis2": { name: "trellis-2 (hf official)", tier: "trellis", enabled: hasHf, timeoutMs: 120_000, run: () => generateViaTrellis2Official(inputRef, brief) },
     "hf-trellis": { name: "trellis (hf)", tier: "trellis", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaTrellis2HF(inputRef) },
     "hf-hunyuan": { name: "hunyuan3d (hf)", tier: "hunyuan3d", enabled: hasHf, timeoutMs: 90_000, run: () => generateViaHunyuan3D(inputRef, brief) },
     "hf-stablefast": { name: "stable-fast-3d (hf)", tier: "library", enabled: hasHf, timeoutMs: 45_000, run: () => generateViaStableFast3D(inputRef) },
@@ -1075,7 +1188,14 @@ async function runSpatialGenerator(
       const mirror = await mirrorGlbToBlob(out.url, brief.primaryObject).catch(
         () => ({ url: out.url as string, mirrored: false, sizeBytes: 0 })
       );
-      return { glbUrl: mirror.url, tier: entry.tier, attempts };
+      // Mirror failed (no Blob token, upstream hiccup, …). Never hand the
+      // browser a raw provider URL — HF Space temp files 403 for anonymous
+      // GETs and expire in minutes. Serve through our authenticated proxy.
+      const glbUrl =
+        mirror.mirrored || !isAllowedProviderUrl(mirror.url)
+          ? mirror.url
+          : `/api/3d/proxy?src=${encodeURIComponent(mirror.url)}`;
+      return { glbUrl, tier: entry.tier, attempts };
     }
   }
 
@@ -1130,14 +1250,17 @@ async function runPackager(
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const exportUrls: GeneratedAsset["exportUrls"] = {};
 
-  if (glbUrl && !glbUrl.includes("placeholder")) {
+  if (glbUrl && tier !== "fallback" && !glbUrl.includes("placeholder")) {
     exportUrls.glb = glbUrl;
     const enc = encodeURIComponent(glbUrl);
+    // Only advertise formats /api/3d/convert genuinely produces. USD needs an
+    // external converter (lib/scene/usdz-export.ts) — offer it only when one
+    // is configured, so users never download a mislabeled file.
     exportUrls.obj = `/api/3d/convert?from=${enc}&to=obj`;
-    exportUrls.usd = `/api/3d/convert?from=${enc}&to=usd`;
     exportUrls.stl = `/api/3d/convert?from=${enc}&to=stl`;
-  } else {
-    exportUrls.glb = glbUrl;
+    if (process.env.USDZ_CONVERTER_URL) {
+      exportUrls.usd = `/api/3d/convert?from=${enc}&to=usdz`;
+    }
   }
 
   return {
@@ -1160,8 +1283,16 @@ export async function* runInterpretPipeline(
   body: InterpretRequestBody
 ): AsyncGenerator<PipelineEvent> {
   try {
-    const brief = await runDirector(body);
-    yield { type: "director", brief, log: `[DIRECTOR] ${brief.intent} → "${brief.primaryObject}" (${brief.useCase}, ${brief.polygonBudget} poly)` };
+    let brief: ThreeDBrief;
+    let directorNote = "";
+    try {
+      brief = await runDirector(body);
+    } catch (err) {
+      brief = localDirectorBrief(body);
+      directorNote = ` — local fallback (${errMessage(err).slice(0, 80)})`;
+      console.error("[DIRECTOR] falling back to local brief:", errMessage(err));
+    }
+    yield { type: "director", brief, log: `[DIRECTOR] ${brief.intent} → "${brief.primaryObject}" (${brief.useCase}, ${brief.polygonBudget} poly)${directorNote}` };
 
     if (body.referenceImage) {
       const photo = await runPhotoAnalyst(body.referenceImage);
@@ -1227,16 +1358,26 @@ export async function* runInterpretPipeline(
       const sizeMb = winning?.sizeBytes ? (winning.sizeBytes / 1_048_576).toFixed(2) : null;
       const triNote = winning?.triangleCount ? `~${winning.triangleCount.toLocaleString()} tris` : null;
       const sizeNote = [sizeMb ? `${sizeMb}MB` : null, triNote].filter(Boolean).join(", ");
-      const meshReadyLog = sizeNote
-        ? `[GENERATOR] Mesh ready (${tier}, ${sizeNote}), texturing...`
-        : `[GENERATOR] Mesh ready (${tier}), texturing...`;
+      const meshReadyLog =
+        tier === "fallback"
+          ? `[GENERATOR] All providers failed — showing placeholder for "${slot.name}". Retry or add a reference image.`
+          : sizeNote
+            ? `[GENERATOR] Mesh ready (${tier}, ${sizeNote}), packaging exports...`
+            : `[GENERATOR] Mesh ready (${tier}), packaging exports...`;
       yield { type: "generating", log: meshReadyLog, progress: 0.8 };
 
-      const textureUrls = await generatePBRTextures(slotBrief);
+      const textureUrls = tier === "fallback" ? undefined : await generatePBRTextures(slotBrief);
       const asset = await runPackager(slotBrief, glbUrl, tier, textureUrls, winning?.triangleCount);
       generatedAssets.push(asset);
 
-      yield { type: "asset_ready", asset, log: `[READY] "${asset.name}" — ${asset.tier}, ${asset.scaleMeters}m, ${Object.keys(asset.exportUrls).join("/")}` };
+      yield {
+        type: "asset_ready",
+        asset,
+        log:
+          asset.tier === "fallback"
+            ? `[FAILED] "${asset.name}" — no usable mesh from any provider. Placeholder shown; no exports.`
+            : `[READY] "${asset.name}" — ${asset.tier}, ${asset.scaleMeters}m, ${Object.keys(asset.exportUrls).join("/")}`
+      };
     }
 
     const qa_log = [

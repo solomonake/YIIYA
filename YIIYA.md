@@ -1,6 +1,25 @@
 # Yiiya Context
 
-## System State
+## Current runtime truth (updated 2026-07-06)
+
+The live product is the **voice/photo → 3D asset** studio, not the website
+builder. Much of the "System State" section below describes the earlier
+website-compiler era and is retained only as history.
+
+- Entry: `/` → `/app` → `components/yiiya-workspace.tsx`.
+- Live generation path: `lib/interpret-pipeline.ts` via
+  `/api/interpret/stream` (Director → studio-photo grounding → provider
+  cascade → GLB validation → Blob/proxy delivery). The `services/scene/*` +
+  `/api/scene/generate` stack is a parallel, unused implementation slated for
+  deletion — do not build on it.
+- Plan of record: `docs/TRANSFORMATION_PLAN.md`. Agent state:
+  `.agent/handoffs/current.md`.
+- Phase 0 (reliability/honesty) shipped on branch
+  `claude/reverent-wiles-0b7f37`: authenticated GLB proxy (`/api/3d/proxy`,
+  `lib/provider-hosts.ts`), real OBJ/STL exports (`lib/scene/mesh-export.ts`),
+  honest failure logs, local Director fallback, official `microsoft/TRELLIS.2`.
+
+## System State (historical — website-compiler era)
 
 - Product definition: CAD and 3D animation acceleration studio, not a template website builder.
 - Operating model: Intent-to-Asset compiler for voice, cursor context, reference images, scans, editable 3D/CAD-ready objects, motion previews, and optional web presentation shells.

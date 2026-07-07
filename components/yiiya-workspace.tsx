@@ -14,8 +14,9 @@ const SceneCanvas = dynamic(
 // ─── Asset Tray Card ─────────────────────────────────────────────────────────
 
 function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActive: boolean; onClick: () => void }) {
-  const tierLabel = asset.tier === "hunyuan3d" ? "HY3D" : asset.tier === "trellis" ? "TRELLIS" : asset.tier === "library" ? "LIBRARY" : "PREVIEW";
-  const tierColor = asset.tier === "hunyuan3d" ? "text-emerald-400" : asset.tier === "trellis" ? "text-blue-400" : asset.tier === "library" ? "text-amber-400" : "text-zinc-600";
+  const tierLabel = asset.tier === "hunyuan3d" ? "HY3D" : asset.tier === "trellis" ? "TRELLIS" : asset.tier === "library" ? "LIBRARY" : "FAILED";
+  const tierColor = asset.tier === "hunyuan3d" ? "text-emerald-400" : asset.tier === "trellis" ? "text-blue-400" : asset.tier === "library" ? "text-amber-400" : "text-red-500";
+  const hasExports = Object.keys(asset.exportUrls).length > 0;
 
   return (
     <div
@@ -31,18 +32,22 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
         {asset.triangleCount ? ` · ${asset.triangleCount >= 1000 ? `${(asset.triangleCount / 1000).toFixed(1)}k` : asset.triangleCount} tris` : ""}
       </div>
       <div className="flex flex-wrap gap-1">
-        {Object.entries(asset.exportUrls).map(([fmt, url]) =>
-          url ? (
-            <a
-              key={fmt}
-              href={url}
-              download={`${asset.name}.${fmt}`}
-              onClick={e => e.stopPropagation()}
-              className="text-[8px] font-mono px-1.5 py-0.5 border border-zinc-700 rounded-sm text-zinc-400 hover:text-zinc-100 hover:border-zinc-500 transition-colors"
-            >
-              .{fmt.toUpperCase()}
-            </a>
-          ) : null
+        {hasExports ? (
+          Object.entries(asset.exportUrls).map(([fmt, url]) =>
+            url ? (
+              <a
+                key={fmt}
+                href={url}
+                download={`${asset.name}.${fmt}`}
+                onClick={e => e.stopPropagation()}
+                className="text-[8px] font-mono px-1.5 py-0.5 border border-zinc-700 rounded-sm text-zinc-400 hover:text-zinc-100 hover:border-zinc-500 transition-colors"
+              >
+                .{fmt.toUpperCase()}
+              </a>
+            ) : null
+          )
+        ) : (
+          <span className="text-[8px] font-mono text-red-500/70">no exports — generation failed</span>
         )}
       </div>
       {asset.textureUrls?.albedo && (
@@ -331,7 +336,7 @@ export function YiiyaWorkspace() {
     try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch { /* ignore */ }
     addLog("[SYSTEM] YIIYA 3D Studio ready.");
     addLog("[SYSTEM] Hold SPACE to speak · Drop image for photo-to-3D");
-    addLog("[SYSTEM] Pipeline: Gemini → Pollinations studio photo → TRELLIS-2 / Hunyuan3D-2.5 / InstantMesh cascade");
+    addLog("[SYSTEM] Pipeline: Gemini director → studio photo → TRELLIS.2 / Hunyuan3D / Tripo cascade → validated GLB");
   }, [addLog]);
 
   const activeGlbUrl = (() => {
