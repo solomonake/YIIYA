@@ -10,6 +10,7 @@ import { useSupabaseSession } from "@/lib/auth/use-session";
 import { useOpenAssetFromLibrary } from "@/lib/assets/open-from-library";
 import { AuthSheet } from "@/components/auth/auth-sheet";
 import { signOut } from "@/lib/auth/actions";
+import { classifyPromptSubject } from "@/lib/scene/prompt-intent";
 
 const SceneCanvas = dynamic(
   () => import("@/components/scene-canvas").then((m) => m.SceneCanvas),
@@ -61,6 +62,54 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
           <img src={asset.textureUrls.albedo} alt="albedo" className="w-full h-10 object-cover rounded-sm opacity-50" />
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Intent preview ───────────────────────────────────────────────────────────
+// Runs the same pure classifier the server uses, live, so users learn the
+// object-vs-typography grammar ("a car" -> object, `the word "car"` -> text)
+// before they hit submit instead of discovering it after a bad generation.
+
+function IntentPreview({ text }: { text: string }) {
+  const intent = classifyPromptSubject(text);
+  return (
+    <div className="px-3 pb-1.5 text-[8px] font-mono text-zinc-700">
+      {intent.kind === "object" ? (
+        <span>→ object: <span className="text-zinc-500">{intent.subject}</span></span>
+      ) : (
+        <span>→ 3D text: <span className="text-amber-700">&quot;{intent.subject}&quot;</span></span>
+      )}
+    </div>
+  );
+}
+
+// ─── Starter prompts ──────────────────────────────────────────────────────────
+// Plain example prompts, not pre-generated assets — they run through the same
+// real provider cascade as anything else typed here. No fake "instant result"
+// promise; just a running-start on wording that generates well.
+
+const STARTER_PROMPTS = [
+  "a ceramic coffee mug",
+  "a leather armchair",
+  "a vintage brass lamp",
+  "a pair of running shoes",
+  "a glass vase with flowers",
+  "a wooden acoustic guitar"
+];
+
+function StarterPrompts({ onPick }: { onPick: (text: string) => void }) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {STARTER_PROMPTS.map((p) => (
+        <button
+          key={p}
+          onClick={() => onPick(p)}
+          className="text-[8px] font-mono px-2 py-1 border border-zinc-900 rounded-sm text-zinc-700 hover:text-zinc-300 hover:border-zinc-700 transition-colors"
+        >
+          {p}
+        </button>
+      ))}
     </div>
   );
 }
@@ -134,6 +183,7 @@ function LeftPanel({ open }: { open: boolean }) {
             Speak or type to generate 3D assets.<br />
             Hold SPACE for voice input.<br />
             Drop a reference image below.
+            <StarterPrompts onPick={submitManualTranscript} />
           </div>
         )}
         {logs.map(entry => {
@@ -149,6 +199,20 @@ function LeftPanel({ open }: { open: boolean }) {
         })}
         <div ref={logsEndRef} />
       </div>
+
+      {activeBrief?.suggestions && activeBrief.suggestions.length > 0 && !isInterpreting ? (
+        <div className="px-3 pb-2 flex flex-wrap gap-1.5">
+          {activeBrief.suggestions.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => submitManualTranscript(s)}
+              className="text-[8px] font-mono px-2 py-1 border border-zinc-800 rounded-sm text-zinc-500 hover:text-zinc-100 hover:border-zinc-600 transition-colors"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {/* Status */}
       <div className="px-3 py-1 border-t border-zinc-900 flex items-center gap-2">
@@ -199,6 +263,9 @@ function LeftPanel({ open }: { open: boolean }) {
           <div className="text-[9px] font-mono text-zinc-800 text-center">Drop reference image</div>
         )}
       </div>
+
+      {/* Live intent preview — teaches the object-vs-typography grammar as you type */}
+      {manualText.trim() ? <IntentPreview text={manualText} /> : null}
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="px-3 pb-3 flex gap-2">
