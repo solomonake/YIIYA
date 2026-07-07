@@ -44,6 +44,25 @@
 - `errMessage()` in `interpret-pipeline.ts`: the gradio client rejects with
   plain objects; `String(err)` renders `[object Object]` in the user log. Use
   the helper for any provider-call catch.
+
+- GitHub Actions CI can silently skip a push/PR-synchronize event on this repo
+  (confirmed 2026-07-07: two consecutive pushes to an open PR produced zero
+  check-runs — not queued, not failed, simply absent — while third-party app
+  checks like GitGuardian/Vercel still fired normally). Retriggers that did
+  NOT work: closing+reopening the PR, an empty commit push. It self-resolved
+  ~10 minutes later on the next push with no repo-side change. If this
+  recurs, don't assume the code is untested — check Vercel's own build result
+  (a real `next build`) plus local `tsc --noEmit`/`vitest run` as substitute
+  evidence, document the gap explicitly in the PR, and don't silently claim
+  "CI passed" when the run never executed.
+
+- Next.js dev-mode hydration warnings ("Did not expect server HTML to contain
+  a <div> in <div>") can be a false positive from Fast Refresh state after
+  many hot-reloads across a long dev-server session, not a real SSR/client
+  mismatch. Before treating one as a real bug: `rm -rf .next`, fully restart
+  the dev server (not just reload the page), and recheck. Confirmed
+  2026-07-07 — a warning that appeared after ~10 hot-reloaded edits vanished
+  completely on a clean restart with the identical code.
 - Local install fragility: a prior build was blocked by a corrupted local Next
   compiled package where `next/dist/compiled/debug` resolved incorrectly. Repair
   dependency corruption before attributing that class of failure to app code.

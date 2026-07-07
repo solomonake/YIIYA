@@ -26,9 +26,14 @@ const securityHeaders = [
     // *.hf.space + *.tripo3d.ai = our 3D providers.
     // *.supabase.co = realtime + storage.
     // *.sentry.io = telemetry. plausible.io = analytics.
+    // cdn.jsdelivr.net = MediaPipe Tasks Vision WASM runtime (on-device
+    // capture segmentation); its worker loads glue JS from this CDN via
+    // importScripts, which some browsers gate under script-src rather than
+    // worker-src. connect-src already allows any https: origin, which
+    // covers the model file fetch from storage.googleapis.com.
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://plausible.io https://*.sentry.io",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://plausible.io https://*.sentry.io https://cdn.jsdelivr.net",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' data: https://fonts.gstatic.com https://*.fontsource.org",
       "img-src 'self' data: blob: https:",
