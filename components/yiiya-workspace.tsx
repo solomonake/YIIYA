@@ -11,11 +11,77 @@ import { useOpenAssetFromLibrary } from "@/lib/assets/open-from-library";
 import { AuthSheet } from "@/components/auth/auth-sheet";
 import { signOut } from "@/lib/auth/actions";
 import { classifyPromptSubject } from "@/lib/scene/prompt-intent";
+import { canRecordTurntable, recordTurntable } from "@/lib/scene/turntable-recorder";
 
 const SceneCanvas = dynamic(
   () => import("@/components/scene-canvas").then((m) => m.SceneCanvas),
   { ssr: false, loading: () => <div className="h-full w-full bg-black" /> }
 );
+
+// ─── Turntable recording ──────────────────────────────────────────────────────
+// One clean 360° revolution captured straight off the WebGL canvas via
+// captureStream + MediaRecorder — no server round-trip, no cost. Only
+// meaningful for the currently-viewed asset, since it records whatever the
+// canvas is showing right now.
+
+function TurntableButton({ assetName }: { assetName: string }) {
+  const [state, setState] = useState<"idle" | "recording" | "error">("idle");
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRecord = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (state === "recording") return;
+      if (!canRecordTurntable()) {
+        setState("error");
+        setError("Turntable recording isn't supported in this browser.");
+        return;
+      }
+      setState("recording");
+      setError(null);
+      try {
+        const result = await recordTurntable(4000);
+        setVideoUrl(result.blobUrl);
+        setState("idle");
+      } catch (err) {
+        setState("error");
+        setError(err instanceof Error ? err.message : "Recording failed.");
+      }
+    },
+    [state]
+  );
+
+  if (videoUrl) {
+    return (
+      <a
+        href={videoUrl}
+        download={`${assetName}-turntable.webm`}
+        onClick={(e) => e.stopPropagation()}
+        className="text-[8px] font-mono px-1.5 py-0.5 border border-emerald-800 rounded-sm text-emerald-400 hover:border-emerald-600 transition-colors"
+      >
+        ↓ TURNTABLE.WEBM
+      </a>
+    );
+  }
+
+  return (
+    <button
+      onClick={handleRecord}
+      disabled={state === "recording"}
+      title={error ?? "Record a 4-second 360° turntable clip"}
+      className={`text-[8px] font-mono px-1.5 py-0.5 border rounded-sm transition-colors ${
+        state === "recording"
+          ? "border-amber-700 text-amber-400"
+          : state === "error"
+            ? "border-red-900 text-red-500"
+            : "border-zinc-700 text-zinc-400 hover:text-zinc-100 hover:border-zinc-500"
+      }`}
+    >
+      {state === "recording" ? "RECORDING…" : "RECORD TURNTABLE"}
+    </button>
+  );
+}
 
 // ─── Asset Tray Card ─────────────────────────────────────────────────────────
 
@@ -55,6 +121,7 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
         ) : (
           <span className="text-[8px] font-mono text-red-500/70">no exports — generation failed</span>
         )}
+        {isActive && hasExports ? <TurntableButton assetName={asset.name} /> : null}
       </div>
       {asset.textureUrls?.albedo && (
         <div className="mt-2">

@@ -56,13 +56,24 @@
   evidence, document the gap explicitly in the PR, and don't silently claim
   "CI passed" when the run never executed.
 
-- Next.js dev-mode hydration warnings ("Did not expect server HTML to contain
-  a <div> in <div>") can be a false positive from Fast Refresh state after
-  many hot-reloads across a long dev-server session, not a real SSR/client
-  mismatch. Before treating one as a real bug: `rm -rf .next`, fully restart
-  the dev server (not just reload the page), and recheck. Confirmed
-  2026-07-07 — a warning that appeared after ~10 hot-reloaded edits vanished
-  completely on a clean restart with the identical code.
+- A recurring dev-mode warning ("Did not expect server HTML to contain a
+  `<div>` in `<div>`" / "hydration mismatch" in `LeftPanel`) is a **browser
+  extension false positive, not a real bug** — confirmed 2026-07-07 by
+  reproducing it on the clean, already-merged, CI-and-Vercel-verified `main`
+  baseline with a fresh `.next` cache and a fresh server, then screenshotting
+  the result: the UI renders completely correctly with no visible breakage.
+  The warning's own stack trace fires via
+  `chrome-extension://fmkadmapgofadopljbjfkapdkoienihi/.../installHook.js` —
+  that extension ID is the official React Developer Tools extension. This
+  matches React's own documented cause for this exact warning class: a
+  browser extension mutating the DOM between server HTML delivery and
+  hydration. Don't chase this further unless the rendered page itself looks
+  wrong — check with a screenshot, not just the console, before spending time
+  bisecting component code for it. (An earlier version of this note blamed a
+  same-looking warning on a Fast-Refresh artifact after one clean-restart
+  check; that check was almost certainly a false negative — read before the
+  page had hydrated far enough to trigger the extension interaction. This
+  entry supersedes that one.)
 - Local install fragility: a prior build was blocked by a corrupted local Next
   compiled package where `next/dist/compiled/debug` resolved incorrectly. Repair
   dependency corruption before attributing that class of failure to app code.
