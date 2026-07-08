@@ -7,6 +7,7 @@ import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 import { buildExportUrls } from "@/lib/scene/export-urls";
+import type { MaterialOverride } from "@/lib/scene/local-edit";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,12 @@ export type GeneratedAsset = {
   exportUrls: Partial<Record<"glb" | "obj" | "usd" | "fbx" | "stl", string>>;
   scaleMeters: number;
   isWatertight?: boolean;
+  /**
+   * Client-side material/scale tweaks applied on top of the generated GLB
+   * (color, finish, glow, scale). Kept off the mesh itself so they're free,
+   * instant, and reversible — see lib/scene/local-edit.ts.
+   */
+  materialOverride?: MaterialOverride;
 };
 
 export type ReferenceImageInput = {
@@ -899,7 +906,7 @@ async function generateViaStableFast3D(
     // is at index 4 (litmodel3d component).
     const result = (await client.predict("/requires_bg_remove", {
       image: blob,
-      slider: 0.85
+      fr: 0.85
     })) as { data: unknown };
 
     const data = result.data as unknown;

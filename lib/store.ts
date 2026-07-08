@@ -7,6 +7,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { GeneratedAsset, StyleDNA, ThreeDBrief, ReferenceImageInput } from "@/lib/interpret-pipeline";
+import type { MaterialOverride } from "@/lib/scene/local-edit";
 import type { SpatialMaterial } from "@/lib/materials";
 import type {
   AnimationPreset,
@@ -151,6 +152,7 @@ export type YiiyaStore = StageSlice & {
   setBlobState: (patch: Partial<BlobState>) => void;
   addGeneratedAsset: (asset: GeneratedAsset) => void;
   setActiveAsset: (id: string | null) => void;
+  applyLocalMaterialEdit: (id: string, patch: MaterialOverride, scaleFactor?: number) => void;
   setSessionStyleDNA: (dna: StyleDNA | null) => void;
   setActiveBrief: (brief: ThreeDBrief | null) => void;
   setReferenceImage: (img: ReferenceImage | null) => void;
@@ -248,6 +250,24 @@ export const useYiiyaStore = create<YiiyaStore>()(
   })),
 
   setActiveAsset: (id) => set({ activeAssetId: id }),
+
+  // Fold a local material/scale tweak into the active asset. Merges onto any
+  // prior override (successive edits stack) and multiplies relative scale.
+  applyLocalMaterialEdit: (id, patch, scaleFactor) => set(s => ({
+    generatedAssets: s.generatedAssets.map(a => {
+      if (a.id !== id) return a;
+      const prev = a.materialOverride ?? {};
+      const nextScale = scaleFactor ? (prev.scale ?? 1) * scaleFactor : prev.scale;
+      return {
+        ...a,
+        materialOverride: {
+          ...prev,
+          ...patch,
+          ...(nextScale !== undefined ? { scale: nextScale } : {})
+        }
+      };
+    })
+  })),
 
   // Session
   setSessionStyleDNA: (dna) => set({ sessionStyleDNA: dna }),

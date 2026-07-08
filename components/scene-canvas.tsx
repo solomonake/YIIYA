@@ -12,7 +12,8 @@ import { Physics, RigidBody } from "@react-three/rapier";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import type { Group, Mesh, Object3D } from "three";
-import { Box3, MeshStandardMaterial, Raycaster, Vector2, Vector3 } from "three";
+import { Box3, Color, MeshStandardMaterial, Raycaster, Vector2, Vector3 } from "three";
+import type { MaterialOverride } from "@/lib/scene/local-edit";
 import { styleMaterialPack } from "@/lib/scene/styles";
 import { useYiiyaStore, type SceneObject, type SpatialAnchor } from "@/lib/store";
 import { registerExportObject, registerExportRoot } from "@/lib/spatial-export";
@@ -591,7 +592,15 @@ function CursorRaycaster() {
   return null;
 }
 
-function ActiveGlbViewer({ url, posterAssetId }: { url: string; posterAssetId?: string }) {
+function ActiveGlbViewer({
+  url,
+  posterAssetId,
+  materialOverride
+}: {
+  url: string;
+  posterAssetId?: string;
+  materialOverride?: MaterialOverride;
+}) {
   const gltf = useGLTF(url);
   const clone = useMemo(() => gltf.scene.clone(), [gltf.scene]);
   const { actions } = useAnimations(gltf.animations, clone);
@@ -626,6 +635,36 @@ function ActiveGlbViewer({ url, posterAssetId }: { url: string; posterAssetId?: 
       }
     });
   }, [clone]);
+
+  // Local material edits (lib/scene/local-edit.ts): apply color/finish/glow to
+  // every mesh material in-place. Free, instant, and re-applied whenever the
+  // override changes — no regeneration. Runs after the vertex-color pass above.
+  useEffect(() => {
+    if (!materialOverride) return;
+    clone.traverse((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const sm = m as MeshStandardMaterial;
+        if (!sm) continue;
+        if (materialOverride.color) {
+          // A chosen color must win over any baked-in vertex colors.
+          sm.color = new Color(materialOverride.color);
+          if ("vertexColors" in sm) sm.vertexColors = false;
+        }
+        if (typeof materialOverride.metalness === "number") sm.metalness = materialOverride.metalness;
+        if (typeof materialOverride.roughness === "number") sm.roughness = materialOverride.roughness;
+        if (materialOverride.emissive) sm.emissive = new Color(materialOverride.emissive);
+        if (typeof materialOverride.emissiveIntensity === "number") sm.emissiveIntensity = materialOverride.emissiveIntensity;
+        if (typeof materialOverride.opacity === "number") {
+          sm.opacity = materialOverride.opacity;
+          sm.transparent = materialOverride.opacity < 0.99;
+        }
+        sm.needsUpdate = true;
+      }
+    });
+  }, [clone, materialOverride]);
 
   useEffect(() => {
     if (gltf.animations.length > 0) {
@@ -671,7 +710,8 @@ function ActiveGlbViewer({ url, posterAssetId }: { url: string; posterAssetId?: 
     if (!groupRef.current) return;
     const elapsed = Math.min(1, (Date.now() - mountedAtRef.current) / 900);
     const eased = 1 - Math.pow(1 - elapsed, 3);
-    const s = autoScale * (0.4 + 0.6 * eased);
+    const userScale = materialOverride?.scale ?? 1;
+    const s = autoScale * userScale * (0.4 + 0.6 * eased);
     groupRef.current.scale.set(s, s, s);
 
     if (spinRef.current) {
@@ -721,13 +761,15 @@ function StarterScene({
   anchors,
   stage,
   activeGlbUrl,
-  activeAssetDbId
+  activeAssetDbId,
+  activeMaterialOverride
 }: {
   objects: SceneObject[];
   anchors: SpatialAnchor[];
   stage: StageState;
   activeGlbUrl?: string | null;
   activeAssetDbId?: string;
+  activeMaterialOverride?: MaterialOverride;
 }) {
   const anchorMap = useMemo(
     () => new Map(anchors.map((anchor) => [anchor.objectId, anchor])),
@@ -764,7 +806,11 @@ function StarterScene({
       {activeGlbUrl ? (
         <GlbErrorBoundary fallback={<GlbLoadFailureFallback />}>
           <Suspense fallback={<GlbLoadFailureFallback />}>
-            <ActiveGlbViewer url={activeGlbUrl} posterAssetId={activeAssetDbId} />
+            <ActiveGlbViewer
+              url={activeGlbUrl}
+              posterAssetId={activeAssetDbId}
+              materialOverride={activeMaterialOverride}
+            />
           </Suspense>
         </GlbErrorBoundary>
       ) : null}
@@ -818,10 +864,12 @@ function CanvasRecordingRegistrar() {
 
 export function SceneCanvas({
   activeGlbUrl,
-  activeAssetDbId
+  activeAssetDbId,
+  activeMaterialOverride
 }: {
   activeGlbUrl?: string | null;
   activeAssetDbId?: string;
+  activeMaterialOverride?: MaterialOverride;
 }) {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
   const spatialAnchors = useYiiyaStore((state) => state.spatialAnchors);
@@ -863,6 +911,7 @@ export function SceneCanvas({
               stage={stage}
               activeGlbUrl={activeGlbUrl}
               activeAssetDbId={activeAssetDbId}
+              activeMaterialOverride={activeMaterialOverride}
             />
           </group>
         </Physics>
@@ -870,7 +919,10 @@ export function SceneCanvas({
           enabled
           enablePan={false}
           maxDistance={12}
-          maxPolarAngle={Math.PI * 0.48}
+          // Allow orbiting well below the horizon so the underside of a model is
+          // inspectable; stop just short of a full flip to avoid disorienting
+          // upside-down views.
+          maxPolarAngle={Math.PI * 0.92}
         />
       </Canvas>
     </div>
