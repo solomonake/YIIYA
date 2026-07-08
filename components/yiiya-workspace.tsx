@@ -567,6 +567,13 @@ export function YiiyaWorkspace() {
   const referenceImage = useYiiyaStore(s => s.referenceImage);
   const { submitManualTranscript: autoSubmit } = useSpeechInterpreter();
 
+  // Restores the persisted session (assets, logs, history) after the initial
+  // hydration-matching render. See the skipHydration comment in lib/store.ts
+  // for why this can't just happen automatically on store creation.
+  useEffect(() => {
+    void useYiiyaStore.persist.rehydrate();
+  }, []);
+
   useOpenAssetFromLibrary();
 
   // Mobile-first load: the log panel defaults open for desktop parity, but

@@ -73,7 +73,17 @@
   same-looking warning on a Fast-Refresh artifact after one clean-restart
   check; that check was almost certainly a false negative — read before the
   page had hydrated far enough to trigger the extension interaction. This
-  entry supersedes that one.)
+  entry supersedes that one.) Reconfirmed 2026-07-08 with a second, more
+  specific variant of the same warning ("Prop `className` did not match")
+  after adding zustand `persist` middleware to the store: inspected
+  `localStorage` directly (`localStorage.getItem('yiiya-studio-session')`
+  returned `null` — no persisted data existed to cause a real state-driven
+  mismatch) and re-confirmed a clean screenshot. Still added
+  `skipHydration: true` + an explicit `.rehydrate()` call in a `useEffect`
+  regardless (see `lib/store.ts`) — that part is a genuine best practice for
+  any SSR + zustand-persist store, independent of whether it was the cause
+  of this particular warning; it prevents a real mismatch once a returning
+  visitor actually has persisted state.
 - Local install fragility: a prior build was blocked by a corrupted local Next
   compiled package where `next/dist/compiled/debug` resolved incorrectly. Repair
   dependency corruption before attributing that class of failure to app code.

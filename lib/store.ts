@@ -350,6 +350,17 @@ export const useYiiyaStore = create<YiiyaStore>()(
       name: "yiiya-studio-session",
       storage: createJSONStorage(() => localStorage),
       version: 1,
+      // Next.js server-renders this "use client" store once for the initial
+      // HTML using its bare default state (no localStorage on the server).
+      // Without skipHydration, zustand/persist restores localStorage
+      // SYNCHRONOUSLY during client store creation — so a returning visitor's
+      // client-side first render shows their saved logs/assets while the
+      // server's render is always empty, a genuine hydration mismatch (not a
+      // false positive). skipHydration defers restoration to an explicit
+      // rehydrate() call from a useEffect (see hooks/use-store-hydration.ts),
+      // so both the server render and the client's FIRST render agree on the
+      // default state; the persisted data swaps in one tick later.
+      skipHydration: true,
       // Only persist what makes "resume where I left off" meaningful and
       // safe. Generated GLB URLs are durable (Vercel Blob or our own proxy),
       // so a restored asset tray still resolves after a refresh. Ephemeral
