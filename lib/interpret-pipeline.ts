@@ -103,6 +103,8 @@ export type InterpretRequestBody = {
   sessionStyleDNA?: StyleDNA | null;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   existingAssets?: Array<{ id: string; name: string }>;
+  /** BYO HuggingFace token from Settings — unlocks the user's own free ZeroGPU quota instead of the shared server one. */
+  userHfToken?: string;
 };
 
 export type PipelineEvent =
@@ -662,10 +664,11 @@ async function validateGlbUrl(url: string): Promise<GlbValidation> {
 
 async function generateViaHunyuan3D(
   refUrl: string,
-  brief: ThreeDBrief
+  brief: ThreeDBrief,
+  userToken?: string
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
     if (!HF_TOKEN) {
       return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
     }
@@ -731,10 +734,11 @@ function extractGlbFromGradio(data: unknown): string | null {
 }
 
 async function generateViaTrellis2HF(
-  refUrl: string
+  refUrl: string,
+  userToken?: string
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupTrellis();
@@ -781,10 +785,11 @@ async function generateViaTrellis2HF(
  */
 async function generateViaTrellis2Official(
   refUrl: string,
-  brief: ThreeDBrief
+  brief: ThreeDBrief,
+  userToken?: string
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupTrellis2();
@@ -833,10 +838,11 @@ async function generateViaTrellis2Official(
 }
 
 async function generateViaInstantMesh(
-  refUrl: string
+  refUrl: string,
+  userToken?: string
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupInstantMesh();
@@ -873,10 +879,11 @@ async function generateViaInstantMesh(
 }
 
 async function generateViaStableFast3D(
-  refUrl: string
+  refUrl: string,
+  userToken?: string
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupStableFast3D();
@@ -1121,7 +1128,8 @@ async function runSpatialGenerator(
   brief: ThreeDBrief,
   groundingResult: ReferenceGroundingResult,
   userImageBase64?: string | null,
-  userImageMime?: string | null
+  userImageMime?: string | null,
+  userHfToken?: string
 ): Promise<{ glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] }> {
   const attempts: GeneratorAttempt[] = [];
   const placeholder = (): { glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] } => ({
@@ -1159,17 +1167,21 @@ async function runSpatialGenerator(
   };
 
   const hasFal = Boolean(process.env.FAL_KEY);
-  const hasHf = Boolean(process.env.HUGGINGFACE_TOKEN);
+  // A user-supplied HF token (Settings → "Use your own HuggingFace token")
+  // unlocks that user's own free ZeroGPU quota instead of the shared
+  // server-side one, so HF providers stay enabled even without a server
+  // token as long as the request brought its own.
+  const hasHf = Boolean(userHfToken || process.env.HUGGINGFACE_TOKEN);
   const entries: Record<string, CascadeEntry> = {
     "fal-hunyuan": { name: "hunyuan3d (fal)", tier: "hunyuan3d", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalHunyuan(inputRef) },
     "fal-trellis": { name: "trellis-2 (fal)", tier: "trellis", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalTrellis(inputRef) },
     "tripo": { name: "tripo", tier: "trellis", enabled: Boolean(process.env.TRIPO_API_KEY), timeoutMs: 95_000, run: () => needsUrl(generateViaTripo) },
     "meshy": { name: "meshy", tier: "hunyuan3d", enabled: Boolean(process.env.MESHY_API_KEY), timeoutMs: 125_000, run: () => needsUrl(generateViaMeshy) },
-    "hf-trellis2": { name: "trellis-2 (hf official)", tier: "trellis", enabled: hasHf, timeoutMs: 120_000, run: () => generateViaTrellis2Official(inputRef, brief) },
-    "hf-trellis": { name: "trellis (hf)", tier: "trellis", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaTrellis2HF(inputRef) },
-    "hf-hunyuan": { name: "hunyuan3d (hf)", tier: "hunyuan3d", enabled: hasHf, timeoutMs: 90_000, run: () => generateViaHunyuan3D(inputRef, brief) },
-    "hf-stablefast": { name: "stable-fast-3d (hf)", tier: "library", enabled: hasHf, timeoutMs: 45_000, run: () => generateViaStableFast3D(inputRef) },
-    "hf-instantmesh": { name: "instantmesh (hf)", tier: "library", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaInstantMesh(inputRef) }
+    "hf-trellis2": { name: "trellis-2 (hf official)", tier: "trellis", enabled: hasHf, timeoutMs: 120_000, run: () => generateViaTrellis2Official(inputRef, brief, userHfToken) },
+    "hf-trellis": { name: "trellis (hf)", tier: "trellis", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaTrellis2HF(inputRef, userHfToken) },
+    "hf-hunyuan": { name: "hunyuan3d (hf)", tier: "hunyuan3d", enabled: hasHf, timeoutMs: 90_000, run: () => generateViaHunyuan3D(inputRef, brief, userHfToken) },
+    "hf-stablefast": { name: "stable-fast-3d (hf)", tier: "library", enabled: hasHf, timeoutMs: 45_000, run: () => generateViaStableFast3D(inputRef, userHfToken) },
+    "hf-instantmesh": { name: "instantmesh (hf)", tier: "library", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaInstantMesh(inputRef, userHfToken) }
   };
 
   const order = (process.env.YIIYA_PROVIDER_ORDER?.split(",").map((s) => s.trim()).filter(Boolean)) ?? DEFAULT_PROVIDER_ORDER;
@@ -1365,7 +1377,8 @@ export async function* runInterpretPipeline(
         slotBrief,
         groundingResult,
         body.referenceImage?.base64 ?? null,
-        body.referenceImage?.mediaType ?? null
+        body.referenceImage?.mediaType ?? null,
+        body.userHfToken
       );
       for (const attempt of attempts) {
         if (!attempt.ok && attempt.error) {
