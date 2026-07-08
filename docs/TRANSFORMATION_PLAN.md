@@ -1,8 +1,43 @@
 # YIIYA Transformation Plan — Production-Grade Voice-First 3D Studio
 
-Last updated: 2026-07-06
-Status: ACTIVE — this supersedes the sprint list in `PRODUCT_STRATEGY_3D_CAD.md`
-(the strategy/thesis in that doc still stands; this is the execution plan).
+Last updated: 2026-07-08
+Status: Phases 0-5 shipped and merged to `main` (PRs #1-#7). This supersedes
+the sprint list in `PRODUCT_STRATEGY_3D_CAD.md` (the strategy/thesis in that
+doc still stands; this is the execution plan).
+
+## Session outcome (2026-07-08)
+
+All six phases below were implemented, verified (typecheck + vitest green
+throughout, 62 tests), and merged to `main`:
+
+- **Phase 0** (#1): GLB-403 fix, real OBJ/STL exports, honest logs, official
+  TRELLIS.2. Verified live in production.
+- **Phase 1** (#2): Supabase auth (magic link) + `/library` + poster capture.
+  Migration `0005_assets.sql` applied live with a clean security-advisor pass.
+- **Phase 2** (#3): Director suggestion chips, live intent preview, starter
+  prompts (deliberately not fake-instant — no static GLBs exist on disk).
+- **Phase 3** (#4): `/capture` — on-device MediaPipe segmentation, tap an
+  object in the camera, feeds the existing reference-image pipeline.
+- **Phase 4** (#5): Turntable video export (captureStream + MediaRecorder).
+  UniRig rigging researched and explicitly NOT shipped — all 3 candidate
+  public HF Spaces were down (404/error/paused) at the time.
+- **Phase 5** (#6, #7): Session persistence, mobile-responsive panels,
+  lightweight undo/redo, a settings sheet with a BYO HuggingFace token (lets
+  users bypass the shared free ZeroGPU quota this session's own testing
+  exhausted), and a verified-safe dead-code deletion pass (~2,580 lines).
+
+**Known gaps, honestly flagged:**
+- Mobile capture and turntable recording are type/API-verified but not
+  visually confirmed on real camera hardware (none available this session).
+- A large dead-code cluster remains unaudited (`lib/agent`, `lib/brief`,
+  `lib/critic`, `lib/cursor`, `lib/memory`, `lib/security`, `lib/seo`,
+  `lib/telemetry`, `lib/billing`, `project-persistence`, `supabase-projects`,
+  `timeline-snapshots`, `router.ts`, `project-slug.ts`) — each needs its own
+  import trace before it's safe to delete; not attempted this session given
+  the risk/effort tradeoff at the point this work was done.
+- GitHub Actions CI had a recurring gap (4 occurrences) where it silently
+  stopped creating runs for pushes to this branch; self-resolved each time
+  with no repo-side fix. Documented on each affected PR.
 
 ## What YIIYA is becoming
 
