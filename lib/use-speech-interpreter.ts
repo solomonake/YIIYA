@@ -5,6 +5,7 @@ import { useYiiyaStore } from "@/lib/store";
 import type { GeneratedAsset, PipelineEvent } from "@/lib/interpret-pipeline";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { getSettings } from "@/lib/settings";
+import { parseLocalEdit } from "@/lib/scene/local-edit";
 
 // ─── Web Speech API types ────────────────────────────────────────────────────
 
@@ -69,6 +70,25 @@ export function useSpeechInterpreter() {
     if (!transcript.trim()) return;
 
     const store = useYiiyaStore.getState();
+
+    // Local material fast-path: recolor / finish / glow / scale edits to the
+    // active mesh run in-browser (lib/scene/local-edit.ts) — 0 tokens, instant,
+    // no regeneration. Only when there's a real active mesh to edit; structural
+    // edits and new objects return null from the parser and fall through to the
+    // full pipeline below.
+    const activeAsset = store.generatedAssets.find(a => a.id === store.activeAssetId);
+    if (activeAsset && activeAsset.tier !== "fallback") {
+      const edit = parseLocalEdit(transcript);
+      if (edit) {
+        addLog(`[USER] ${transcript}`);
+        store.addConversationMessage({ role: "user", content: transcript });
+        store.applyLocalMaterialEdit(activeAsset.id, edit.patch, edit.scaleFactor);
+        addLog(`[EDIT] ${edit.label} — applied instantly (0 tokens, no regeneration)`);
+        store.addConversationMessage({ role: "assistant", content: `Applied locally: ${edit.label}` });
+        return;
+      }
+    }
+
     setIsInterpreting(true);
     addLog(`[USER] ${transcript}`);
     store.addConversationMessage({ role: "user", content: transcript });

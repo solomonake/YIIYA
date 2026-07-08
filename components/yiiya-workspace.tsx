@@ -642,7 +642,11 @@ export function YiiyaWorkspace() {
       <div className="relative flex-1 min-w-0">
         <Toolbar />
         <Suspense fallback={<div className="h-full w-full bg-black" />}>
-          <SceneCanvas activeGlbUrl={activeGlbUrl} activeAssetDbId={activeAsset?.dbId} />
+          <SceneCanvas
+            activeGlbUrl={activeGlbUrl}
+            activeAssetDbId={activeAsset?.dbId}
+            activeMaterialOverride={activeAsset?.materialOverride}
+          />
         </Suspense>
         <GeneratingOverlay />
       </div>
