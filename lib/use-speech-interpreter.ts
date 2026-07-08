@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useYiiyaStore } from "@/lib/store";
 import type { GeneratedAsset, PipelineEvent } from "@/lib/interpret-pipeline";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
+import { getSettings } from "@/lib/settings";
 
 // ─── Web Speech API types ────────────────────────────────────────────────────
 
@@ -95,7 +96,8 @@ export function useSpeechInterpreter() {
             : null,
           sessionStyleDNA: store.sessionStyleDNA,
           history: store.conversationHistory.slice(-4),
-          existingAssets: store.generatedAssets.map(a => ({ id: a.id, name: a.name }))
+          existingAssets: store.generatedAssets.map(a => ({ id: a.id, name: a.name })),
+          userHfToken: getSettings().hfToken || undefined
         }),
         signal: abortController.signal
       });

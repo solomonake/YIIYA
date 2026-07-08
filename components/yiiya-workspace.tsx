@@ -10,6 +10,7 @@ import { useSupabaseSession } from "@/lib/auth/use-session";
 import { useOpenAssetFromLibrary } from "@/lib/assets/open-from-library";
 import { AuthSheet } from "@/components/auth/auth-sheet";
 import { signOut } from "@/lib/auth/actions";
+import { SettingsSheet } from "@/components/settings-sheet";
 import { classifyPromptSubject } from "@/lib/scene/prompt-intent";
 import { canRecordTurntable, recordTurntable } from "@/lib/scene/turntable-recorder";
 
@@ -229,18 +230,30 @@ function LeftPanel({ open }: { open: boolean }) {
   const statusLabel = isInterpreting ? "PROCESSING" : isListening ? "LISTENING" : "IDLE";
 
   return (
-    <div className="flex flex-col h-full w-72 shrink-0 bg-[#060606] border-r border-zinc-900">
+    // Full-screen overlay on narrow viewports (there's no room for a
+    // side-by-side 3-pane layout on a phone); back to a fixed side column
+    // at the sm breakpoint and up.
+    <div className="fixed inset-0 z-30 sm:relative sm:inset-auto sm:z-auto flex flex-col h-full w-full sm:w-72 sm:shrink-0 bg-[#060606] border-r border-zinc-900">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-900">
-        <div className="text-[10px] font-mono text-zinc-500 tracking-widest">YIIYA · 3D STUDIO</div>
-        {activeBrief && (
-          <div className="text-[9px] font-mono text-zinc-700 truncate mt-0.5">
-            {activeBrief.intent} · {activeBrief.primaryObject}
-          </div>
-        )}
-        {sessionStyleDNA && (
-          <div className="text-[9px] font-mono text-amber-700 truncate">STYLE: {sessionStyleDNA.styleLabel}</div>
-        )}
+      <div className="px-4 py-3 border-b border-zinc-900 flex items-start justify-between">
+        <div className="min-w-0">
+          <div className="text-[10px] font-mono text-zinc-500 tracking-widest">YIIYA · 3D STUDIO</div>
+          {activeBrief && (
+            <div className="text-[9px] font-mono text-zinc-700 truncate mt-0.5">
+              {activeBrief.intent} · {activeBrief.primaryObject}
+            </div>
+          )}
+          {sessionStyleDNA && (
+            <div className="text-[9px] font-mono text-amber-700 truncate">STYLE: {sessionStyleDNA.styleLabel}</div>
+          )}
+        </div>
+        <button
+          onClick={() => useYiiyaStore.getState().setLeftPanelOpen(false)}
+          className="sm:hidden shrink-0 text-zinc-600 hover:text-zinc-300 text-xs font-mono px-1"
+          aria-label="Close panel"
+        >
+          ✕
+        </button>
       </div>
 
       {/* Log feed */}
@@ -379,10 +392,19 @@ function RightPanel({ open }: { open: boolean }) {
   if (!open) return null;
 
   return (
-    <div className="flex flex-col h-full w-64 shrink-0 bg-[#060606] border-l border-zinc-900">
+    <div className="fixed inset-0 z-30 sm:relative sm:inset-auto sm:z-auto flex flex-col h-full w-full sm:w-64 sm:shrink-0 bg-[#060606] border-l border-zinc-900">
       <div className="px-3 py-2.5 border-b border-zinc-900 flex items-center justify-between">
         <span className="text-[9px] font-mono text-zinc-600 tracking-widest">ASSET TRAY</span>
-        <span className="text-[9px] font-mono text-zinc-700">{generatedAssets.length}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] font-mono text-zinc-700">{generatedAssets.length}</span>
+          <button
+            onClick={() => useYiiyaStore.getState().setRightPanelOpen(false)}
+            className="sm:hidden text-zinc-600 hover:text-zinc-300 text-xs font-mono px-1"
+            aria-label="Close panel"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -434,6 +456,18 @@ function GeneratingOverlay() {
   );
 }
 
+// ─── Undo/redo (asset history) ────────────────────────────────────────────────
+
+function stepAssetHistory(direction: 1 | -1) {
+  const store = useYiiyaStore.getState();
+  const assets = store.generatedAssets;
+  if (assets.length === 0) return;
+  const currentIndex = assets.findIndex((a) => a.id === store.activeAssetId);
+  const base = currentIndex === -1 ? assets.length - 1 : currentIndex;
+  const nextIndex = Math.max(0, Math.min(assets.length - 1, base + direction));
+  store.setActiveAsset(assets[nextIndex].id);
+}
+
 // ─── Toolbar ─────────────────────────────────────────────────────────────────
 
 function Toolbar() {
@@ -444,9 +478,28 @@ function Toolbar() {
   const assetCount = useYiiyaStore(s => s.generatedAssets.length);
   const { user, isConfigured } = useSupabaseSession();
   const [showAuth, setShowAuth] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="absolute top-3 right-3 z-20 flex gap-1.5">
+      {assetCount > 1 && (
+        <div className="flex gap-0.5" title="Undo/redo (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z)">
+          <button
+            onClick={() => stepAssetHistory(-1)}
+            className="px-1.5 py-1 text-[9px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+            aria-label="Previous asset"
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => stepAssetHistory(1)}
+            className="px-1.5 py-1 text-[9px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+            aria-label="Next asset"
+          >
+            ›
+          </button>
+        </div>
+      )}
       <button
         onClick={() => setLeft(!leftOpen)}
         className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
@@ -490,7 +543,15 @@ function Toolbar() {
           )}
         </>
       )}
+      <button
+        onClick={() => setShowSettings(true)}
+        className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+        aria-label="Settings"
+      >
+        ⚙
+      </button>
       {showAuth ? <AuthSheet onClose={() => setShowAuth(false)} /> : null}
+      {showSettings ? <SettingsSheet onClose={() => setShowSettings(false)} /> : null}
     </div>
   );
 }
@@ -507,6 +568,17 @@ export function YiiyaWorkspace() {
   const { submitManualTranscript: autoSubmit } = useSpeechInterpreter();
 
   useOpenAssetFromLibrary();
+
+  // Mobile-first load: the log panel defaults open for desktop parity, but
+  // on a narrow viewport it would cover the entire 3D canvas on first paint.
+  // One-time check on mount (not a resize listener — the user's own
+  // LOG/ASSETS toggles take over from here).
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      useYiiyaStore.getState().setLeftPanelOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // One-tap mobile capture flow: /capture sets referenceImage in the store
   // then navigates here with ?autoGenerate=1. Fire the generation once the
@@ -525,6 +597,23 @@ export function YiiyaWorkspace() {
     autoSubmit("Generate a 3D model of this object.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceImage]);
+
+  // Undo/redo over the asset generation history: Cmd/Ctrl+Z steps back to
+  // the previous asset, Cmd/Ctrl+Shift+Z steps forward. Deliberately not a
+  // full state-snapshot undo system — the generated-assets array already IS
+  // an append-only history, so "undo" is just "view the previous one" and
+  // costs nothing to implement or get wrong.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      e.preventDefault();
+      stepAssetHistory(e.shiftKey ? 1 : -1);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const key = "yiiya_3d_boot";

@@ -5,6 +5,7 @@
  * Pure 3D spatial state. No website sections, no layout layers.
  */
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { GeneratedAsset, StyleDNA, ThreeDBrief, ReferenceImageInput } from "@/lib/interpret-pipeline";
 import type { SpatialMaterial } from "@/lib/materials";
 import type {
@@ -187,7 +188,9 @@ const DEFAULT_BLOB: BlobState = {
 
 // ─── Store factory ────────────────────────────────────────────────────────────
 
-export const useYiiyaStore = create<YiiyaStore>()((set, get, _api) => ({
+export const useYiiyaStore = create<YiiyaStore>()(
+  persist(
+    (set, get, _api) => ({
   ...createStageSlice(set, get),
 
   // 3D scene
@@ -342,4 +345,27 @@ export const useYiiyaStore = create<YiiyaStore>()((set, get, _api) => ({
         break;
     }
   }
-}));
+    }),
+    {
+      name: "yiiya-studio-session",
+      storage: createJSONStorage(() => localStorage),
+      version: 1,
+      // Only persist what makes "resume where I left off" meaningful and
+      // safe. Generated GLB URLs are durable (Vercel Blob or our own proxy),
+      // so a restored asset tray still resolves after a refresh. Ephemeral
+      // UI/runtime state (isListening, isInterpreting, referenceImage,
+      // cursorTarget, saveStatus) is deliberately excluded — a stale
+      // "listening" or "processing" flag surviving a refresh would just be
+      // confusing, and referenceImage as base64 could bloat localStorage.
+      partialize: (state) => ({
+        generatedAssets: state.generatedAssets,
+        activeAssetId: state.activeAssetId,
+        logs: state.logs.slice(-100),
+        conversationHistory: state.conversationHistory,
+        projectName: state.projectName,
+        sessionStyleDNA: state.sessionStyleDNA,
+        activeBrief: state.activeBrief
+      })
+    }
+  )
+);
