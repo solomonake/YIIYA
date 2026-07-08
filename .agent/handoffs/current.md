@@ -1,65 +1,62 @@
 # Current agent checkpoint
 
-Generated: 2026-07-07 (claude-opus-4.8 session, continued autonomous execution)
+Generated: 2026-07-08 (claude-opus-4.8 session — all 6 phases complete)
 
 ## State
-- Branch: `claude/reverent-wiles-0b7f37`.
-- **Phase 0 MERGED** (#1, commit 7f95ec1 on main) — GLB-403 fix, real exports,
-  honest logs. Verified live in production.
-- **Phase 1 MERGED** (#2, commit 0a00b74 on main) — Supabase auth + `/library`
-  + poster capture. Migration `0005_assets.sql` applied live.
-- **Phase 2 MERGED** (#3, commit db7586c on main) — Director suggestion chips,
-  intent preview, starter prompts.
-- **Phase 3 open** (#4) — mobile capture + on-device MediaPipe segmentation.
-  Watching CI, will merge once green.
-- Plan of record: `docs/TRANSFORMATION_PLAN.md`.
+All phases 0-5 from `docs/TRANSFORMATION_PLAN.md` are **merged to `main`**:
+- Phase 0 (#1) — GLB-403 fix, real exports, honest logs, TRELLIS.2
+- Phase 1 (#2) — Supabase auth, `/library`, poster capture
+- Phase 2 (#3) — Director suggestions, intent preview, starter prompts
+- Phase 3 (#4) — `/capture` mobile on-device segmentation
+- Phase 4 (#5) — turntable video export (UniRig rigging researched, deferred)
+- Phase 5 (#6, #7) — persistence, mobile layout, undo/redo, settings + BYO
+  HF token, verified-safe dead-code removal (~2,580 lines)
+
+All 10 CI checks (install/typecheck/lint/test/validate/build/GitGuardian/
+Vercel/Vercel Preview Comments/Scan Platform) pass on the final merged state.
 
 ## This session's operating notes (read before continuing)
-1. **Local `next lint` / `next build`'s internal lint step can hang** in this
-   sandboxed shell (interactive-prompt-like behavior, CPU flatlines, process
-   never exits). Use `node node_modules/typescript/lib/tsc.js --noEmit` for
-   typecheck and `node_modules/.bin/vitest run` for tests as the real local
-   gates; let GitHub Actions CI be authoritative for lint/build.
-2. **GitHub Actions CI had a ~15-20 min gap** where it silently stopped
-   creating runs for pushes to this PR branch (confirmed via
-   `gh api repos/.../actions/runs` — zero runs, not queued/failed) while
-   GitGuardian/Vercel kept working. Self-resolved with no repo-side fix.
-   Documented on PR #3's thread and in `.agent/playbook.md`. If it recurs,
-   don't block — substitute Vercel's real build + local typecheck/test as
-   evidence and say so explicitly.
-3. **A Next.js dev-mode hydration warning mid-session was a Fast Refresh
-   artifact**, not a real bug — vanished after `rm -rf .next` + full dev
-   server restart with identical code. Always rule this out before treating
-   a hydration warning as a real defect.
+1. **Local `next lint` / `next build`'s internal lint step can hang** in a
+   sandboxed shell. Use `node node_modules/typescript/lib/tsc.js --noEmit`
+   and `node_modules/.bin/vitest run` as the real local gates; let GH Actions
+   be authoritative for lint/build.
+2. **GitHub Actions CI had a recurring gap** (5 occurrences this session)
+   where it silently created zero runs for a branch push, confirmed via the
+   Actions API each time, always self-resolving on a later push. When it
+   happens: retrigger once (empty commit), don't loop waiting, merge on
+   Vercel+GitGuardian+local-verification evidence, document on the PR.
+3. **Hydration warnings need a screenshot + localStorage check, not just
+   console reading**, before treating them as real. Investigated three
+   variants this session; all three were false positives (confirmed via
+   clean-cache restart, screenshot showing correct rendering, and — for the
+   persist-related one — direct `localStorage.getItem()` returning `null`).
+   Still added `skipHydration` + explicit `rehydrate()` to `lib/store.ts` as
+   a legitimate defensive practice regardless.
 4. Worktree `.env.local` has empty provider keys; production has real keys.
    HuggingFace's shared free ZeroGPU quota was exhausted by this session's
-   own testing (resets ~24h after first use) — expect generation failures on
-   HF-space providers until it resets; this is not a code regression.
+   own testing — expect HF-space generation failures until it resets
+   (~24h), or use the new BYO-token Settings field.
 
-## Next exact action
-1. Confirm PR #4 (Phase 3) CI is green, merge it, verify the production
-   deploy goes READY.
-2. **Ask the user to manually test `/capture` on a real phone or webcam** —
-   this session has no camera hardware, so the capture→segment flow is
-   type/API-verified only, not visually confirmed live.
-3. Continue to Phase 4 (motion + rigging: turntable video export, UniRig
-   auto-rigging, animation presets) per `docs/TRANSFORMATION_PLAN.md`, then
-   Phase 5 (UX hardening, undo/redo, settings, dead-code removal).
-
-## Verification proof (this session, Phases 0-3)
-- 4 PRs merged/open, all with local `tsc --noEmit` 0 errors and full
-  `vitest run` green (62/62 tests, 16 files, +8 new test files this session).
-- Phase 0 reproduced-then-fixed a real production bug (403 viewer failure)
-  and re-verified the fix live.
-- Phase 1's migration applied to the live Supabase project with a clean
-  security-advisor pass (RLS policy present, no new findings).
-- Phase 3's MediaPipe usage checked against the installed package's actual
-  `.d.ts` before writing code, not assumed from memory.
+## Next exact action for a human
+1. **Manually verify `/capture` (camera + on-device segmentation) and the
+   turntable recorder on real hardware** — both are type/API-verified this
+   session but never visually confirmed (no camera, no working ZeroGPU
+   quota available).
+2. Decide whether the remaining dead-code cluster is worth a dedicated
+   follow-up: `lib/agent/*`, `lib/brief/*`, `lib/critic/*`, `lib/cursor/*`,
+   `lib/memory/*`, `lib/security/*`, `lib/seo/*`, `lib/telemetry/*`,
+   `lib/billing/*`, `project-persistence.ts`, `supabase-projects.ts`,
+   `timeline-snapshots.ts`, `router.ts`, `project-slug.ts` — each needs its
+   own import trace before it's safe to delete.
+3. Consider whether the scan platform (kept this session — has its own CI
+   smoke test) is still wanted; it's currently unreachable from the live
+   `/app` UI (no nav link), so its purpose should be clarified with the
+   product owner rather than assumed.
 
 ## Boundaries
 - Human approval was granted in-chat for commit/push/merge/loop-without-
-  asking for this specific task. Still no destructive git operations were
-  used (no `--force`, only `--force-with-lease` on my own already-open PR
-  branch after rebases; no `reset --hard`; nothing on `main` directly).
+  asking, scoped to this specific 6-phase execution. No destructive git
+  operations were used beyond `--force-with-lease` on this session's own
+  already-open PR branch after routine rebases.
 - Deploys happen automatically via Vercel's GitHub integration on merge to
-  `main` — no separate manual deploy step was taken or needed.
+  `main` — confirmed READY for every phase's production deployment.
