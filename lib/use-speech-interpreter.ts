@@ -112,7 +112,12 @@ export function useSpeechInterpreter() {
         body: JSON.stringify({
           transcript,
           referenceImage: store.referenceImage
-            ? { base64: store.referenceImage.base64, mediaType: store.referenceImage.mediaType, name: store.referenceImage.name }
+            ? {
+                base64: store.referenceImage.base64,
+                mediaType: store.referenceImage.mediaType,
+                name: store.referenceImage.name,
+                additionalViews: store.referenceImage.additionalViews
+              }
             : null,
           sessionStyleDNA: store.sessionStyleDNA,
           history: store.conversationHistory.slice(-4),

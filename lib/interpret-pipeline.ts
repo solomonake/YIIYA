@@ -102,6 +102,13 @@ export type ReferenceImageInput = {
   base64: string;
   mediaType: string;
   name: string;
+  /**
+   * Extra segmented views of the same object from a video walk-around
+   * (lib/vision/video-frames.ts), ordered [left, back]. When both are present
+   * the multi-view provider (Hunyuan3D multi-view on fal) runs first for
+   * genuinely better geometry; otherwise the single-image cascade is used.
+   */
+  additionalViews?: Array<{ base64: string; mediaType: string }>;
 };
 
 export type InterpretRequestBody = {
@@ -1003,6 +1010,45 @@ async function generateViaFalHunyuan(refUrl: string): Promise<{ url: string | nu
   }
 }
 
+// fal Hunyuan3D multi-view — the video-capture path. Takes front/back/left
+// views of the SAME object (segmented on-device from a walk-around clip) and
+// reconstructs geometry the single-image path has to hallucinate. Schema per
+// fal-ai/hunyuan3d/v2/multi-view: all three *_image_url fields are required,
+// which is why the cascade only enables this entry when 3 views exist.
+async function generateViaFalHunyuanMultiView(
+  frontDataUri: string,
+  leftDataUri: string,
+  backDataUri: string
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) return { url: null, error: "FAL_KEY not set" };
+    const { fal } = await import("@fal-ai/client");
+    fal.config({ credentials: falKey });
+
+    type FalResult = { data?: { model_mesh?: { url?: string }; model_glb?: { url?: string } } };
+    const result = await (fal.subscribe as (m: string, o: unknown) => Promise<FalResult>)(
+      process.env.FAL_HUNYUAN_MV_MODEL ?? "fal-ai/hunyuan3d/v2/multi-view",
+      {
+        input: {
+          front_image_url: frontDataUri,
+          left_image_url: leftDataUri,
+          back_image_url: backDataUri,
+          textured_mesh: true
+        },
+        logs: false
+      }
+    );
+    const url = result?.data?.model_glb?.url ?? result?.data?.model_mesh?.url ?? null;
+    if (!url) return { url: null, error: "fal hunyuan multi-view returned no GLB" };
+    return { url, error: null };
+  } catch (err) {
+    const msg = errMessage(err);
+    console.error("[FAL-HUNYUAN-MV]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
 // Tripo image→3D. Free tier ~200 credits/month; async create-then-poll. Needs a
 // public image URL (use uploadImageToBlob for user uploads). Contract mirrors
 // services/scene/providers/tripo.ts.
@@ -1120,6 +1166,7 @@ type CascadeEntry = ProviderDescriptor & { enabled: boolean; timeoutMs: number }
 // just uses what it has. Override with YIIYA_PROVIDER_ORDER (comma-separated
 // keys) to e.g. prefer free monthly tiers (tripo,meshy) over fal credits.
 const DEFAULT_PROVIDER_ORDER = [
+  "fal-hunyuan-mv",
   "fal-hunyuan",
   "fal-trellis",
   "tripo",
@@ -1136,7 +1183,8 @@ async function runSpatialGenerator(
   groundingResult: ReferenceGroundingResult,
   userImageBase64?: string | null,
   userImageMime?: string | null,
-  userHfToken?: string
+  userHfToken?: string,
+  additionalViews?: Array<{ base64: string; mediaType: string }>
 ): Promise<{ glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] }> {
   const attempts: GeneratorAttempt[] = [];
   const placeholder = (): { glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] } => ({
@@ -1179,7 +1227,24 @@ async function runSpatialGenerator(
   // server-side one, so HF providers stay enabled even without a server
   // token as long as the request brought its own.
   const hasHf = Boolean(userHfToken || process.env.HUGGINGFACE_TOKEN);
+  // Multi-view runs only when the video capture produced BOTH extra views —
+  // fal's multi-view schema requires front+left+back, no partial input.
+  const mvViews =
+    userImageBase64 && additionalViews && additionalViews.length >= 2
+      ? {
+          front: `data:${userImageMime ?? "image/png"};base64,${userImageBase64}`,
+          left: `data:${additionalViews[0].mediaType};base64,${additionalViews[0].base64}`,
+          back: `data:${additionalViews[1].mediaType};base64,${additionalViews[1].base64}`
+        }
+      : null;
   const entries: Record<string, CascadeEntry> = {
+    "fal-hunyuan-mv": {
+      name: "hunyuan3d multi-view (fal)",
+      tier: "hunyuan3d",
+      enabled: hasFal && Boolean(mvViews),
+      timeoutMs: 110_000,
+      run: () => generateViaFalHunyuanMultiView(mvViews!.front, mvViews!.left, mvViews!.back)
+    },
     "fal-hunyuan": { name: "hunyuan3d (fal)", tier: "hunyuan3d", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalHunyuan(inputRef) },
     "fal-trellis": { name: "trellis-2 (fal)", tier: "trellis", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalTrellis(inputRef) },
     "tripo": { name: "tripo", tier: "trellis", enabled: Boolean(process.env.TRIPO_API_KEY), timeoutMs: 95_000, run: () => needsUrl(generateViaTripo) },
@@ -1385,7 +1450,8 @@ export async function* runInterpretPipeline(
         groundingResult,
         body.referenceImage?.base64 ?? null,
         body.referenceImage?.mediaType ?? null,
-        body.userHfToken
+        body.userHfToken,
+        body.referenceImage?.additionalViews
       );
       for (const attempt of attempts) {
         if (!attempt.ok && attempt.error) {
@@ -1418,11 +1484,13 @@ export async function* runInterpretPipeline(
       };
     }
 
+    // needsLODChain / needsPhysicsMetadata are Director-classified intent flags
+    // (e.g. "this is going to UE5") — no /api/3d/lod route or USD physics
+    // embedding actually exists, so they must never appear as QA claims. Log
+    // only capabilities the pipeline genuinely delivers.
     const qa_log = [
       `[QA] ${generatedAssets.length} asset(s) generated.`,
       `[QA] Scale: 1 unit = 1 meter (Blender/UE5/Unity standard).`,
-      ...(brief.needsLODChain ? ["[QA] LOD chain: /api/3d/lod?url={glbUrl}"] : []),
-      ...(brief.needsPhysicsMetadata ? ["[QA] Physics metadata in USD export."] : []),
       `[QA] Pipeline: Director → Grounder → Hunyuan3D / TRELLIS / Tripo / Meshy → PBR → Packager`
     ];
 
