@@ -91,6 +91,16 @@ export type LogEntry = {
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+/** A paused generation waiting on the user's answer (ambiguity gate). */
+export type PendingClarify = {
+  question: string;
+  options: string[];
+  /** The free Pollinations studio photo of the Director's best guess, if any. */
+  previewImage: string | null;
+  /** The transcript that triggered the gate — resubmitted with the answer appended. */
+  transcript: string;
+};
+
 // ─── Actions (3D only) ────────────────────────────────────────────────────────
 
 export type YiiyaAction =
@@ -144,6 +154,9 @@ export type YiiyaStore = StageSlice & {
   saveStatus: SaveStatus;
   lastSavedAt: string | null;
   projectName: string;
+  pendingClarify: PendingClarify | null;
+  /** The free reference photo the current/last generation is building from. */
+  groundingPreviewUrl: string | null;
 
   // Actions
   addSceneObject: (obj: Omit<SceneObject, "id" | "materializedAt">) => string;
@@ -170,6 +183,8 @@ export type YiiyaStore = StageSlice & {
   setCursorTarget: (t: CursorTarget | null) => void;
   setSaveStatus: (s: SaveStatus) => void;
   setProjectName: (name: string) => void;
+  setPendingClarify: (c: PendingClarify | null) => void;
+  setGroundingPreviewUrl: (url: string | null) => void;
   applyAction: (action: YiiyaAction) => void;
 };
 
@@ -225,6 +240,8 @@ export const useYiiyaStore = create<YiiyaStore>()(
   saveStatus: "idle",
   lastSavedAt: null,
   projectName: "Untitled 3D Project",
+  pendingClarify: null,
+  groundingPreviewUrl: null,
 
   // Scene object methods
   addSceneObject: (obj) => {
@@ -300,6 +317,8 @@ export const useYiiyaStore = create<YiiyaStore>()(
   setCursorTarget: (t) => set({ cursorTarget: t }),
   setSaveStatus: (s) => set({ saveStatus: s }),
   setProjectName: (name) => set({ projectName: name }),
+  setPendingClarify: (c) => set({ pendingClarify: c }),
+  setGroundingPreviewUrl: (url) => set({ groundingPreviewUrl: url }),
 
   // Action dispatcher (for pipeline → store bridge)
   applyAction: (action) => {

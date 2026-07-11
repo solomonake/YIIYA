@@ -193,6 +193,8 @@ function LeftPanel({ open }: { open: boolean }) {
   const activeBrief = useYiiyaStore(s => s.activeBrief);
   const referenceImage = useYiiyaStore(s => s.referenceImage);
   const setReferenceImage = useYiiyaStore(s => s.setReferenceImage);
+  const pendingClarify = useYiiyaStore(s => s.pendingClarify);
+  const groundingPreviewUrl = useYiiyaStore(s => s.groundingPreviewUrl);
   const { toggleListening, submitManualTranscript } = useSpeechInterpreter();
   const [manualText, setManualText] = useState("");
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -280,7 +282,56 @@ function LeftPanel({ open }: { open: boolean }) {
         <div ref={logsEndRef} />
       </div>
 
-      {activeBrief?.suggestions && activeBrief.suggestions.length > 0 && !isInterpreting ? (
+      {/* Ambiguity gate: the Director paused before spending a paid generation.
+          Answer a chip (resubmits enriched prompt), or generate anyway. */}
+      {pendingClarify && !isInterpreting ? (
+        <div className="mx-3 mb-2 border border-amber-900/60 bg-amber-950/20 rounded-sm p-2.5">
+          <div className="text-[9px] font-mono text-amber-400 leading-4 mb-2">{pendingClarify.question}</div>
+          {pendingClarify.previewImage && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={pendingClarify.previewImage}
+              alt="best-guess reference"
+              className="h-16 w-16 object-cover rounded-sm border border-zinc-800 mb-2"
+            />
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            {pendingClarify.options.map((opt, i) => (
+              <button
+                key={i}
+                onClick={() => submitManualTranscript(`${pendingClarify.transcript} — ${opt}`)}
+                className="text-[8px] font-mono px-2 py-1 border border-amber-800/60 rounded-sm text-amber-300 hover:text-amber-100 hover:border-amber-500 transition-colors"
+              >
+                {opt}
+              </button>
+            ))}
+            <button
+              onClick={() => submitManualTranscript(pendingClarify.transcript, { forceGenerate: true })}
+              className="text-[8px] font-mono px-2 py-1 border border-zinc-800 rounded-sm text-zinc-500 hover:text-zinc-200 hover:border-zinc-600 transition-colors"
+            >
+              generate anyway
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Free reference preview: what the 3D build is following, shown the
+          moment it exists — catch a misread before the paid part finishes. */}
+      {groundingPreviewUrl && isInterpreting ? (
+        <div className="mx-3 mb-2 flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={groundingPreviewUrl}
+            alt="generation reference"
+            className="h-12 w-12 object-cover rounded-sm border border-zinc-800"
+          />
+          <span className="text-[8px] font-mono text-zinc-600 leading-3">
+            Building from this reference (free preview)
+          </span>
+        </div>
+      ) : null}
+
+      {activeBrief?.suggestions && activeBrief.suggestions.length > 0 && !isInterpreting && !pendingClarify ? (
         <div className="px-3 pb-2 flex flex-wrap gap-1.5">
           {activeBrief.suggestions.map((s, i) => (
             <button
@@ -377,6 +428,10 @@ function LeftPanel({ open }: { open: boolean }) {
           →
         </button>
       </form>
+      {/* Cost transparency: what a submission actually costs, before committing. */}
+      <div className="px-3 pb-2 -mt-1 text-[8px] font-mono text-zinc-800">
+        new object ≈ 1 paid generation · color/finish/size edits: free &amp; instant
+      </div>
     </div>
   );
 }

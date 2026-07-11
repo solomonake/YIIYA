@@ -119,11 +119,14 @@ export type InterpretRequestBody = {
   existingAssets?: Array<{ id: string; name: string }>;
   /** BYO HuggingFace token from Settings — unlocks the user's own free ZeroGPU quota instead of the shared server one. */
   userHfToken?: string;
+  /** Skip the ambiguity gate — set when the user answered (or dismissed) a clarify prompt. */
+  forceGenerate?: boolean;
 };
 
 export type PipelineEvent =
   | { type: "director"; brief: ThreeDBrief; log: string }
   | { type: "grounding"; result: ReferenceGroundingResult; log: string }
+  | { type: "clarify"; question: string; options: string[]; previewImage: string | null; brief: ThreeDBrief; log: string }
   | { type: "style_dna"; dna: StyleDNA; log: string }
   | { type: "generating"; log: string; progress?: number }
   | { type: "asset_ready"; asset: GeneratedAsset; log: string }
@@ -1392,7 +1395,9 @@ export async function* runInterpretPipeline(
       console.error("[DIRECTOR] falling back to local brief:", errMessage(err));
     }
     yield { type: "director", brief, log: `[DIRECTOR] ${brief.intent} → "${brief.primaryObject}" (${brief.useCase}, ${brief.polygonBudget} poly)${directorNote}` };
-    if (brief.clarifyingQuestion) {
+    const willGate =
+      !body.forceGenerate && !body.referenceImage && Boolean(brief.clarifyingQuestion) && brief.confidence < 0.6;
+    if (brief.clarifyingQuestion && !willGate) {
       yield { type: "generating", log: `[DIRECTOR] ${brief.clarifyingQuestion} (proceeding with best guess: "${brief.primaryObject}")`, progress: 0.05 };
     }
 
@@ -1425,6 +1430,25 @@ export async function* runInterpretPipeline(
         ? "[GROUNDER] User photo will be fed directly to the generator"
         : "[GROUNDER] 1 studio reference photo ready via Pollinations.ai"
     };
+
+    // Ambiguity gate: when the Director genuinely can't tell what to build
+    // (it asked a question AND its confidence is low), stop BEFORE the paid
+    // generation and hand the question to the user. Everything spent so far
+    // (Gemini free tier + Pollinations) is free. Vague-but-confident prompts
+    // still proceed — vague prompts are a feature, blind gambles are not.
+    // A user-supplied photo always overrides the gate: the image IS the answer.
+    if (willGate && brief.clarifyingQuestion) {
+      yield {
+        type: "clarify",
+        question: brief.clarifyingQuestion,
+        options: brief.suggestions?.slice(0, 3) ?? [],
+        previewImage: groundingResult.referenceImages[0] ?? null,
+        brief,
+        log: `[DIRECTOR] Paused before spending a generation — ${brief.clarifyingQuestion}`
+      };
+      yield { type: "done", assets: [], brief, qa_log: ["[QA] Clarification requested — no generation spent."] };
+      return;
+    }
 
     const styleMatch = body.transcript.match(/\b(lowpoly|low.poly|ps2|cartoon|toon|realistic|pbr|stylized|hand.painted|pixel|voxel|clay|flat)\b/i);
     if (body.sessionStyleDNA || styleMatch) {
