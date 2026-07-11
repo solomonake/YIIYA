@@ -74,6 +74,8 @@ export type ReferenceImage = {
   mediaType: string;
   name: string;
   previewUrl?: string;
+  /** Extra segmented views from a video walk-around, ordered [left, back] — unlocks the multi-view provider. */
+  additionalViews?: Array<{ base64: string; mediaType: string }>;
 };
 
 export type YiiyaMessage = {

@@ -30,6 +30,20 @@ export type SegmentResult = {
   base64: string;
 };
 
+export type SegmentResultWithCentroid = SegmentResult & {
+  /** Mask centroid in the source's normalized coordinates — the seed point for tracking the same object into the next frame. */
+  centroidXNorm: number;
+  centroidYNorm: number;
+};
+
+type SegmentSource = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement;
+
+function sourceDimensions(source: SegmentSource): { width: number; height: number } {
+  if (source instanceof HTMLVideoElement) return { width: source.videoWidth, height: source.videoHeight };
+  if (source instanceof HTMLCanvasElement) return { width: source.width, height: source.height };
+  return { width: source.naturalWidth, height: source.naturalHeight };
+}
+
 /**
  * Segments the object at a tapped point out of a live video frame or image,
  * composites it onto a white studio background (matching what the image-to-3D
@@ -38,13 +52,24 @@ export type SegmentResult = {
  * @param xNorm,yNorm tap position normalized to the source's own dimensions (0..1)
  */
 export async function segmentAtPoint(
-  source: HTMLVideoElement | HTMLImageElement,
+  source: SegmentSource,
   xNorm: number,
   yNorm: number
 ): Promise<SegmentResult> {
+  return segmentAtPointWithCentroid(source, xNorm, yNorm);
+}
+
+/**
+ * Same as segmentAtPoint, but also reports the mask centroid so callers can
+ * track the object across video frames (lib/vision/video-frames.ts).
+ */
+export async function segmentAtPointWithCentroid(
+  source: SegmentSource,
+  xNorm: number,
+  yNorm: number
+): Promise<SegmentResultWithCentroid> {
   const segmenter = await getSegmenter();
-  const width = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth;
-  const height = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight;
+  const { width, height } = sourceDimensions(source);
   if (!width || !height) throw new Error("Video not ready yet — try again in a moment.");
 
   const result = segmenter.segment(source, { keypoint: { x: xNorm, y: yNorm } });
@@ -66,6 +91,9 @@ export async function segmentAtPoint(
   let minY = height;
   let maxX = 0;
   let maxY = 0;
+  let sumX = 0;
+  let sumY = 0;
+  let maskCount = 0;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -75,6 +103,9 @@ export async function segmentAtPoint(
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
+        sumX += x;
+        sumY += y;
+        maskCount++;
       } else {
         const p = i * 4;
         frame.data[p] = 255;
@@ -109,5 +140,10 @@ export async function segmentAtPoint(
   cropCtx.drawImage(canvas, cx0, cy0, cropW, cropH, 0, 0, cropW, cropH);
 
   const dataUrl = cropCanvas.toDataURL("image/png");
-  return { dataUrl, base64: dataUrl.split(",")[1] };
+  return {
+    dataUrl,
+    base64: dataUrl.split(",")[1],
+    centroidXNorm: sumX / maskCount / width,
+    centroidYNorm: sumY / maskCount / height
+  };
 }
