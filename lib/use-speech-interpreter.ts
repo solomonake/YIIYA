@@ -157,7 +157,14 @@ export function useSpeechInterpreter() {
           history: store.conversationHistory.slice(-4),
           existingAssets: store.generatedAssets.map(a => ({ id: a.id, name: a.name })),
           userHfToken: getSettings().hfToken || undefined,
-          forceGenerate: opts?.forceGenerate || undefined
+          forceGenerate: opts?.forceGenerate || undefined,
+          // Unlocks the Meshy retexture fast path for material edits: same
+          // geometry, new textures. Only a public https URL is usable —
+          // relative proxy URLs and placeholders can't be fetched by Meshy.
+          activeAssetGlbUrl:
+            activeAsset && activeAsset.tier !== "fallback" && activeAsset.glbUrl.startsWith("https://")
+              ? activeAsset.glbUrl
+              : undefined
         }),
         signal: abortController.signal
       });

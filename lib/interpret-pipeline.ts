@@ -6,6 +6,7 @@ import { Client } from "@gradio/client";
 import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
+import { canRetextureModelUrl, retextureViaMeshy } from "@/lib/meshy-retexture";
 import { buildExportUrls } from "@/lib/scene/export-urls";
 import type { MaterialOverride } from "@/lib/scene/local-edit";
 
@@ -96,6 +97,12 @@ export type GeneratedAsset = {
    * instant, and reversible — see lib/scene/local-edit.ts.
    */
   materialOverride?: MaterialOverride;
+  /**
+   * Set when this asset is a Meshy retexture of an existing mesh — the URL of
+   * the GLB whose geometry it preserves. Used to scope the prompt cache to
+   * the source mesh (lib/meshy-retexture.ts retextureCacheKey).
+   */
+  sourceGlbUrl?: string;
 };
 
 export type ReferenceImageInput = {
@@ -121,6 +128,13 @@ export type InterpretRequestBody = {
   userHfToken?: string;
   /** Skip the ambiguity gate — set when the user answered (or dismissed) a clarify prompt. */
   forceGenerate?: boolean;
+  /**
+   * Public GLB URL of the asset currently active in the viewport (Blob mirror
+   * or provider CDN). When the Director classifies the phrase as a
+   * material_edit, this unlocks the Meshy retexture fast path: same geometry,
+   * new textures, instead of re-rolling the whole mesh.
+   */
+  activeAssetGlbUrl?: string;
 };
 
 export type PipelineEvent =
@@ -1379,6 +1393,98 @@ async function runPackager(
   };
 }
 
+// ─── Retexture fast path (Phase 11) ───────────────────────────────────────────
+
+/**
+ * material_edit on an existing mesh → Meshy text-to-texture: keeps the
+ * geometry, regenerates only the textures. Runs INSTEAD of the full provider
+ * cascade (and before Pollinations grounding, which a retexture never needs).
+ *
+ * Returns true when it produced a terminal event stream (asset or honest
+ * failure) — the caller must stop. Returns false when retexture wasn't
+ * attempted (no key / unusable URL / create-call rejected before a task
+ * existed), in which case falling through to the normal pipeline costs
+ * nothing extra and matches pre-Phase-11 behavior.
+ */
+async function* runRetexturePath(
+  body: InterpretRequestBody,
+  brief: ThreeDBrief
+): AsyncGenerator<PipelineEvent, boolean> {
+  const modelUrl = body.activeAssetGlbUrl;
+  if (!process.env.MESHY_API_KEY) {
+    yield { type: "generating", log: "[RETEXTURE] Material edit detected but MESHY_API_KEY is not set — re-rolling the whole mesh instead.", progress: 0.1 };
+    return false;
+  }
+  if (!canRetextureModelUrl(modelUrl)) {
+    yield { type: "generating", log: "[RETEXTURE] Active asset has no public mesh URL to retexture — re-rolling the whole mesh instead.", progress: 0.1 };
+    return false;
+  }
+
+  yield {
+    type: "generating",
+    log: `[RETEXTURE] "${brief.primaryObject}" — same geometry, new skin via Meshy text-to-texture. This takes ~1–3 min…`,
+    progress: 0.2
+  };
+
+  const out = await retextureViaMeshy(modelUrl, body.transcript);
+
+  if (!out.url) {
+    if (!out.taskCreated) {
+      // Failed before Meshy accepted a task — zero credits spent, and the
+      // clock barely moved, so the normal cascade is still a safe fallback.
+      yield { type: "generating", log: `[RETEXTURE] ${out.error} — no task created (0 credits). Falling back to full regeneration.`, progress: 0.1 };
+      return false;
+    }
+    // A task ran and failed (or timed out): credits may be gone and there is
+    // no time budget left for a full cascade on top. Stop honestly instead of
+    // silently re-rolling geometry the user asked to keep.
+    yield { type: "generating", log: `[RETEXTURE] ${out.error}. Your mesh is untouched — nothing changed. Reword the edit to retry, or ask to "regenerate" for a fresh mesh.`, progress: 0.1 };
+    const qa_log = ["[QA] Retexture failed — original mesh preserved, no new asset."];
+    yield { type: "qa", qa_log };
+    yield { type: "done", assets: [], brief, qa_log };
+    return true;
+  }
+
+  const v = await validateGlbUrl(out.url).catch(
+    () => ({ ok: false, reason: "validation error", sizeBytes: 0 } as GlbValidation)
+  );
+  if (!v.ok) {
+    yield { type: "generating", log: `[RETEXTURE] Meshy returned an unusable GLB (${v.reason}). Your mesh is untouched.`, progress: 0.1 };
+    const qa_log = ["[QA] Retexture output failed validation — original mesh preserved."];
+    yield { type: "qa", qa_log };
+    yield { type: "done", assets: [], brief, qa_log };
+    return true;
+  }
+
+  const creditNote = out.consumedCredits !== null ? `${out.consumedCredits} Meshy credits` : "credit count not reported";
+  yield { type: "generating", log: `[RETEXTURE] Textures ready (${creditNote}), packaging exports...`, progress: 0.8 };
+
+  const mirror = await mirrorGlbToBlob(out.url, `${brief.primaryObject}-retexture`).catch(
+    () => ({ url: out.url as string, mirrored: false, sizeBytes: 0 })
+  );
+  const glbUrl =
+    mirror.mirrored || !isAllowedProviderUrl(mirror.url)
+      ? mirror.url
+      : `/api/3d/proxy?src=${encodeURIComponent(mirror.url)}`;
+
+  const asset = await runPackager(brief, glbUrl, "hunyuan3d", out.textureUrls, v.triangleCount);
+  asset.sourceGlbUrl = modelUrl;
+
+  yield {
+    type: "asset_ready",
+    asset,
+    log: `[READY] "${asset.name}" — retextured, geometry preserved (${creditNote}), ${Object.keys(asset.exportUrls).join("/")}`
+  };
+  const qa_log = [
+    `[QA] Retexture: geometry untouched, textures regenerated by Meshy (${creditNote}).`,
+    `[QA] Scale: 1 unit = 1 meter (Blender/UE5/Unity standard).`,
+    `[QA] Pipeline: Director → Meshy text-to-texture → Packager (cascade skipped)`
+  ];
+  yield { type: "qa", qa_log };
+  yield { type: "done", assets: [asset], brief, qa_log };
+  return true;
+}
+
 // ─── Main Pipeline ─────────────────────────────────────────────────────────────
 
 export async function* runInterpretPipeline(
@@ -1399,6 +1505,13 @@ export async function* runInterpretPipeline(
       !body.forceGenerate && !body.referenceImage && Boolean(brief.clarifyingQuestion) && brief.confidence < 0.6;
     if (brief.clarifyingQuestion && !willGate) {
       yield { type: "generating", log: `[DIRECTOR] ${brief.clarifyingQuestion} (proceeding with best guess: "${brief.primaryObject}")`, progress: 0.05 };
+    }
+
+    // Phase 11: material edits on an existing mesh go through Meshy retexture
+    // (same geometry, new textures) instead of re-rolling the whole mesh.
+    if (brief.intent === "material_edit" && body.activeAssetGlbUrl && !body.referenceImage) {
+      const handled = yield* runRetexturePath(body, brief);
+      if (handled) return;
     }
 
     if (body.referenceImage) {

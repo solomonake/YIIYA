@@ -55,6 +55,10 @@ export async function saveGeneratedAsset(
  * you already paid for should cost nothing — the row carries everything
  * needed to rehydrate the asset (glb_url is durable: Blob or the proxy).
  * Scoped to the owner; anonymous users have no history to hit.
+ *
+ * Accepts multiple candidate keys because retextured assets are cached under
+ * a mesh-scoped key (lib/meshy-retexture.ts retextureCacheKey) alongside the
+ * plain transcript key — the most recent match across all keys wins.
  */
 export type CachedAssetRow = {
   id: string;
@@ -68,17 +72,17 @@ export type CachedAssetRow = {
 
 export async function findCachedAsset(
   userId: string,
-  prompt: string
+  prompts: string[]
 ): Promise<CachedAssetRow | null> {
   const client = serviceClient();
-  if (!client) return null;
+  if (!client || prompts.length === 0) return null;
 
   try {
     const { data, error } = await client
       .from("assets")
       .select("id, object_name, tier, glb_url, triangle_count, scale_meters, brief_json")
       .eq("owner_id", userId)
-      .eq("prompt", prompt)
+      .in("prompt", prompts)
       .neq("tier", "fallback")
       .order("created_at", { ascending: false })
       .limit(1)

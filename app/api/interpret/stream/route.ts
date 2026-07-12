@@ -3,6 +3,7 @@ import { isInterpretRequest, runInterpretPipeline, type GeneratedAsset, type PBR
 import { getUserIdFromAuthHeader } from "@/lib/auth/verify-request";
 import { saveGeneratedAsset, findCachedAsset } from "@/lib/assets/persist";
 import { buildExportUrls } from "@/lib/scene/export-urls";
+import { retextureCacheKey } from "@/lib/meshy-retexture";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,13 @@ export async function POST(request: NextRequest) {
   // the outcome) and forceGenerate (the user explicitly wants a fresh roll —
   // resubmitting the identical prompt is how you re-roll).
   if (userId && !body.referenceImage && !body.forceGenerate) {
-    const cached = await findCachedAsset(userId, body.transcript.trim());
+    // Retextured assets are cached under a mesh-scoped key — "make it look
+    // more human" only hits when it was said about the SAME active mesh.
+    const cacheKeys = [
+      body.transcript.trim(),
+      ...(body.activeAssetGlbUrl ? [retextureCacheKey(body.transcript, body.activeAssetGlbUrl)] : [])
+    ];
+    const cached = await findCachedAsset(userId, cacheKeys);
     if (cached) {
       const asset: GeneratedAsset = {
         id: `asset-${Date.now()}-cache`,
@@ -75,7 +82,12 @@ export async function POST(request: NextRequest) {
             // Awaited (not fire-and-forget): serverless functions can freeze
             // background work the instant the response is sent, so the save
             // must land before this event reaches the client.
-            const dbId = await saveGeneratedAsset(userId, body.transcript, null, event.asset).catch(
+            // Retextures save under a mesh-scoped prompt key so the cache
+            // never serves them for the same phrase on a different asset.
+            const promptKey = event.asset.sourceGlbUrl
+              ? retextureCacheKey(body.transcript, event.asset.sourceGlbUrl)
+              : body.transcript;
+            const dbId = await saveGeneratedAsset(userId, promptKey, null, event.asset).catch(
               () => null
             );
             if (dbId) {
