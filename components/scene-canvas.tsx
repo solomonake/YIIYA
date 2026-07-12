@@ -22,6 +22,8 @@ import { GlbErrorBoundary } from "@/components/scene/glb-error-boundary";
 import type { StageState } from "@/lib/scene/stage-state";
 import { capturePoster, hasCaptured } from "@/lib/assets/capture-poster";
 import { registerCanvasForRecording, registerSpinControl } from "@/lib/scene/turntable-recorder";
+import { computeRegion, tintRegion, clearAllTints, type Region } from "@/lib/scene/region-select";
+import { registerRegionEditHandlers, getRegionEditHandlers } from "@/lib/scene/region-edit-bridge";
 
 function materialNode(
   object: SceneObject
@@ -692,6 +694,44 @@ function ActiveGlbViewer({
   const mountedAtRef = useRef(Date.now());
   const posterCapturedRef = useRef(false);
 
+  // Part targeting: click a spot on the mesh → geometric region selection
+  // (lib/scene/region-select.ts — provider GLBs have no part nodes, so the
+  // region grows over triangle adjacency bounded by radius). The selection is
+  // highlighted amber; "make this red" then recolors just the region via
+  // vertex colors, instantly and for free. Click empty space to clear.
+  const selectionRef = useRef<{ mesh: Mesh; region: Region } | null>(null);
+
+  const handleMeshClick = (e: ThreeEvent<MouseEvent>) => {
+    const mesh = e.object as Mesh;
+    if (!mesh.isMesh || e.faceIndex === undefined || e.faceIndex === null) return;
+    e.stopPropagation();
+    // One selection at a time: clear any previous highlight first.
+    if (selectionRef.current) clearAllTints(selectionRef.current.mesh);
+    const region = computeRegion(mesh.geometry, e.faceIndex);
+    if (!region) return;
+    selectionRef.current = { mesh, region };
+    tintRegion(mesh, region, null); // amber highlight
+  };
+
+  useEffect(() => {
+    registerRegionEditHandlers({
+      hasSelection: () => selectionRef.current !== null,
+      applyColor: (hex) => {
+        const sel = selectionRef.current;
+        if (!sel) return false;
+        tintRegion(sel.mesh, sel.region, hex);
+        return true;
+      },
+      clearSelection: () => {
+        if (selectionRef.current) {
+          clearAllTints(selectionRef.current.mesh);
+          selectionRef.current = null;
+        }
+      }
+    });
+    return () => registerRegionEditHandlers(null);
+  }, []);
+
   // Turntable recording: a registered spin control drives exactly one clean
   // 360° revolution over a fixed duration, independent of Float's own subtle
   // idle rotation (which keeps running underneath — a small added wobble,
@@ -738,7 +778,7 @@ function ActiveGlbViewer({
   return (
     <Float speed={1.2} rotationIntensity={0.4} floatIntensity={0.4}>
       <group ref={groupRef} position={autoOffset}>
-        <primitive object={clone} />
+        <primitive object={clone} onClick={handleMeshClick} />
       </group>
     </Float>
   );
@@ -892,6 +932,7 @@ export function SceneCanvas({
     >
       <Canvas
         data-yiiya-scene-canvas="true"
+        onPointerMissed={() => getRegionEditHandlers()?.clearSelection()}
         gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
         camera={{ position: [0, 0, 5], fov: 56 }}
         style={{ position: "absolute", inset: 0 }}

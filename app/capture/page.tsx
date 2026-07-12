@@ -196,8 +196,11 @@ export default function CapturePage() {
           </div>
         )}
         {status === "ready" && !preview && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-mono text-zinc-500 bg-black/60 px-3 py-1.5 rounded-sm">
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-mono text-zinc-500 bg-black/60 px-3 py-1.5 rounded-sm text-center max-w-[85%]">
             Tap the object you want in 3D
+            <span className="block text-[8px] text-zinc-600 mt-0.5">
+              matte, opaque objects work best — transparent/shiny ones confuse the AI
+            </span>
           </div>
         )}
         {status === "ready" && (error || notice) && (
