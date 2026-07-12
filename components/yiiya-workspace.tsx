@@ -197,6 +197,7 @@ function LeftPanel({ open }: { open: boolean }) {
   const groundingPreviewUrl = useYiiyaStore(s => s.groundingPreviewUrl);
   const { toggleListening, submitManualTranscript } = useSpeechInterpreter();
   const [manualText, setManualText] = useState("");
+  const [clarifyReply, setClarifyReply] = useState("");
   const logsEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -312,6 +313,31 @@ function LeftPanel({ open }: { open: boolean }) {
               generate anyway
             </button>
           </div>
+          {/* Or answer in your own words — chips are shortcuts, not the ceiling. */}
+          <form
+            className="mt-2 flex gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const trimmed = clarifyReply.trim();
+              if (!trimmed) return;
+              submitManualTranscript(`${pendingClarify.transcript} — ${trimmed}`);
+              setClarifyReply("");
+            }}
+          >
+            <input
+              type="text"
+              value={clarifyReply}
+              onChange={(e) => setClarifyReply(e.target.value)}
+              placeholder="or type your answer..."
+              className="flex-1 bg-zinc-950 border border-amber-900/40 rounded-sm px-2 py-1 text-[9px] font-mono text-amber-100 placeholder:text-zinc-700 focus:outline-none focus:border-amber-600"
+            />
+            <button
+              type="submit"
+              className="shrink-0 px-2 py-1 border border-amber-800/60 rounded-sm text-[9px] font-mono text-amber-300 hover:text-amber-100 hover:border-amber-500 transition-colors"
+            >
+              →
+            </button>
+          </form>
         </div>
       ) : null}
 
@@ -431,6 +457,7 @@ function LeftPanel({ open }: { open: boolean }) {
       {/* Cost transparency: what a submission actually costs, before committing. */}
       <div className="px-3 pb-2 -mt-1 text-[8px] font-mono text-zinc-800">
         new object ≈ 1 paid generation · color/finish/size edits: free &amp; instant
+        <span className="block">click a part of the model, then say &quot;make this red&quot;</span>
       </div>
     </div>
   );

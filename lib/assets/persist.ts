@@ -50,6 +50,48 @@ export async function saveGeneratedAsset(
 }
 
 /**
+ * Prompt→asset cache: returns the most recent successful asset this user
+ * already generated for the EXACT same prompt, or null. Re-running a prompt
+ * you already paid for should cost nothing — the row carries everything
+ * needed to rehydrate the asset (glb_url is durable: Blob or the proxy).
+ * Scoped to the owner; anonymous users have no history to hit.
+ */
+export type CachedAssetRow = {
+  id: string;
+  object_name: string;
+  tier: string;
+  glb_url: string;
+  triangle_count: number | null;
+  scale_meters: number | null;
+  brief_json: { materialBrief?: unknown; textureUrls?: unknown } | null;
+};
+
+export async function findCachedAsset(
+  userId: string,
+  prompt: string
+): Promise<CachedAssetRow | null> {
+  const client = serviceClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from("assets")
+      .select("id, object_name, tier, glb_url, triangle_count, scale_meters, brief_json")
+      .eq("owner_id", userId)
+      .eq("prompt", prompt)
+      .neq("tier", "fallback")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data as CachedAssetRow;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Attaches a poster thumbnail URL to a previously saved asset, scoped to the
  * requesting user so one user can't overwrite another's asset row.
  */

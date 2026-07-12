@@ -6,6 +6,7 @@ import type { GeneratedAsset, PipelineEvent } from "@/lib/interpret-pipeline";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { getSettings } from "@/lib/settings";
 import { parseLocalEdit } from "@/lib/scene/local-edit";
+import { getRegionEditHandlers } from "@/lib/scene/region-edit-bridge";
 
 // ─── Web Speech API types ────────────────────────────────────────────────────
 
@@ -80,6 +81,27 @@ export function useSpeechInterpreter() {
     // edits and new objects return null from the parser and fall through to the
     // full pipeline below.
     const activeAsset = store.generatedAssets.find(a => a.id === store.activeAssetId);
+
+    // Part targeting: "make THIS red" while a clicked region is selected on
+    // the mesh recolors just that region (vertex colors) — instant, free.
+    // Deictic words + an active selection are both required; otherwise the
+    // phrase falls through to the normal whole-mesh / pipeline paths.
+    const regionHandlers = getRegionEditHandlers();
+    if (
+      regionHandlers?.hasSelection() &&
+      /\b(this|that|here)\b/i.test(transcript)
+    ) {
+      const edit = parseLocalEdit(transcript.replace(/\b(this|that|here)\b/gi, "it"));
+      if (edit?.patch.color) {
+        addLog(`[USER] ${transcript}`);
+        store.addConversationMessage({ role: "user", content: transcript });
+        regionHandlers.applyColor(edit.patch.color);
+        addLog(`[EDIT] selected part → ${edit.label} (0 tokens, instant)`);
+        store.addConversationMessage({ role: "assistant", content: `Recolored the selected part: ${edit.label}` });
+        return;
+      }
+    }
+
     if (activeAsset && activeAsset.tier !== "fallback") {
       const edit = parseLocalEdit(transcript);
       if (edit) {
