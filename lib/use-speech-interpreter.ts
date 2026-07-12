@@ -118,6 +118,15 @@ export function useSpeechInterpreter() {
     addLog(`[USER] ${transcript}`);
     store.addConversationMessage({ role: "user", content: transcript });
 
+    // Expectation-setting: an edit-shaped phrase that ISN'T a local
+    // color/finish/size edit (those returned above) needs a full regeneration.
+    // Say so up front — the user just saw edits apply in 0s and deserves to
+    // know this one costs a generation and minutes, and that the current
+    // mesh survives in the tray either way.
+    if (activeAsset && activeAsset.tier !== "fallback" && /^\s*(make|add|remove|change|turn|give|put)\b/i.test(transcript)) {
+      addLog("[GENERATOR] Structural change — needs a fresh generation (≈1 paid gen, 1–4 min). Your current mesh stays in the tray.");
+    }
+
     abortControllerRef.current?.abort();
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
