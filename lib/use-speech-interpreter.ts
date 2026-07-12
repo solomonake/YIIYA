@@ -66,10 +66,13 @@ export function useSpeechInterpreter() {
     referenceImage
   } = useYiiyaStore();
 
-  const runTranscriptThroughPipeline = useCallback(async (transcript: string) => {
+  const runTranscriptThroughPipeline = useCallback(async (transcript: string, opts?: { forceGenerate?: boolean }) => {
     if (!transcript.trim()) return;
 
     const store = useYiiyaStore.getState();
+    // A new submission supersedes any paused clarify prompt and stale preview.
+    store.setPendingClarify(null);
+    store.setGroundingPreviewUrl(null);
 
     // Local material fast-path: recolor / finish / glow / scale edits to the
     // active mesh run in-browser (lib/scene/local-edit.ts) — 0 tokens, instant,
@@ -122,7 +125,8 @@ export function useSpeechInterpreter() {
           sessionStyleDNA: store.sessionStyleDNA,
           history: store.conversationHistory.slice(-4),
           existingAssets: store.generatedAssets.map(a => ({ id: a.id, name: a.name })),
-          userHfToken: getSettings().hfToken || undefined
+          userHfToken: getSettings().hfToken || undefined,
+          forceGenerate: opts?.forceGenerate || undefined
         }),
         signal: abortController.signal
       });
@@ -147,7 +151,7 @@ export function useSpeechInterpreter() {
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6)) as PipelineEvent;
-            handlePipelineEvent(event);
+            handlePipelineEvent(event, transcript);
           } catch {
             /* skip malformed events */
           }
@@ -163,7 +167,7 @@ export function useSpeechInterpreter() {
     }
   }, [addLog, addGeneratedAsset, setActiveBrief, setSessionStyleDNA, setIsInterpreting, setInterimTranscript]);
 
-  function handlePipelineEvent(event: PipelineEvent) {
+  function handlePipelineEvent(event: PipelineEvent, transcript: string) {
     const store = useYiiyaStore.getState();
     switch (event.type) {
       case "director":
@@ -172,6 +176,21 @@ export function useSpeechInterpreter() {
         break;
       case "grounding":
         addLog(event.log);
+        // Surface the free reference photo the 3D build will follow — catches
+        // a misread prompt while there's still time to abort, at zero cost.
+        if (event.result.referenceImages[0]) {
+          store.setGroundingPreviewUrl(event.result.referenceImages[0]);
+        }
+        break;
+      case "clarify":
+        addLog(event.log);
+        store.setPendingClarify({
+          question: event.question,
+          options: event.options,
+          previewImage: event.previewImage,
+          transcript
+        });
+        store.addConversationMessage({ role: "assistant", content: event.question });
         break;
       case "style_dna":
         addLog(event.log);
@@ -188,8 +207,12 @@ export function useSpeechInterpreter() {
         event.qa_log.forEach(l => addLog(l));
         break;
       case "done":
-        addLog(`[DONE] ${event.assets.length} asset(s) ready.`);
-        store.addConversationMessage({ role: "assistant", content: `Generated ${event.assets.length} asset(s): ${event.assets.map(a => a.name).join(", ")}` });
+        // A clarify-gated run ends with zero assets — the question card is the
+        // real output there, so skip the "0 asset(s)" noise.
+        if (event.assets.length > 0) {
+          addLog(`[DONE] ${event.assets.length} asset(s) ready.`);
+          store.addConversationMessage({ role: "assistant", content: `Generated ${event.assets.length} asset(s): ${event.assets.map(a => a.name).join(", ")}` });
+        }
         break;
       case "error":
         addLog(`[ERROR] ${event.message}`);
@@ -261,8 +284,8 @@ export function useSpeechInterpreter() {
     }
   }, [isListening, startListening, stopListening]);
 
-  const submitManualTranscript = useCallback((text: string) => {
-    if (text.trim()) void runTranscriptThroughPipeline(text.trim());
+  const submitManualTranscript = useCallback((text: string, opts?: { forceGenerate?: boolean }) => {
+    if (text.trim()) void runTranscriptThroughPipeline(text.trim(), opts);
   }, [runTranscriptThroughPipeline]);
 
   // Hold-Space shortcut
