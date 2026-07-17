@@ -5,7 +5,7 @@ import { useYiiyaStore } from "@/lib/store";
 import type { GeneratedAsset, PipelineEvent } from "@/lib/interpret-pipeline";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { getSettings } from "@/lib/settings";
-import { parseLocalEdit } from "@/lib/scene/local-edit";
+import { parseLocalEdit, classifyEditIntent } from "@/lib/scene/local-edit";
 import { getRegionEditHandlers } from "@/lib/scene/region-edit-bridge";
 
 // ─── Web Speech API types ────────────────────────────────────────────────────
@@ -80,6 +80,7 @@ export function useSpeechInterpreter() {
     const store = useYiiyaStore.getState();
     // A new submission supersedes any paused clarify prompt and stale preview.
     store.setPendingClarify(null);
+    store.setPendingEditConfirm(null);
     store.setGroundingPreviewUrl(null);
 
     // Local material fast-path: recolor / finish / glow / scale edits to the
@@ -109,16 +110,36 @@ export function useSpeechInterpreter() {
       }
     }
 
-    if (activeAsset && activeAsset.tier !== "fallback") {
-      const edit = parseLocalEdit(transcript);
-      if (edit) {
+    // Follow-up edits on a live mesh are triaged before spending anything.
+    // A cut-off voice phrase ("make it…") used to fall straight through to a
+    // full paid regeneration and silently produce a brand-new object — the
+    // single most expensive misfire in the app. classifyEditIntent gates it.
+    if (activeAsset && activeAsset.tier !== "fallback" && !opts?.forceGenerate) {
+      const intent = classifyEditIntent(transcript);
+
+      if (intent.kind === "local") {
         addLog(`[USER] ${transcript}`);
         store.addConversationMessage({ role: "user", content: transcript });
-        store.applyLocalMaterialEdit(activeAsset.id, edit.patch, edit.scaleFactor);
-        addLog(`[EDIT] ${edit.label} — applied instantly (0 tokens, no regeneration)`);
-        store.addConversationMessage({ role: "assistant", content: `Applied locally: ${edit.label}` });
+        store.applyLocalMaterialEdit(activeAsset.id, intent.edit.patch, intent.edit.scaleFactor);
+        addLog(`[EDIT] ${intent.edit.label} — applied instantly (0 tokens, no regeneration)`);
+        store.addConversationMessage({ role: "assistant", content: `Applied locally: ${intent.edit.label}` });
         return;
       }
+
+      if (intent.kind === "contentless") {
+        addLog(`[USER] ${transcript}`);
+        addLog(`[SYSTEM] Didn't catch what to change — try "make it red", "bigger", or "add a handle".`);
+        store.addConversationMessage({ role: "assistant", content: "Didn't catch that edit — what should I change?" });
+        return;
+      }
+
+      if (intent.kind === "regen") {
+        addLog(`[USER] ${transcript}`);
+        store.setPendingEditConfirm({ transcript, assetName: activeAsset.name });
+        addLog(`[SYSTEM] "${transcript}" needs a fresh generation (≈1 paid gen, 1–4 min). Confirm to spend it, or keep editing "${activeAsset.name}" for free.`);
+        return;
+      }
+      // intent.kind === "new" → fall through to the normal pipeline below.
     }
 
     setIsInterpreting(true);
@@ -126,15 +147,6 @@ export function useSpeechInterpreter() {
     store.setGeneratingAssetId(preGenId);
     addLog(`[USER] ${transcript}`);
     store.addConversationMessage({ role: "user", content: transcript });
-
-    // Expectation-setting: an edit-shaped phrase that ISN'T a local
-    // color/finish/size edit (those returned above) needs a full regeneration.
-    // Say so up front — the user just saw edits apply in 0s and deserves to
-    // know this one costs a generation and minutes, and that the current
-    // mesh survives in the tray either way.
-    if (activeAsset && activeAsset.tier !== "fallback" && /^\s*(make|add|remove|change|turn|give|put)\b/i.test(transcript)) {
-      addLog("[GENERATOR] Structural change — needs a fresh generation (≈1 paid gen, 1–4 min). Your current mesh stays in the tray.");
-    }
 
     abortControllerRef.current?.abort();
     const abortController = new AbortController();

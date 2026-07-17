@@ -199,6 +199,7 @@ function LeftPanel({ open }: { open: boolean }) {
   const referenceImage = useYiiyaStore(s => s.referenceImage);
   const setReferenceImage = useYiiyaStore(s => s.setReferenceImage);
   const pendingClarify = useYiiyaStore(s => s.pendingClarify);
+  const pendingEditConfirm = useYiiyaStore(s => s.pendingEditConfirm);
   const groundingPreviewUrl = useYiiyaStore(s => s.groundingPreviewUrl);
   const { toggleListening, submitManualTranscript, generateFromImage, cancelGeneration } = useSpeechInterpreter();
   const [manualText, setManualText] = useState("");
@@ -347,6 +348,37 @@ function LeftPanel({ open }: { open: boolean }) {
               →
             </button>
           </form>
+        </div>
+      ) : null}
+
+      {/* Edit-cost gate: a substantive change to the current mesh costs a full
+          generation. Confirm before spending it — "ask users what they want"
+          instead of silently regenerating (and producing a surprise new object). */}
+      {pendingEditConfirm && !isInterpreting ? (
+        <div className="mx-3 mb-2 border border-amber-900/60 bg-amber-950/20 rounded-sm p-2.5">
+          <div className="text-[9px] font-mono text-amber-400 leading-4 mb-2">
+            Regenerate <span className="text-amber-200">{pendingEditConfirm.assetName}</span> as
+            &ldquo;{pendingEditConfirm.transcript}&rdquo;? This spends one generation (1–4 min).
+            Your current mesh stays in the tray.
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => {
+                const t = pendingEditConfirm.transcript;
+                useYiiyaStore.getState().setPendingEditConfirm(null);
+                submitManualTranscript(t, { forceGenerate: true });
+              }}
+              className="text-[8px] font-mono px-2 py-1 border border-amber-700 bg-amber-500 text-black rounded-sm hover:bg-amber-400 transition-colors"
+            >
+              Yes — regenerate (1 gen)
+            </button>
+            <button
+              onClick={() => useYiiyaStore.getState().setPendingEditConfirm(null)}
+              className="text-[8px] font-mono px-2 py-1 border border-zinc-800 rounded-sm text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 transition-colors"
+            >
+              No — keep current
+            </button>
+          </div>
         </div>
       ) : null}
 

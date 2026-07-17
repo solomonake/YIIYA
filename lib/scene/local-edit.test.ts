@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLocalEdit } from "./local-edit";
+import { parseLocalEdit, classifyEditIntent } from "./local-edit";
 
 describe("parseLocalEdit — local material fast path", () => {
   it("catches 'make it matte black' as color + finish", () => {
@@ -66,5 +66,36 @@ describe("parseLocalEdit — local material fast path", () => {
   it("returns null for empty input", () => {
     expect(parseLocalEdit("")).toBeNull();
     expect(parseLocalEdit("   ")).toBeNull();
+  });
+});
+
+describe("classifyEditIntent — paid-regen guard", () => {
+  it("routes free material edits to the local path", () => {
+    expect(classifyEditIntent("make it blue").kind).toBe("local");
+    expect(classifyEditIntent("make it bigger").kind).toBe("local");
+    expect(classifyEditIntent("chrome").kind).toBe("local");
+  });
+
+  // The bug that shipped a surprise new lamp: a cut-off voice phrase.
+  it("flags contentless edit openers as contentless (never regenerates)", () => {
+    expect(classifyEditIntent("make it").kind).toBe("contentless");
+    expect(classifyEditIntent("change this").kind).toBe("contentless");
+    expect(classifyEditIntent("turn it").kind).toBe("contentless");
+    expect(classifyEditIntent("make it a").kind).toBe("contentless");
+    expect(classifyEditIntent("").kind).toBe("contentless");
+    expect(classifyEditIntent("   ").kind).toBe("contentless");
+  });
+
+  it("flags substantive edits of the active object as regen (needs confirm)", () => {
+    expect(classifyEditIntent("make it a convertible").kind).toBe("regen");
+    expect(classifyEditIntent("add a handle").kind).toBe("regen");
+    expect(classifyEditIntent("make it a vintage car").kind).toBe("regen");
+    expect(classifyEditIntent("attach a lid").kind).toBe("regen");
+    expect(classifyEditIntent("make it cyberpunk style").kind).toBe("regen");
+  });
+
+  it("treats a bare noun phrase as a new object, not an edit", () => {
+    expect(classifyEditIntent("a red sports car").kind).toBe("new");
+    expect(classifyEditIntent("a ceramic coffee mug").kind).toBe("new");
   });
 });

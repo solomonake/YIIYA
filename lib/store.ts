@@ -157,6 +157,8 @@ export type YiiyaStore = StageSlice & {
   lastSavedAt: string | null;
   projectName: string;
   pendingClarify: PendingClarify | null;
+  /** A substantive edit awaiting the user's OK before spending a paid regen. */
+  pendingEditConfirm: { transcript: string; assetName: string } | null;
   /** The free reference photo the current/last generation is building from. */
   groundingPreviewUrl: string | null;
 
@@ -188,6 +190,7 @@ export type YiiyaStore = StageSlice & {
   setSaveStatus: (s: SaveStatus) => void;
   setProjectName: (name: string) => void;
   setPendingClarify: (c: PendingClarify | null) => void;
+  setPendingEditConfirm: (c: { transcript: string; assetName: string } | null) => void;
   setGroundingPreviewUrl: (url: string | null) => void;
   applyAction: (action: YiiyaAction) => void;
 };
@@ -247,6 +250,7 @@ export const useYiiyaStore = create<YiiyaStore>()(
   lastSavedAt: null,
   projectName: "Untitled 3D Project",
   pendingClarify: null,
+  pendingEditConfirm: null,
   groundingPreviewUrl: null,
 
   // Scene object methods
@@ -351,6 +355,7 @@ export const useYiiyaStore = create<YiiyaStore>()(
   setSaveStatus: (s) => set({ saveStatus: s }),
   setProjectName: (name) => set({ projectName: name }),
   setPendingClarify: (c) => set({ pendingClarify: c }),
+  setPendingEditConfirm: (c) => set({ pendingEditConfirm: c }),
   setGroundingPreviewUrl: (url) => set({ groundingPreviewUrl: url }),
 
   // Action dispatcher (for pipeline → store bridge)
