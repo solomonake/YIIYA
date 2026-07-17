@@ -92,7 +92,25 @@ export async function guardRequest(
       };
     }
 
-    // 4) Daily budget.
+    // 3b) Daily free-generation quota — the cap the user actually feels
+    // ("N models a day"). Predictable and bounded-cost for us; tunable via
+    // YIIYA_FREE_GENERATIONS_PER_DAY without a deploy.
+    const gen = await checkLimit("generate3d", identity.identityKey);
+    if (!gen.success) {
+      const resetHrs = Math.max(1, Math.ceil(((gen.reset ?? Date.now()) - Date.now()) / 3_600_000));
+      return {
+        ok: false,
+        error: "daily_generation_limit",
+        message: `You've used your ${gen.limit} free generations for today — they reset in ~${resetHrs}h.`,
+        response: jsonResponse(
+          { error: "daily_generation_limit", limit: gen.limit, reset: gen.reset },
+          429,
+          { traceId, extra: rateLimitHeaders(gen) }
+        )
+      };
+    }
+
+    // 4) Daily budget (hard $ backstop behind the generation quota).
     const budget = await checkBudget(identity.userId);
     if (!budget.allow) {
       return {

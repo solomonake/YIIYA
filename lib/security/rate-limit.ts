@@ -5,8 +5,13 @@
  * Docs:      https://upstash.com/docs/redis/sdks/ratelimit-ts/overview
  *
  * Three named limiters:
- *   - interpret  : 30 req / 5min per identity (text+voice intent calls)
- *   - generate3d : 5 req  / 1h   per identity (TRELLIS/Tripo/Sparc3D)
+ *   - interpret  : 30 req / 5min per identity — burst/abuse guard on the
+ *                  intent endpoint (covers edits, clarifies, and generations)
+ *   - generate3d : the daily FREE-GENERATION quota per identity. This is the
+ *                  "how many 3D models can I make today" cap the user actually
+ *                  feels. Tunable via YIIYA_FREE_GENERATIONS_PER_DAY (default
+ *                  10) — raise it without a deploy; each generation costs us
+ *                  ~$0.02–0.31 depending on provider, so it also bounds spend.
  *   - publish    : 20 req / 1h   per identity (writes a public artifact)
  *
  * Falls back to an in-process token bucket if Upstash isn't configured —
@@ -19,9 +24,14 @@ export type LimiterName = "interpret" | "generate3d" | "publish";
 
 type LimiterConfig = { tokens: number; window: `${number} ${"s" | "m" | "h"}` };
 
+const FREE_GENERATIONS_PER_DAY = Math.max(
+  1,
+  Number.parseInt(process.env.YIIYA_FREE_GENERATIONS_PER_DAY ?? "10", 10) || 10
+);
+
 const CONFIG: Record<LimiterName, LimiterConfig> = {
   interpret: { tokens: 30, window: "5 m" },
-  generate3d: { tokens: 5, window: "1 h" },
+  generate3d: { tokens: FREE_GENERATIONS_PER_DAY, window: "24 h" },
   publish: { tokens: 20, window: "1 h" }
 };
 
