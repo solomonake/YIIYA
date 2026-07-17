@@ -211,7 +211,11 @@ export function useSpeechInterpreter() {
         }
       }
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
+      if ((err as Error).name === "AbortError") {
+        // User cancelled — no error to show
+      } else if (err instanceof TypeError && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"))) {
+        addLog("[ERROR] Network error — check your connection and try again.");
+      } else {
         addLog(`[ERROR] ${err instanceof Error ? err.message : "Pipeline error"}`);
       }
     } finally {

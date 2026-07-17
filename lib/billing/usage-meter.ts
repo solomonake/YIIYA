@@ -3,32 +3,24 @@
  * Records every metered call (LLM, 3D generation, image moderation) to
  * supabase.usage_events and enforces per-user / global daily USD budgets.
  *
- * Pricing table is opinionated; verify against each provider's current pricing
- * before relying on numbers for actual billing. Sources:
- *   - Gemini:  https://ai.google.dev/pricing
- *   - OpenAI:  https://openai.com/api/pricing/
- *   - Anthropic: https://www.anthropic.com/pricing
- *   - Tripo: https://platform.tripo3d.ai/billing
- *   - TRELLIS: free via HuggingFace Space
+ * When Supabase is not configured, an in-memory tracker provides budget
+ * enforcement (resets on cold start, but still prevents runaway spend within
+ * a single serverless instance lifetime).
  */
 import { createClient } from "@supabase/supabase-js";
 
 type PriceTable = Record<string, { in: number; out: number }>; // USD per 1M tokens
 
 const PRICES: PriceTable = {
-  // Gemini — free tier exists; estimates are for paid usage.
   "gemini-2.5-flash": { in: 0.075, out: 0.3 },
   "gemini-2.5-pro": { in: 1.25, out: 5.0 },
   "text-embedding-004": { in: 0.025, out: 0 },
-  // OpenAI
   "gpt-4o": { in: 2.5, out: 10.0 },
-  // Anthropic
   "claude-3-5-sonnet-20241022": { in: 3.0, out: 15.0 },
   "claude-3-5-haiku-20241022": { in: 0.8, out: 4.0 }
 };
 
 const FIXED_USD: Record<string, number> = {
-  // Per-call flat costs (3D, image moderation, etc.)
   "trellis-2-hf": 0,
   "tripo-text-to-3d": 0.05,
   "instantmesh-hf": 0,
@@ -73,15 +65,72 @@ function serviceClient() {
   return _serviceClient;
 }
 
+// ─── In-memory budget tracker ────────────────────────────────────────────────
+// Provides budget enforcement even without Supabase. Resets per cold start,
+// but on Vercel serverless that still prevents a single instance from burning
+// through credits unchecked. Always updated alongside Supabase writes so it
+// provides immediate protection.
+
+const _memSpend = new Map<string, { usd: number; date: string }>();
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function memRecord(userId: string | null | undefined, costUsd: number): void {
+  const today = todayUTC();
+
+  // Per-user
+  if (userId) {
+    const key = `user:${userId}`;
+    const entry = _memSpend.get(key);
+    if (entry && entry.date === today) {
+      entry.usd += costUsd;
+    } else {
+      _memSpend.set(key, { usd: costUsd, date: today });
+    }
+  }
+
+  // Global
+  const g = _memSpend.get("global");
+  if (g && g.date === today) {
+    g.usd += costUsd;
+  } else {
+    _memSpend.set("global", { usd: costUsd, date: today });
+  }
+}
+
+function memCheckBudget(userId: string | null | undefined): BudgetCheck | null {
+  const today = todayUTC();
+  const userCap = parseFloat(process.env.USAGE_DAILY_BUDGET_USD_PER_USER ?? "1.00");
+  const globalCap = parseFloat(process.env.USAGE_DAILY_BUDGET_USD_GLOBAL ?? "10.00");
+
+  if (userId) {
+    const entry = _memSpend.get(`user:${userId}`);
+    if (entry && entry.date === today && entry.usd >= userCap) {
+      return { allow: false, spentUsd: entry.usd, capUsd: userCap, scope: "user" };
+    }
+  }
+
+  const g = _memSpend.get("global");
+  if (g && g.date === today && g.usd >= globalCap) {
+    return { allow: false, spentUsd: g.usd, capUsd: globalCap, scope: "global" };
+  }
+
+  return null; // under budget
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
 export async function recordUsage(event: UsageEvent): Promise<void> {
   const cost = estimateCostUsd(event);
+
+  // Always update in-memory tracker
+  memRecord(event.userId, cost);
+
   const client = serviceClient();
   if (!client) return;
   try {
-    // The supabase-js typed-schema overloads narrow `insert(values)` to `never`
-    // when the database type hasn't been generated. We cast through `unknown`
-    // to the loose row shape — the SQL migration (0003_production_foundation.sql)
-    // is the source of truth.
     await (client.from("usage_events") as unknown as {
       insert: (row: Record<string, unknown>) => Promise<unknown>;
     }).insert({
@@ -106,17 +155,24 @@ export async function recordUsage(event: UsageEvent): Promise<void> {
 
 export type BudgetCheck = { allow: boolean; spentUsd: number; capUsd: number; scope: "user" | "global" };
 
-/**
- * Pre-flight check before initiating a paid call. Returns allow=false if the
- * configured daily budget for this user (or globally) is already exhausted.
- */
 export async function checkBudget(userId?: string | null): Promise<BudgetCheck> {
   const userCap = parseFloat(process.env.USAGE_DAILY_BUDGET_USD_PER_USER ?? "1.00");
-  const globalCap = parseFloat(process.env.USAGE_DAILY_BUDGET_USD_GLOBAL ?? "5.00");
-  const client = serviceClient();
-  if (!client) return { allow: true, spentUsd: 0, capUsd: userCap, scope: "user" };
+  const globalCap = parseFloat(process.env.USAGE_DAILY_BUDGET_USD_GLOBAL ?? "10.00");
 
-  // Window: since UTC midnight.
+  // In-memory check first (immediate, always available)
+  const memResult = memCheckBudget(userId);
+  if (memResult) return memResult;
+
+  const client = serviceClient();
+  if (!client) {
+    // No Supabase — in-memory tracker is the only enforcement.
+    const g = _memSpend.get("global");
+    const today = todayUTC();
+    const spent = g && g.date === today ? g.usd : 0;
+    return { allow: true, spentUsd: spent, capUsd: globalCap, scope: "global" };
+  }
+
+  // Supabase check for cross-instance accuracy
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
 

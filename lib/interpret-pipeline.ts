@@ -1164,6 +1164,37 @@ type ProviderDescriptor = {
  */
 type CascadeEntry = ProviderDescriptor & { enabled: boolean; timeoutMs: number };
 
+// ─── Circuit breaker ─────────────────────────────────────────────────────────
+// After FAILURE_THRESHOLD consecutive failures a provider is skipped for
+// COOLDOWN_MS. This prevents every request from burning 60-120s on a sleeping
+// HuggingFace Space before falling through to the next provider.
+const _circuitState = new Map<string, { failures: number; cooldownUntil: number }>();
+const FAILURE_THRESHOLD = 3;
+const COOLDOWN_MS = 5 * 60_000;
+
+function isCircuitOpen(key: string): boolean {
+  const s = _circuitState.get(key);
+  if (!s || s.failures < FAILURE_THRESHOLD) return false;
+  if (Date.now() > s.cooldownUntil) {
+    _circuitState.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function recordCircuit(key: string, ok: boolean): void {
+  if (ok) {
+    _circuitState.delete(key);
+    return;
+  }
+  const s = _circuitState.get(key) ?? { failures: 0, cooldownUntil: 0 };
+  s.failures++;
+  if (s.failures >= FAILURE_THRESHOLD) {
+    s.cooldownUntil = Date.now() + COOLDOWN_MS;
+  }
+  _circuitState.set(key, s);
+}
+
 // Default order: most reliable + fastest first, free fallbacks last. Each entry
 // is skipped instantly when its key is absent, so a deploy with only some keys
 // just uses what it has. Override with YIIYA_PROVIDER_ORDER (comma-separated
@@ -1268,9 +1299,14 @@ async function runSpatialGenerator(
   for (const key of order) {
     const entry = entries[key];
     if (!entry || !entry.enabled) continue;
+    if (isCircuitOpen(key)) {
+      attempts.push({ provider: entry.name, ok: false, error: "circuit-breaker: skipped (recent failures)" });
+      continue;
+    }
     const remaining = deadline - Date.now();
     if (remaining < 8_000) break;
 
+    console.log(`[GENERATOR] Trying ${entry.name}…`);
     let out: { url: string | null; error: string | null };
     try {
       out = await withTimeout(entry.run(), Math.min(entry.timeoutMs, remaining), entry.name);
@@ -1279,7 +1315,9 @@ async function runSpatialGenerator(
     }
 
     if (!out.url) {
+      recordCircuit(key, false);
       attempts.push({ provider: entry.name, ok: false, error: out.error ?? undefined });
+      console.log(`[GENERATOR] ${entry.name} failed: ${out.error ?? "unknown"}`);
       continue;
     }
 
@@ -1294,17 +1332,18 @@ async function runSpatialGenerator(
       triangleCount: v.triangleCount
     });
     if (v.ok) {
+      recordCircuit(key, true);
       const mirror = await mirrorGlbToBlob(out.url, brief.primaryObject).catch(
         () => ({ url: out.url as string, mirrored: false, sizeBytes: 0 })
       );
-      // Mirror failed (no Blob token, upstream hiccup, …). Never hand the
-      // browser a raw provider URL — HF Space temp files 403 for anonymous
-      // GETs and expire in minutes. Serve through our authenticated proxy.
       const glbUrl =
         mirror.mirrored || !isAllowedProviderUrl(mirror.url)
           ? mirror.url
           : `/api/3d/proxy?src=${encodeURIComponent(mirror.url)}`;
       return { glbUrl, tier: entry.tier, attempts };
+    } else {
+      recordCircuit(key, false);
+      console.log(`[GENERATOR] ${entry.name} GLB invalid: ${v.reason}`);
     }
   }
 
@@ -1488,7 +1527,7 @@ export async function* runInterpretPipeline(
       const sizeNote = [sizeMb ? `${sizeMb}MB` : null, triNote].filter(Boolean).join(", ");
       const meshReadyLog =
         tier === "fallback"
-          ? `[GENERATOR] All providers failed — showing placeholder for "${slot.name}". Retry or add a reference image.`
+          ? `[GENERATOR] All generators busy right now — try again in a minute. Showing placeholder for "${slot.name}".`
           : sizeNote
             ? `[GENERATOR] Mesh ready (${tier}, ${sizeNote}), packaging exports...`
             : `[GENERATOR] Mesh ready (${tier}), packaging exports...`;

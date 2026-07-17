@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { isInterpretRequest, runInterpretPipeline, type GeneratedAsset, type PBRMaterialBrief } from "@/lib/interpret-pipeline";
-import { getUserIdFromAuthHeader } from "@/lib/auth/verify-request";
+import { guardRequest } from "@/app/api/interpret/guard";
 import { saveGeneratedAsset, findCachedAsset } from "@/lib/assets/persist";
 import { buildExportUrls } from "@/lib/scene/export-urls";
 
@@ -36,7 +36,19 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const userId = await getUserIdFromAuthHeader(request);
+  // Rate limiting, budget enforcement, prompt firewall.
+  // For image-only requests, inject a synthetic transcript so the guard's
+  // zod schema (transcript.min(1)) passes.
+  const guardBody = hasTranscript ? body : { ...body, transcript: "Photo-to-3D generation" };
+  const guard = await guardRequest(request, guardBody);
+  if (!guard.ok) {
+    return new Response(
+      encodeEvent({ type: "error", message: guard.message }),
+      { status: guard.response.status, headers: streamHeaders }
+    );
+  }
+
+  const userId = guard.identity.userId;
 
   if (userId && !body.referenceImage && !body.forceGenerate) {
     const cached = await findCachedAsset(userId, body.transcript.trim());

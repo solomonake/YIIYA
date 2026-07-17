@@ -1,28 +1,13 @@
-// @ts-nocheck
 /**
  * Pre-flight + post-flight guards for the /api/interpret route.
  *
- * The route (app/api/interpret/route.ts) already parses the body and runs a
- * loose `isInterpretRequest` shape check, so this module does NOT consume the
- * request stream. The route hands us the parsed body; we run security and
- * stake-planting against it and return the (firewall-sanitized) body for the
- * pipeline to consume.
- *
- * Wiring:
- *
- *   At the top of POST, after the existing isInterpretRequest check:
- *     const guard = await guardRequest(request, body);
- *     if (!guard.ok) return guard.response;
- *
- *   After runInterpretOnce returns, before responding:
- *     const safe = await guardOutput(output.actions, guard.stake, theme);
- *     if (!safe.ok) return safe.response;
- *     // respond with safe.actions, append safe.warnings to qa_log
+ * Runs rate limiting, budget enforcement, prompt firewall, and brand
+ * extraction before any LLM or 3D provider call is made.
  */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { checkLimit, hashIp, rateLimitHeaders } from "@/lib/security/rate-limit";
+import { checkLimit, rateLimitHeaders } from "@/lib/security/rate-limit";
 import { inspectPrompt } from "@/lib/security/prompt-firewall";
 import { checkBudget } from "@/lib/billing/usage-meter";
 import { sanitizePayload } from "@/lib/security/sanitize";
@@ -30,6 +15,7 @@ import { checkSlop } from "@/lib/critic/slop-guard";
 import { checkA11y, adjustForContrast } from "@/lib/critic/a11y-guard";
 import { extractBrand } from "@/lib/brief/company-extractor";
 import { pickStakeFromVibe, type Stake } from "@/lib/brief/stake-matrix";
+import { resolveGenerationIdentity, type GenerationIdentity } from "@/lib/security/generation-identity";
 
 /**
  * Minimal schema — only fields the guard itself reads. `.passthrough()` keeps
@@ -49,10 +35,17 @@ export type GuardedBody = z.infer<typeof InputSchema> & Record<string, unknown>;
 export type GuardOk = {
   ok: true;
   body: GuardedBody;
+  identity: GenerationIdentity;
   stake: Stake;
   traceId: string;
 };
-export type GuardFail = { ok: false; response: Response };
+export type GuardFail = {
+  ok: false;
+  response: Response;
+  error: string;
+  message: string;
+  retryAfter?: number;
+};
 
 export async function guardRequest(
   req: NextRequest,
@@ -67,6 +60,8 @@ export async function guardRequest(
   } catch (err) {
     return {
       ok: false,
+      error: "invalid_input",
+      message: err instanceof Error ? err.message : "bad input",
       response: jsonResponse(
         { error: "invalid_input", message: err instanceof Error ? err.message : "bad input" },
         400,
@@ -75,45 +70,56 @@ export async function guardRequest(
     };
   }
 
-  // 2) Rate limit.
-  const ip =
-    req.ip ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "0.0.0.0";
-  const identity = parsed.userId ? `user:${parsed.userId}` : `ip:${await hashIp(ip)}`;
-  const rl = await checkLimit("interpret", identity);
-  if (!rl.success) {
-    return {
-      ok: false,
-      response: jsonResponse(
-        { error: "rate_limited", retry_after: rl.reset },
-        429,
-        { traceId, extra: rateLimitHeaders(rl) }
-      )
-    };
+  // 2) Resolve identity (auth + exempt check).
+  const identity = await resolveGenerationIdentity(req);
+
+  // Exempt users skip rate-limit and budget checks (developer account).
+  if (!identity.isExempt) {
+    // 3) Rate limit.
+    const rl = await checkLimit("interpret", identity.identityKey);
+    if (!rl.success) {
+      const retryAfter = Math.ceil(Math.max(0, (rl.reset ?? Date.now()) - Date.now()) / 1000);
+      return {
+        ok: false,
+        error: "rate_limited",
+        message: `Generating too fast — wait ${retryAfter} seconds before trying again.`,
+        retryAfter,
+        response: jsonResponse(
+          { error: "rate_limited", retry_after: rl.reset },
+          429,
+          { traceId, extra: rateLimitHeaders(rl) }
+        )
+      };
+    }
+
+    // 4) Daily budget.
+    const budget = await checkBudget(identity.userId);
+    if (!budget.allow) {
+      return {
+        ok: false,
+        error: "budget_exceeded",
+        message: "Daily generation limit reached. Come back tomorrow!",
+        response: jsonResponse(
+          {
+            error: "budget_exceeded",
+            message: `Daily ${budget.scope} budget reached.`,
+            spentUsd: budget.spentUsd,
+            capUsd: budget.capUsd
+          },
+          402,
+          { traceId }
+        )
+      };
+    }
   }
 
-  // 3) Daily budget.
-  const budget = await checkBudget(parsed.userId);
-  if (!budget.allow) {
-    return {
-      ok: false,
-      response: jsonResponse(
-        {
-          error: "budget_exceeded",
-          message: `Daily ${budget.scope} budget reached.`,
-          spentUsd: budget.spentUsd,
-          capUsd: budget.capUsd
-        },
-        402,
-        { traceId }
-      )
-    };
-  }
-
-  // 4) Prompt firewall — may rewrite the transcript.
+  // 5) Prompt firewall — may rewrite the transcript.
   const verdict = await inspectPrompt(parsed.transcript);
   if (!verdict.allow) {
     return {
       ok: false,
+      error: "blocked_by_firewall",
+      message: verdict.reason ?? "Prompt blocked by content policy.",
       response: jsonResponse(
         { error: "blocked_by_firewall", message: verdict.reason },
         451,
@@ -123,11 +129,11 @@ export async function guardRequest(
   }
   parsed.transcript = verdict.sanitized;
 
-  // 5) Brand extraction + stake planting.
+  // 6) Brand extraction + stake planting.
   const brand = await extractBrand(parsed.transcript);
   const stake = pickStakeFromVibe(brand.vibeKeywords, brand.industry);
 
-  return { ok: true, body: parsed, stake, traceId };
+  return { ok: true, body: parsed, identity, stake, traceId };
 }
 
 export type ArchitectAction = Record<string, unknown> & { type?: string };
