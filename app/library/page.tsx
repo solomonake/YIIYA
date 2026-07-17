@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+// useState is used by AssetTile's share-copied state below.
 import { useSupabaseSession } from "@/lib/auth/use-session";
 import { AuthSheet } from "@/components/auth/auth-sheet";
 import { signOut } from "@/lib/auth/actions";
@@ -29,11 +30,32 @@ const TIER_LABEL: Record<string, string> = {
 
 function AssetTile({ asset }: { asset: AssetRow }) {
   const urls = buildExportUrls(asset.glb_url);
+  const [copied, setCopied] = useState(false);
   const created = new Date(asset.created_at).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric"
   });
+
+  const shareUrl =
+    typeof window !== "undefined" && asset.glb_url
+      ? `${window.location.origin}/view?src=${encodeURIComponent(asset.glb_url)}&name=${encodeURIComponent(asset.object_name)}`
+      : "";
+
+  const handleShare = async () => {
+    if (!shareUrl) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: asset.object_name, url: shareUrl });
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* user dismissed the share sheet — nothing to do */
+    }
+  };
 
   return (
     <div className="border border-zinc-800 bg-zinc-950 rounded-sm p-3 hover:border-zinc-700 transition-colors">
@@ -65,6 +87,22 @@ function AssetTile({ asset }: { asset: AssetRow }) {
             </a>
           ) : null
         )}
+      </div>
+      <div className="flex gap-1 mb-1">
+        <a
+          href={shareUrl || undefined}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 text-center text-[9px] font-mono py-1.5 border border-[#EF9F27]/50 rounded-sm text-[#EF9F27] hover:bg-[#EF9F27] hover:text-black transition-colors"
+        >
+          View in AR
+        </a>
+        <button
+          onClick={handleShare}
+          className="flex-1 text-[9px] font-mono py-1.5 border border-zinc-800 rounded-sm text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 transition-colors"
+        >
+          {copied ? "Link copied ✓" : "Share"}
+        </button>
       </div>
       <Link
         href={`/app?assetId=${asset.id}`}
