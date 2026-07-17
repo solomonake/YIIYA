@@ -199,7 +199,11 @@ export default function CapturePage() {
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-mono text-zinc-500 bg-black/60 px-3 py-1.5 rounded-sm text-center max-w-[85%]">
             Tap the object you want in 3D
             <span className="block text-[8px] text-zinc-600 mt-0.5">
-              matte, opaque objects work best — transparent/shiny ones confuse the AI
+              matte, opaque objects work best · then Orbit (walk around it) for real
+              geometry — a single photo guesses the unseen sides
+            </span>
+            <span className="block text-[8px] text-zinc-700 mt-0.5">
+              people &amp; faces are the hardest case — expect a rough result
             </span>
           </div>
         )}
