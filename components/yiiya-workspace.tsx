@@ -188,7 +188,12 @@ function LeftPanel({ open }: { open: boolean }) {
   const isListening = useYiiyaStore(s => s.isListening);
   const isInterpreting = useYiiyaStore(s => s.isInterpreting);
   const interimTranscript = useYiiyaStore(s => s.interimTranscript);
-  const logs = useYiiyaStore(s => s.logs);
+  const globalLogs = useYiiyaStore(s => s.logs);
+  const assetLogs = useYiiyaStore(s => s.assetLogs);
+  const activeAssetId = useYiiyaStore(s => s.activeAssetId);
+  const logs = activeAssetId && assetLogs[activeAssetId]?.length
+    ? assetLogs[activeAssetId]
+    : globalLogs;
   const sessionStyleDNA = useYiiyaStore(s => s.sessionStyleDNA);
   const activeBrief = useYiiyaStore(s => s.activeBrief);
   const referenceImage = useYiiyaStore(s => s.referenceImage);

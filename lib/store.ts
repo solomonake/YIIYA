@@ -148,6 +148,8 @@ export type YiiyaStore = StageSlice & {
   interimTranscript: string;
   latestQuestion: string | null;
   logs: LogEntry[];
+  assetLogs: Record<string, LogEntry[]>;
+  generatingAssetId: string | null;
   rightPanelOpen: boolean;
   leftPanelOpen: boolean;
   cursorTarget: CursorTarget | null;
@@ -177,6 +179,8 @@ export type YiiyaStore = StageSlice & {
   setInterimTranscript: (v: string) => void;
   setLatestQuestion: (v: string | null) => void;
   addLog: (label: string) => void;
+  addAssetLog: (assetId: string, label: string) => void;
+  setGeneratingAssetId: (id: string | null) => void;
   clearLogs: () => void;
   setRightPanelOpen: (v: boolean) => void;
   setLeftPanelOpen: (v: boolean) => void;
@@ -234,6 +238,8 @@ export const useYiiyaStore = create<YiiyaStore>()(
   interimTranscript: "",
   latestQuestion: null,
   logs: [],
+  assetLogs: {},
+  generatingAssetId: null,
   rightPanelOpen: false,
   leftPanelOpen: true,
   cursorTarget: null,
@@ -303,12 +309,39 @@ export const useYiiyaStore = create<YiiyaStore>()(
   setInterimTranscript: (v) => set({ interimTranscript: v }),
   setLatestQuestion: (v) => set({ latestQuestion: v }),
 
-  addLog: (label) => set(s => ({
-    logs: [
-      ...s.logs.slice(-199),
-      { id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, label, timestamp: new Date().toISOString() }
-    ]
-  })),
+  addLog: (label) => set(s => {
+    const entry: LogEntry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      label,
+      timestamp: new Date().toISOString()
+    };
+    const assetId = s.generatingAssetId;
+    return {
+      logs: [...s.logs.slice(-199), entry],
+      ...(assetId ? {
+        assetLogs: {
+          ...s.assetLogs,
+          [assetId]: [...(s.assetLogs[assetId] ?? []).slice(-199), entry]
+        }
+      } : {})
+    };
+  }),
+
+  addAssetLog: (assetId, label) => set(s => {
+    const entry: LogEntry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      label,
+      timestamp: new Date().toISOString()
+    };
+    return {
+      assetLogs: {
+        ...s.assetLogs,
+        [assetId]: [...(s.assetLogs[assetId] ?? []).slice(-199), entry]
+      }
+    };
+  }),
+
+  setGeneratingAssetId: (id) => set({ generatingAssetId: id }),
 
   clearLogs: () => set({ logs: [] }),
 
@@ -413,6 +446,9 @@ export const useYiiyaStore = create<YiiyaStore>()(
         generatedAssets: state.generatedAssets,
         activeAssetId: state.activeAssetId,
         logs: state.logs.slice(-100),
+        assetLogs: Object.fromEntries(
+          Object.entries(state.assetLogs).map(([k, v]) => [k, v.slice(-100)])
+        ),
         conversationHistory: state.conversationHistory,
         projectName: state.projectName,
         sessionStyleDNA: state.sessionStyleDNA,

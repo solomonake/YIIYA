@@ -122,6 +122,8 @@ export function useSpeechInterpreter() {
     }
 
     setIsInterpreting(true);
+    const preGenId = `gen-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    store.setGeneratingAssetId(preGenId);
     addLog(`[USER] ${transcript}`);
     store.addConversationMessage({ role: "user", content: transcript });
 
@@ -220,6 +222,7 @@ export function useSpeechInterpreter() {
       }
     } finally {
       if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      useYiiyaStore.getState().setGeneratingAssetId(null);
       setIsInterpreting(false);
       setInterimTranscript("");
     }
@@ -257,10 +260,22 @@ export function useSpeechInterpreter() {
       case "generating":
         addLog(event.log);
         break;
-      case "asset_ready":
+      case "asset_ready": {
         addLog(event.log);
         store.addGeneratedAsset(event.asset);
+        const genId = store.generatingAssetId;
+        if (genId && genId !== event.asset.id) {
+          const pending = store.assetLogs[genId];
+          if (pending?.length) {
+            const next = { ...store.assetLogs, [event.asset.id]: pending };
+            delete next[genId];
+            useYiiyaStore.setState({ assetLogs: next, generatingAssetId: event.asset.id });
+          } else {
+            useYiiyaStore.setState({ generatingAssetId: event.asset.id });
+          }
+        }
         break;
+      }
       case "qa":
         event.qa_log.forEach(l => addLog(l));
         break;
