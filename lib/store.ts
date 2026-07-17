@@ -149,6 +149,9 @@ export type YiiyaStore = StageSlice & {
   latestQuestion: string | null;
   logs: LogEntry[];
   assetLogs: Record<string, LogEntry[]>;
+  /** Local (client-captured) thumbnail data URLs, keyed by local asset id.
+   *  Works with no Vercel Blob / Supabase — powers the in-session tray previews. */
+  assetPosters: Record<string, string>;
   generatingAssetId: string | null;
   rightPanelOpen: boolean;
   leftPanelOpen: boolean;
@@ -182,6 +185,7 @@ export type YiiyaStore = StageSlice & {
   setLatestQuestion: (v: string | null) => void;
   addLog: (label: string) => void;
   addAssetLog: (assetId: string, label: string) => void;
+  setAssetPoster: (assetId: string, dataUrl: string) => void;
   setGeneratingAssetId: (id: string | null) => void;
   clearLogs: () => void;
   setRightPanelOpen: (v: boolean) => void;
@@ -242,6 +246,7 @@ export const useYiiyaStore = create<YiiyaStore>()(
   latestQuestion: null,
   logs: [],
   assetLogs: {},
+  assetPosters: {},
   generatingAssetId: null,
   rightPanelOpen: false,
   leftPanelOpen: true,
@@ -344,6 +349,10 @@ export const useYiiyaStore = create<YiiyaStore>()(
       }
     };
   }),
+
+  setAssetPoster: (assetId, dataUrl) => set(s => ({
+    assetPosters: { ...s.assetPosters, [assetId]: dataUrl }
+  })),
 
   setGeneratingAssetId: (id) => set({ generatingAssetId: id }),
 
@@ -453,6 +462,14 @@ export const useYiiyaStore = create<YiiyaStore>()(
         logs: state.logs.slice(-100),
         assetLogs: Object.fromEntries(
           Object.entries(state.assetLogs).map(([k, v]) => [k, v.slice(-100)])
+        ),
+        // Persist thumbnails only for the most recent assets — compact JPEGs,
+        // but base64 in localStorage adds up, so cap to the tail we still show.
+        assetPosters: Object.fromEntries(
+          state.generatedAssets
+            .slice(-12)
+            .map((a) => [a.id, state.assetPosters[a.id]])
+            .filter(([, v]) => typeof v === "string")
         ),
         conversationHistory: state.conversationHistory,
         projectName: state.projectName,

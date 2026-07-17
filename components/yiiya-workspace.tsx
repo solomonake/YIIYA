@@ -90,12 +90,19 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
   const tierLabel = asset.tier === "hunyuan3d" ? "HY3D" : asset.tier === "trellis" ? "TRELLIS" : asset.tier === "library" ? "LIBRARY" : "FAILED";
   const tierColor = asset.tier === "hunyuan3d" ? "text-emerald-400" : asset.tier === "trellis" ? "text-blue-400" : asset.tier === "library" ? "text-amber-400" : "text-red-500";
   const hasExports = Object.keys(asset.exportUrls).length > 0;
+  const poster = useYiiyaStore(s => s.assetPosters[asset.id]);
 
   return (
     <div
       onClick={onClick}
       className={`border rounded-sm p-3 cursor-pointer transition-colors ${isActive ? "border-zinc-500 bg-zinc-900" : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"}`}
     >
+      {poster ? (
+        <div className="aspect-square w-full mb-2 overflow-hidden rounded-sm bg-black">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={poster} alt={asset.name} className="w-full h-full object-cover" />
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <span className="text-[10px] text-zinc-200 font-mono truncate">{asset.name}</span>
         <span className={`text-[8px] font-mono shrink-0 ${tierColor}`}>{tierLabel}</span>
@@ -794,6 +801,7 @@ export function YiiyaWorkspace() {
           <SceneCanvas
             activeGlbUrl={activeGlbUrl}
             activeAssetDbId={activeAsset?.dbId}
+            activeAssetLocalId={activeAsset?.id}
             activeMaterialOverride={activeAsset?.materialOverride}
           />
         </Suspense>
