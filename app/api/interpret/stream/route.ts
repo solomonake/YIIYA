@@ -6,13 +6,13 @@ import { buildExportUrls } from "@/lib/scene/export-urls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// The provider cascade needs up to 270s; keep the function alive for it.
 export const maxDuration = 300;
 
 const streamHeaders = {
-  "Content-Type": "text/event-stream",
+  "Content-Type": "text/event-stream; charset=utf-8",
   "Cache-Control": "no-cache, no-transform",
-  Connection: "keep-alive"
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no"
 };
 
 function encodeEvent(event: unknown) {
@@ -27,18 +27,17 @@ export async function POST(request: NextRequest) {
     return new Response(encodeEvent({ type: "error", message: "Invalid JSON" }), { status: 400, headers: streamHeaders });
   }
 
-  if (!isInterpretRequest(body) || !body.transcript.trim()) {
-    return new Response(encodeEvent({ type: "error", message: "Expected { transcript: string }" }), { status: 400, headers: streamHeaders });
+  const hasImage = isInterpretRequest(body) && Boolean(body.referenceImage?.base64);
+  const hasTranscript = isInterpretRequest(body) && body.transcript.trim().length > 0;
+  if (!isInterpretRequest(body) || (!hasTranscript && !hasImage)) {
+    return new Response(encodeEvent({ type: "error", message: "Expected { transcript } or { referenceImage }" }), {
+      status: 400,
+      headers: streamHeaders
+    });
   }
 
-  // Optional — anonymous generation still works, it just isn't saved to
-  // /library. Resolved once up front so persistence never delays streaming.
   const userId = await getUserIdFromAuthHeader(request);
 
-  // Prompt→asset cache: an exact prompt this user already paid for comes back
-  // instantly and free. Skipped for reference-image runs (the image changes
-  // the outcome) and forceGenerate (the user explicitly wants a fresh roll —
-  // resubmitting the identical prompt is how you re-roll).
   if (userId && !body.referenceImage && !body.forceGenerate) {
     const cached = await findCachedAsset(userId, body.transcript.trim());
     if (cached) {
@@ -69,12 +68,21 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const enc = (e: unknown) => new TextEncoder().encode(encodeEvent(e));
+      let closed = false;
+      const safeEnqueue = (e: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(enc(e));
+        } catch {
+          closed = true;
+        }
+      };
+
+      const heartbeat = setInterval(() => safeEnqueue({ type: "heartbeat", t: Date.now() }), 10_000);
+
       try {
-        for await (const event of runInterpretPipeline(body)) {
+        for await (const event of runInterpretPipeline(body as Parameters<typeof runInterpretPipeline>[0])) {
           if (event.type === "asset_ready" && userId) {
-            // Awaited (not fire-and-forget): serverless functions can freeze
-            // background work the instant the response is sent, so the save
-            // must land before this event reaches the client.
             const dbId = await saveGeneratedAsset(userId, body.transcript, null, event.asset).catch(
               () => null
             );
@@ -82,13 +90,19 @@ export async function POST(request: NextRequest) {
               (event.asset as GeneratedAsset).dbId = dbId;
             }
           }
-          controller.enqueue(enc(event));
+          safeEnqueue(event);
           if (event.type === "done" || event.type === "error") break;
         }
       } catch (err) {
-        controller.enqueue(enc({ type: "error", message: err instanceof Error ? err.message : "Stream error" }));
+        safeEnqueue({ type: "error", message: err instanceof Error ? err.message : "Stream error" });
       } finally {
-        controller.close();
+        clearInterval(heartbeat);
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
       }
     }
   });

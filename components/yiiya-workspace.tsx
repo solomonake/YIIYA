@@ -195,7 +195,7 @@ function LeftPanel({ open }: { open: boolean }) {
   const setReferenceImage = useYiiyaStore(s => s.setReferenceImage);
   const pendingClarify = useYiiyaStore(s => s.pendingClarify);
   const groundingPreviewUrl = useYiiyaStore(s => s.groundingPreviewUrl);
-  const { toggleListening, submitManualTranscript } = useSpeechInterpreter();
+  const { toggleListening, submitManualTranscript, generateFromImage, cancelGeneration } = useSpeechInterpreter();
   const [manualText, setManualText] = useState("");
   const [clarifyReply, setClarifyReply] = useState("");
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -207,9 +207,13 @@ function LeftPanel({ open }: { open: boolean }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isInterpreting) return;
     if (manualText.trim()) {
       submitManualTranscript(manualText.trim());
       setManualText("");
+    } else if (referenceImage) {
+      // No prompt typed but an image is loaded → reconstruct the photo directly.
+      generateFromImage();
     }
   };
 
@@ -405,19 +409,43 @@ function LeftPanel({ open }: { open: boolean }) {
         {referenceImage ? (
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={referenceImage.previewUrl} alt="ref" className="h-8 w-8 object-cover rounded-sm" />
+            <img src={referenceImage.previewUrl} alt="ref" className="h-9 w-9 object-cover rounded-sm" />
             <div className="flex-1 min-w-0">
               <div className="text-[9px] font-mono text-amber-500 truncate">{referenceImage.name}</div>
-              <button
-                onClick={(e) => { e.stopPropagation(); setReferenceImage(null); }}
-                className="text-[8px] font-mono text-zinc-700 hover:text-zinc-400"
-              >
-                Remove
-              </button>
+              <div className="flex items-center gap-2 mt-0.5">
+                <button
+                  onClick={(e) => { e.stopPropagation(); if (!isInterpreting) generateFromImage(); }}
+                  disabled={isInterpreting}
+                  className="text-[8px] font-mono px-1.5 py-0.5 rounded-sm border border-emerald-800 bg-emerald-950/40 text-emerald-400 hover:border-emerald-600 disabled:opacity-40"
+                >
+                  Generate 3D →
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setReferenceImage(null); }}
+                  className="text-[8px] font-mono text-zinc-700 hover:text-zinc-400"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="text-[9px] font-mono text-zinc-800 text-center">Drop reference image</div>
+          <div className="text-[9px] font-mono text-zinc-800 text-center">Drop or click — photo → 3D</div>
+        )}
+      </div>
+
+      {/* Hint / cancel bar */}
+      <div className="px-3 pb-1 flex items-center justify-between">
+        <span className="text-[8px] font-mono text-zinc-700">
+          {isListening ? "Listening — release to send" : isInterpreting ? "Generating…" : "Hold SPACE to talk · or type"}
+        </span>
+        {isInterpreting && (
+          <button
+            onClick={cancelGeneration}
+            className="text-[8px] font-mono text-zinc-600 hover:text-red-400 border border-zinc-800 hover:border-red-900/60 rounded-sm px-1.5 py-0.5"
+          >
+            Cancel
+          </button>
         )}
       </div>
 
@@ -429,9 +457,10 @@ function LeftPanel({ open }: { open: boolean }) {
         <button
           type="button"
           onClick={toggleListening}
-          title="Hold SPACE or click"
+          title="Hold SPACE or click to talk"
+          aria-label="Voice input"
           className={`shrink-0 w-8 h-8 rounded-sm border flex items-center justify-center transition-all ${
-            isListening ? "border-emerald-600 bg-emerald-950/60 text-emerald-400" :
+            isListening ? "border-emerald-600 bg-emerald-950/60 text-emerald-400 animate-pulse" :
             isInterpreting ? "border-amber-700 bg-amber-950/40 text-amber-400" :
             "border-zinc-800 bg-zinc-900 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400"
           }`}
@@ -444,12 +473,13 @@ function LeftPanel({ open }: { open: boolean }) {
           type="text"
           value={manualText}
           onChange={e => setManualText(e.target.value)}
-          placeholder="describe a 3D asset..."
+          placeholder={referenceImage ? "describe it, or press → to use photo" : "describe a 3D asset…"}
           className="flex-1 bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1.5 text-[10px] font-mono text-zinc-300 placeholder:text-zinc-800 focus:outline-none focus:border-zinc-600"
         />
         <button
           type="submit"
-          className="shrink-0 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded-sm text-[10px] font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+          disabled={isInterpreting || (!manualText.trim() && !referenceImage)}
+          className="shrink-0 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded-sm text-[10px] font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:hover:bg-zinc-900"
         >
           →
         </button>

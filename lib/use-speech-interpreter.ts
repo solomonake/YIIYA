@@ -51,6 +51,13 @@ export function useSpeechInterpreter() {
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptAccumRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Synchronous re-entry guard. React state (`isListening`) updates a tick
+  // late, so holding Space (OS key-repeat) fired startListening() many times
+  // before the state caught up — each new recognition aborted the previous one,
+  // producing the "[VOICE] Listening… / Error: aborted" flood. A ref is updated
+  // immediately and blocks the repeats.
+  const listeningRef = useRef(false);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     isListening,
@@ -131,6 +138,19 @@ export function useSpeechInterpreter() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    // Watchdog: if no event arrives for 35s the stream is dead (server killed,
+    // network dropped). Abort and surface an error instead of spinning forever.
+    // The server sends a heartbeat every 10s, so this only fires on real stalls.
+    const WATCHDOG_MS = 35_000;
+    const armWatchdog = () => {
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      watchdogRef.current = setTimeout(() => {
+        addLog("[ERROR] Generation stalled — no response in 35s. Aborted, please try again.");
+        abortController.abort();
+      }, WATCHDOG_MS);
+    };
+    armWatchdog();
+
     try {
       // Signed-in users get their generations saved to /library; anonymous
       // requests still generate normally, they just aren't persisted.
@@ -174,6 +194,7 @@ export function useSpeechInterpreter() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        armWatchdog(); // any byte (incl. heartbeat) means the stream is alive
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n\n");
         buffer = lines.pop() ?? "";
@@ -181,7 +202,8 @@ export function useSpeechInterpreter() {
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
-            const event = JSON.parse(line.slice(6)) as PipelineEvent;
+            const event = JSON.parse(line.slice(6)) as PipelineEvent | { type: "heartbeat" };
+            if (event.type === "heartbeat") continue;
             handlePipelineEvent(event, transcript);
           } catch {
             /* skip malformed events */
@@ -193,6 +215,7 @@ export function useSpeechInterpreter() {
         addLog(`[ERROR] ${err instanceof Error ? err.message : "Pipeline error"}`);
       }
     } finally {
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
       setIsInterpreting(false);
       setInterimTranscript("");
     }
@@ -254,11 +277,13 @@ export function useSpeechInterpreter() {
   // ─── Voice control ──────────────────────────────────────────────────────────
 
   const startListening = useCallback(() => {
+    if (listeningRef.current) return; // already capturing — ignore repeats
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
-      addLog("[VOICE] Speech recognition not supported in this browser.");
+      addLog("[VOICE] Speech recognition not supported — type your prompt instead.");
       return;
     }
+    listeningRef.current = true;
 
     const rec = new SpeechRecognition();
     rec.continuous = false;
@@ -284,11 +309,17 @@ export function useSpeechInterpreter() {
     };
 
     rec.onerror = (event) => {
-      addLog(`[VOICE] Error: ${event.error}`);
+      listeningRef.current = false;
       setIsListening(false);
+      // "aborted" (quick release / restart) and "no-speech" (silence) are
+      // benign and were the source of the error flood — don't log them.
+      if (event.error !== "aborted" && event.error !== "no-speech") {
+        addLog(`[VOICE] ${event.error === "not-allowed" ? "Mic permission denied" : `Error: ${event.error}`}`);
+      }
     };
 
     rec.onend = () => {
+      listeningRef.current = false;
       setIsListening(false);
       const transcript = transcriptAccumRef.current.trim();
       if (transcript) {
@@ -303,9 +334,28 @@ export function useSpeechInterpreter() {
   }, [addLog, setIsListening, setInterimTranscript, runTranscriptThroughPipeline]);
 
   const stopListening = useCallback(() => {
+    listeningRef.current = false;
     recRef.current?.stop();
     setIsListening(false);
   }, [setIsListening]);
+
+  // Generate directly from a dropped/uploaded image with no typed prompt.
+  const generateFromImage = useCallback(() => {
+    const img = useYiiyaStore.getState().referenceImage;
+    if (!img) return;
+    void runTranscriptThroughPipeline(
+      "Reconstruct the object in this photo as a clean, production-ready 3D asset."
+    );
+  }, [runTranscriptThroughPipeline]);
+
+  // Cancel an in-flight generation and reset UI state.
+  const cancelGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
+    if (watchdogRef.current) clearTimeout(watchdogRef.current);
+    setIsInterpreting(false);
+    setInterimTranscript("");
+    addLog("[SYSTEM] Generation cancelled.");
+  }, [setIsInterpreting, setInterimTranscript, addLog]);
 
   const toggleListening = useCallback(() => {
     if (isListening) {
@@ -322,7 +372,9 @@ export function useSpeechInterpreter() {
   // Hold-Space shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space" && e.target === document.body && !isListening) {
+      // Ignore OS key-repeat (e.repeat) and use the synchronous ref so a held
+      // Space starts exactly one recognition session.
+      if (e.code === "Space" && e.target === document.body && !e.repeat && !listeningRef.current) {
         e.preventDefault();
         startListening();
       }
@@ -341,5 +393,5 @@ export function useSpeechInterpreter() {
     };
   }, [isListening, startListening, stopListening]);
 
-  return { toggleListening, submitManualTranscript, startListening, stopListening };
+  return { toggleListening, submitManualTranscript, startListening, stopListening, generateFromImage, cancelGeneration };
 }
