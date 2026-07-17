@@ -1,36 +1,28 @@
 /**
  * Output sanitization.
  *
- * The Architect emits structured JSON, but any string field that ends up
- * rendered into the DOM (headlines, body copy, etc.) must be sanitized:
- *   - strip <script>, <iframe>, event handlers
- *   - strip javascript:/data: URLs in href fields
- *   - keep a tiny allowlist of inline tags users might want (em, strong, br)
- *
- * Powered by isomorphic-dompurify — works in Edge + Node + browser.
- * https://github.com/kkomelin/isomorphic-dompurify
+ * Strips HTML tags and dangerous URL schemes from Architect output strings
+ * before they're rendered or stored. No DOM dependency — safe in Edge, Node,
+ * and serverless environments.
  */
-import DOMPurify from "isomorphic-dompurify";
 
-const ALLOWED_TAGS = ["b", "i", "em", "strong", "br", "span"];
-const ALLOWED_ATTR: string[] = []; // no attributes — pure inline formatting
+const TAG_RE = /<\/?[^>]+(>|$)/g;
+
+const INLINE_TAGS = new Set(["b", "i", "em", "strong", "br", "span"]);
+const INLINE_RE = /<\/?(b|i|em|strong|br|span)\s*\/?>/gi;
 
 export function sanitizeInline(html: string): string {
   if (!html) return "";
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    KEEP_CONTENT: true,
-    RETURN_TRUSTED_TYPE: false
-  });
+  return html.replace(TAG_RE, (match) => {
+    const tagMatch = match.match(/^<\/?(\w+)/);
+    if (tagMatch && INLINE_TAGS.has(tagMatch[1].toLowerCase())) return match;
+    return "";
+  }).trim();
 }
 
 export function sanitizePlain(text: string): string {
   if (!text) return "";
-  // Strip all HTML; collapse whitespace.
-  return DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
-    .replace(/\s+/g, " ")
-    .trim();
+  return text.replace(TAG_RE, "").replace(/\s+/g, " ").trim();
 }
 
 const SAFE_URL_RE = /^(https?:|mailto:|tel:|\/|#)/i;
@@ -39,15 +31,10 @@ export function sanitizeUrl(url: string): string | null {
   if (!url) return null;
   const trimmed = url.trim();
   if (!SAFE_URL_RE.test(trimmed)) return null;
-  // Disallow embedded credentials.
   if (/@/.test(trimmed) && !trimmed.startsWith("mailto:")) return null;
   return trimmed;
 }
 
-/**
- * Recursively sanitize all string fields in an object. Use after parsing
- * Architect output, before storing or rendering.
- */
 export function sanitizePayload<T>(input: T, urlKeys: ReadonlyArray<string> = []): T {
   return walk(input, urlKeys) as T;
 }
