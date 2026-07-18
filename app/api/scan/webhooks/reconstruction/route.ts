@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { NextResponse } from "next/server";
 import { applyReconstructionWebhook } from "@/lib/scan-job-store";
 import { syncAssetJobFromScan } from "@/lib/asset-jobs";

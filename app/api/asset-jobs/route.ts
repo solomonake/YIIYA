@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { NextResponse } from "next/server";
 import { listAssetJobs } from "@/lib/asset-jobs";
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 export type AssetExportFormat = "glb" | "obj" | "usdz" | "stl" | "zip" | "json" | "py" | "step";
 
 export type AssetLane = "mesh" | "cad" | "scan";

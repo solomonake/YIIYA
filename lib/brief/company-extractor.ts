@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Company / brand name extraction.
  *

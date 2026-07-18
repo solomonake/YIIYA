@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Hero section variants — Viktor-Oddy-style HERO_VARIANTS catalog.
  *

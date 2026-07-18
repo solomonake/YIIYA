@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Semantic memory — one row per user containing learned preferences and
  * free-text "notes to self" that the nightly learning job maintains.

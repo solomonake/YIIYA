@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { attachScanUpload, getScanJob } from "@/lib/scan-job-store";

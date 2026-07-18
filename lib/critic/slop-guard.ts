@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SlopGuard — anti-AI-slop Critic pass.
  *

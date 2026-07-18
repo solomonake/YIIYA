@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { NextResponse } from "next/server";
 import { cancelScanJob } from "@/lib/scan-job-store";
 

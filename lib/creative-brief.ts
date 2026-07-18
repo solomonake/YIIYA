@@ -1,4 +1,3 @@
-// @ts-nocheck
 export type BriefIntentType = "LAYOUT" | "SPATIAL" | "STYLE" | "COMMAND";
 
 export type CreativeBrief = {

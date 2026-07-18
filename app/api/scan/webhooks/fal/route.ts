@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { NextResponse } from "next/server";
 import { applyFalWebhook } from "@/lib/scan-job-store";
 

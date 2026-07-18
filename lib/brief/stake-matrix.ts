@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Planted-stake matrix.
  *

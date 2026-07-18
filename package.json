@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/check-no-ts-nocheck.mjs && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "check:production": "node scripts/check-production-readiness.mjs",
