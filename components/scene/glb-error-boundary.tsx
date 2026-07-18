@@ -2,7 +2,7 @@
 
 import { Component, type ReactNode } from "react";
 
-type Props = { children: ReactNode; fallback: ReactNode };
+type Props = { children: ReactNode; fallback: ReactNode; onError?: (error: Error) => void; onRecover?: () => void };
 type State = { error: Error | null };
 
 export class GlbErrorBoundary extends Component<Props, State> {
@@ -15,11 +15,13 @@ export class GlbErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error) {
     // eslint-disable-next-line no-console
     console.error("[GLB-VIEWER]", error.message);
+    this.props.onError?.(error);
   }
 
   componentDidUpdate(prev: Props) {
     if (prev.children !== this.props.children && this.state.error) {
       this.setState({ error: null });
+      this.props.onRecover?.();
     }
   }
 

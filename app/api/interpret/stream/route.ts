@@ -50,6 +50,18 @@ export async function POST(request: NextRequest) {
 
   const userId = guard.identity.userId;
 
+  // Surface the daily free-generation quota to the client so the UI can show a
+  // "N/M left today" meter (headers are readable the moment the response starts,
+  // before the body streams).
+  const quotaHeaders: Record<string, string> =
+    typeof guard.generationsRemaining === "number"
+      ? {
+          "X-Gen-Remaining": String(guard.generationsRemaining),
+          "X-Gen-Limit": String(guard.generationsLimit ?? "")
+        }
+      : {};
+  const respHeaders = { ...streamHeaders, ...quotaHeaders };
+
   if (userId && !body.referenceImage && !body.forceGenerate) {
     const cached = await findCachedAsset(userId, body.transcript.trim());
     if (cached) {
@@ -73,7 +85,7 @@ export async function POST(request: NextRequest) {
         { type: "asset_ready", asset, log: `[READY] "${asset.name}" — from your library, no generation spent.` },
         { type: "done", assets: [asset], brief: null, qa_log: ["[QA] Served from prompt cache — zero cost."] }
       ];
-      return new Response(events.map(encodeEvent).join(""), { headers: streamHeaders });
+      return new Response(events.map(encodeEvent).join(""), { headers: respHeaders });
     }
   }
 
@@ -119,5 +131,5 @@ export async function POST(request: NextRequest) {
     }
   });
 
-  return new Response(stream, { headers: streamHeaders });
+  return new Response(stream, { headers: respHeaders });
 }

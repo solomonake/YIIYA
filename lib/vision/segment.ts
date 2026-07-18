@@ -120,26 +120,28 @@ export async function segmentAtPointWithCentroid(
     throw new Error("No object detected there — try tapping directly on it.");
   }
 
-  // Crop to the mask bounds with a small margin, matching the centered,
-  // isolated composition the generator's studio-photo prompt expects.
-  const margin = Math.round(Math.max(maxX - minX, maxY - minY) * 0.12);
-  const cx0 = Math.max(0, minX - margin);
-  const cy0 = Math.max(0, minY - margin);
-  const cx1 = Math.min(width, maxX + margin);
-  const cy1 = Math.min(height, maxY + margin);
-  const cropW = cx1 - cx0;
-  const cropH = cy1 - cy0;
+  // Composite the isolated subject onto a SQUARE white canvas, centered, with
+  // even padding. Image-to-3D models (Hunyuan3D / TRELLIS / Tripo) are trained
+  // on centered, square, padded product shots — a tight or off-center
+  // rectangular crop makes them misjudge proportions and clip the silhouette,
+  // which is a big part of why single-tap captures come back distorted.
+  // Squaring + ~30% padding is the cheapest lever on reconstruction quality.
+  const subjectW = maxX - minX;
+  const subjectH = maxY - minY;
+  const side = Math.max(1, Math.round(Math.max(subjectW, subjectH) * 1.3));
 
-  const cropCanvas = document.createElement("canvas");
-  cropCanvas.width = cropW;
-  cropCanvas.height = cropH;
-  const cropCtx = cropCanvas.getContext("2d");
-  if (!cropCtx) throw new Error("Canvas 2D context unavailable");
-  cropCtx.fillStyle = "#ffffff";
-  cropCtx.fillRect(0, 0, cropW, cropH);
-  cropCtx.drawImage(canvas, cx0, cy0, cropW, cropH, 0, 0, cropW, cropH);
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = side;
+  outCanvas.height = side;
+  const outCtx = outCanvas.getContext("2d");
+  if (!outCtx) throw new Error("Canvas 2D context unavailable");
+  outCtx.fillStyle = "#ffffff";
+  outCtx.fillRect(0, 0, side, side);
+  const dx = Math.round((side - subjectW) / 2);
+  const dy = Math.round((side - subjectH) / 2);
+  outCtx.drawImage(canvas, minX, minY, subjectW, subjectH, dx, dy, subjectW, subjectH);
 
-  const dataUrl = cropCanvas.toDataURL("image/png");
+  const dataUrl = outCanvas.toDataURL("image/png");
   return {
     dataUrl,
     base64: dataUrl.split(",")[1],

@@ -167,3 +167,63 @@ export function parseLocalEdit(phrase: string): LocalEditResult | null {
     label: parts.length ? parts.join(" ") : "material tweak"
   };
 }
+
+// ─── Edit-intent classifier (paid-regen guard) ──────────────────────────────
+//
+// When a mesh is already on screen, a follow-up utterance falls into one of
+// four buckets. Getting this wrong is expensive: a cut-off voice phrase like
+// "make it" used to fall straight through to a full paid regeneration and
+// silently produce a brand-new object. This classifier is the gate.
+
+export type EditIntent =
+  /** Free, instant, in-browser material/scale change. */
+  | { kind: "local"; edit: LocalEditResult }
+  /** An edit opener with no substance ("make it", "change this") — almost
+   *  always a cut-off voice utterance. Never spend a generation; ask to finish. */
+  | { kind: "contentless" }
+  /** A substantive edit of the current object we can't do locally ("make it a
+   *  convertible", "add a handle") — needs a paid regeneration, so confirm first. */
+  | { kind: "regen" }
+  /** Not an edit of the active mesh — a fresh object prompt. Normal pipeline. */
+  | { kind: "new" };
+
+// Openers that signal "operate on the thing already on screen".
+const ACTIVE_EDIT_OPENER =
+  /^\s*(make|turn|paint|recolou?r|colou?r|give\s+it|render\s+it|add|remove|delete|change|swap|replace|put|now|also|instead)\b/i;
+
+// Filler that carries no edit content once the opener is removed.
+const FILLER = /\b(it|its|it'?s|this|that|the|a|an|please|now|to|be|into|look|more|less|bit|little|some|kinda|kind\s+of|like)\b/gi;
+
+/**
+ * Classify a follow-up phrase against the currently-active mesh. Pure and
+ * deterministic — unit-tested, no model call. `parseLocalEdit` is the source
+ * of truth for the free path; everything else is triage for the paid path.
+ */
+export function classifyEditIntent(phrase: string): EditIntent {
+  const text = (phrase ?? "").toLowerCase().trim();
+  if (!text) return { kind: "contentless" };
+
+  // 1) Anything we can do for free in-browser wins outright.
+  const local = parseLocalEdit(text);
+  if (local) return { kind: "local", edit: local };
+
+  const isEditShaped = ACTIVE_EDIT_OPENER.test(text);
+
+  // 2) Edit-shaped but empty once opener + filler are stripped → cut-off voice.
+  if (isEditShaped) {
+    const residue = text
+      .replace(ACTIVE_EDIT_OPENER, " ")
+      .replace(FILLER, " ")
+      .replace(/[^a-z0-9]+/gi, " ")
+      .trim();
+    if (residue.length < 2) return { kind: "contentless" };
+    // 3) Substantive edit of the current object → confirm a paid regen.
+    return { kind: "regen" };
+  }
+
+  // 4) A structural verb without an opener ("attach a lid") still edits the
+  //    active object; a bare noun phrase ("a red sports car") is a new object.
+  if (STRUCTURAL.test(text)) return { kind: "regen" };
+
+  return { kind: "new" };
+}

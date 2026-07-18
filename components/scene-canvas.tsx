@@ -597,10 +597,12 @@ function CursorRaycaster() {
 function ActiveGlbViewer({
   url,
   posterAssetId,
+  posterLocalId,
   materialOverride
 }: {
   url: string;
   posterAssetId?: string;
+  posterLocalId?: string;
   materialOverride?: MaterialOverride;
 }) {
   const gltf = useGLTF(url);
@@ -763,15 +765,31 @@ function ActiveGlbViewer({
 
     // One-shot poster capture: wait for the materialize animation to finish
     // and one extra frame to render at full scale, then grab a thumbnail.
-    if (
-      !posterCapturedRef.current &&
-      elapsed >= 1 &&
-      posterAssetId &&
-      !hasCaptured(posterAssetId)
-    ) {
+    // Local capture fires for EVERY asset (anonymous included) and powers the
+    // in-session tray previews with zero infra; the durable Blob upload is a
+    // separate, auth-gated best-effort for the cross-device library.
+    if (!posterCapturedRef.current && elapsed >= 1 && (posterLocalId || posterAssetId)) {
       posterCapturedRef.current = true;
       state.gl.render(state.scene, state.camera);
-      void capturePoster(posterAssetId, gl.domElement.toDataURL("image/png"));
+      const src = gl.domElement;
+
+      if (posterLocalId) {
+        const size = 256;
+        const thumb = document.createElement("canvas");
+        thumb.width = size;
+        thumb.height = size;
+        const ctx = thumb.getContext("2d");
+        if (ctx) {
+          // Center-crop the (landscape) canvas into a compact square JPEG.
+          const side = Math.min(src.width, src.height);
+          ctx.drawImage(src, (src.width - side) / 2, (src.height - side) / 2, side, side, 0, 0, size, size);
+          useYiiyaStore.getState().setAssetPoster(posterLocalId, thumb.toDataURL("image/jpeg", 0.7));
+        }
+      }
+
+      if (posterAssetId && !hasCaptured(posterAssetId)) {
+        void capturePoster(posterAssetId, src.toDataURL("image/png"));
+      }
     }
   });
 
@@ -802,6 +820,7 @@ function StarterScene({
   stage,
   activeGlbUrl,
   activeAssetDbId,
+  activeAssetLocalId,
   activeMaterialOverride
 }: {
   objects: SceneObject[];
@@ -809,6 +828,7 @@ function StarterScene({
   stage: StageState;
   activeGlbUrl?: string | null;
   activeAssetDbId?: string;
+  activeAssetLocalId?: string;
   activeMaterialOverride?: MaterialOverride;
 }) {
   const anchorMap = useMemo(
@@ -844,11 +864,16 @@ function StarterScene({
       ) : null}
 
       {activeGlbUrl ? (
-        <GlbErrorBoundary fallback={<GlbLoadFailureFallback />}>
+        <GlbErrorBoundary
+          fallback={<GlbLoadFailureFallback />}
+          onError={() => useYiiyaStore.getState().setGlbLoadFailed(true)}
+          onRecover={() => useYiiyaStore.getState().setGlbLoadFailed(false)}
+        >
           <Suspense fallback={<GlbLoadFailureFallback />}>
             <ActiveGlbViewer
               url={activeGlbUrl}
               posterAssetId={activeAssetDbId}
+              posterLocalId={activeAssetLocalId}
               materialOverride={activeMaterialOverride}
             />
           </Suspense>
@@ -905,10 +930,12 @@ function CanvasRecordingRegistrar() {
 export function SceneCanvas({
   activeGlbUrl,
   activeAssetDbId,
+  activeAssetLocalId,
   activeMaterialOverride
 }: {
   activeGlbUrl?: string | null;
   activeAssetDbId?: string;
+  activeAssetLocalId?: string;
   activeMaterialOverride?: MaterialOverride;
 }) {
   const sceneObjects = useYiiyaStore((state) => state.sceneObjects);
@@ -933,7 +960,10 @@ export function SceneCanvas({
       <Canvas
         data-yiiya-scene-canvas="true"
         onPointerMissed={() => getRegionEditHandlers()?.clearSelection()}
-        gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
+        // preserveDrawingBuffer keeps the backbuffer readable so poster/thumbnail
+        // toDataURL() captures the actual mesh instead of a blank frame — the
+        // root cause of every "no preview" tile in the library.
+        gl={{ alpha: true, antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true }}
         camera={{ position: [0, 0, 5], fov: 56 }}
         style={{ position: "absolute", inset: 0 }}
         dpr={[1, 2]}
@@ -952,6 +982,7 @@ export function SceneCanvas({
               stage={stage}
               activeGlbUrl={activeGlbUrl}
               activeAssetDbId={activeAssetDbId}
+              activeAssetLocalId={activeAssetLocalId}
               activeMaterialOverride={activeMaterialOverride}
             />
           </group>

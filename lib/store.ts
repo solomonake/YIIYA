@@ -148,6 +148,11 @@ export type YiiyaStore = StageSlice & {
   interimTranscript: string;
   latestQuestion: string | null;
   logs: LogEntry[];
+  assetLogs: Record<string, LogEntry[]>;
+  /** Local (client-captured) thumbnail data URLs, keyed by local asset id.
+   *  Works with no Vercel Blob / Supabase — powers the in-session tray previews. */
+  assetPosters: Record<string, string>;
+  generatingAssetId: string | null;
   rightPanelOpen: boolean;
   leftPanelOpen: boolean;
   cursorTarget: CursorTarget | null;
@@ -155,8 +160,15 @@ export type YiiyaStore = StageSlice & {
   lastSavedAt: string | null;
   projectName: string;
   pendingClarify: PendingClarify | null;
+  /** A substantive edit awaiting the user's OK before spending a paid regen. */
+  pendingEditConfirm: { transcript: string; assetName: string } | null;
   /** The free reference photo the current/last generation is building from. */
   groundingPreviewUrl: string | null;
+  /** Daily free-generation quota surfaced by the server (null = unknown/exempt). */
+  generationsRemaining: number | null;
+  generationsLimit: number | null;
+  /** True when the active asset's GLB failed to load (e.g. an expired provider URL). */
+  glbLoadFailed: boolean;
 
   // Actions
   addSceneObject: (obj: Omit<SceneObject, "id" | "materializedAt">) => string;
@@ -177,6 +189,9 @@ export type YiiyaStore = StageSlice & {
   setInterimTranscript: (v: string) => void;
   setLatestQuestion: (v: string | null) => void;
   addLog: (label: string) => void;
+  addAssetLog: (assetId: string, label: string) => void;
+  setAssetPoster: (assetId: string, dataUrl: string) => void;
+  setGeneratingAssetId: (id: string | null) => void;
   clearLogs: () => void;
   setRightPanelOpen: (v: boolean) => void;
   setLeftPanelOpen: (v: boolean) => void;
@@ -184,7 +199,10 @@ export type YiiyaStore = StageSlice & {
   setSaveStatus: (s: SaveStatus) => void;
   setProjectName: (name: string) => void;
   setPendingClarify: (c: PendingClarify | null) => void;
+  setPendingEditConfirm: (c: { transcript: string; assetName: string } | null) => void;
   setGroundingPreviewUrl: (url: string | null) => void;
+  setGenerationQuota: (remaining: number | null, limit: number | null) => void;
+  setGlbLoadFailed: (failed: boolean) => void;
   applyAction: (action: YiiyaAction) => void;
 };
 
@@ -234,6 +252,9 @@ export const useYiiyaStore = create<YiiyaStore>()(
   interimTranscript: "",
   latestQuestion: null,
   logs: [],
+  assetLogs: {},
+  assetPosters: {},
+  generatingAssetId: null,
   rightPanelOpen: false,
   leftPanelOpen: true,
   cursorTarget: null,
@@ -241,7 +262,11 @@ export const useYiiyaStore = create<YiiyaStore>()(
   lastSavedAt: null,
   projectName: "Untitled 3D Project",
   pendingClarify: null,
+  pendingEditConfirm: null,
   groundingPreviewUrl: null,
+  generationsRemaining: null,
+  generationsLimit: null,
+  glbLoadFailed: false,
 
   // Scene object methods
   addSceneObject: (obj) => {
@@ -303,12 +328,43 @@ export const useYiiyaStore = create<YiiyaStore>()(
   setInterimTranscript: (v) => set({ interimTranscript: v }),
   setLatestQuestion: (v) => set({ latestQuestion: v }),
 
-  addLog: (label) => set(s => ({
-    logs: [
-      ...s.logs.slice(-199),
-      { id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, label, timestamp: new Date().toISOString() }
-    ]
+  addLog: (label) => set(s => {
+    const entry: LogEntry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      label,
+      timestamp: new Date().toISOString()
+    };
+    const assetId = s.generatingAssetId;
+    return {
+      logs: [...s.logs.slice(-199), entry],
+      ...(assetId ? {
+        assetLogs: {
+          ...s.assetLogs,
+          [assetId]: [...(s.assetLogs[assetId] ?? []).slice(-199), entry]
+        }
+      } : {})
+    };
+  }),
+
+  addAssetLog: (assetId, label) => set(s => {
+    const entry: LogEntry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      label,
+      timestamp: new Date().toISOString()
+    };
+    return {
+      assetLogs: {
+        ...s.assetLogs,
+        [assetId]: [...(s.assetLogs[assetId] ?? []).slice(-199), entry]
+      }
+    };
+  }),
+
+  setAssetPoster: (assetId, dataUrl) => set(s => ({
+    assetPosters: { ...s.assetPosters, [assetId]: dataUrl }
   })),
+
+  setGeneratingAssetId: (id) => set({ generatingAssetId: id }),
 
   clearLogs: () => set({ logs: [] }),
 
@@ -318,7 +374,10 @@ export const useYiiyaStore = create<YiiyaStore>()(
   setSaveStatus: (s) => set({ saveStatus: s }),
   setProjectName: (name) => set({ projectName: name }),
   setPendingClarify: (c) => set({ pendingClarify: c }),
+  setPendingEditConfirm: (c) => set({ pendingEditConfirm: c }),
   setGroundingPreviewUrl: (url) => set({ groundingPreviewUrl: url }),
+  setGenerationQuota: (remaining, limit) => set({ generationsRemaining: remaining, generationsLimit: limit }),
+  setGlbLoadFailed: (failed) => set({ glbLoadFailed: failed }),
 
   // Action dispatcher (for pipeline → store bridge)
   applyAction: (action) => {
@@ -413,6 +472,17 @@ export const useYiiyaStore = create<YiiyaStore>()(
         generatedAssets: state.generatedAssets,
         activeAssetId: state.activeAssetId,
         logs: state.logs.slice(-100),
+        assetLogs: Object.fromEntries(
+          Object.entries(state.assetLogs).map(([k, v]) => [k, v.slice(-100)])
+        ),
+        // Persist thumbnails only for the most recent assets — compact JPEGs,
+        // but base64 in localStorage adds up, so cap to the tail we still show.
+        assetPosters: Object.fromEntries(
+          state.generatedAssets
+            .slice(-12)
+            .map((a) => [a.id, state.assetPosters[a.id]])
+            .filter(([, v]) => typeof v === "string")
+        ),
         conversationHistory: state.conversationHistory,
         projectName: state.projectName,
         sessionStyleDNA: state.sessionStyleDNA,

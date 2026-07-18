@@ -86,16 +86,46 @@ function TurntableButton({ assetName }: { assetName: string }) {
 
 // ─── Asset Tray Card ─────────────────────────────────────────────────────────
 
+// Curated chips that every parse to a FREE local material/scale edit (see
+// classifyEditIntent → "local"). Kept in sync with lib/scene/local-edit.ts.
+const FREE_EDIT_CHIPS = ["matte black", "chrome", "gold", "glossy", "bigger", "smaller"] as const;
+
 function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActive: boolean; onClick: () => void }) {
   const tierLabel = asset.tier === "hunyuan3d" ? "HY3D" : asset.tier === "trellis" ? "TRELLIS" : asset.tier === "library" ? "LIBRARY" : "FAILED";
   const tierColor = asset.tier === "hunyuan3d" ? "text-emerald-400" : asset.tier === "trellis" ? "text-blue-400" : asset.tier === "library" ? "text-amber-400" : "text-red-500";
   const hasExports = Object.keys(asset.exportUrls).length > 0;
+  const poster = useYiiyaStore(s => s.assetPosters[asset.id]);
+  const [copied, setCopied] = useState(false);
+
+  const glbForShare = asset.exportUrls.glb ?? asset.glbUrl;
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (typeof window === "undefined" || !glbForShare) return;
+    const url = `${window.location.origin}/view?src=${encodeURIComponent(glbForShare)}&name=${encodeURIComponent(asset.name)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: asset.name, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* dismissed */
+    }
+  };
 
   return (
     <div
       onClick={onClick}
       className={`border rounded-sm p-3 cursor-pointer transition-colors ${isActive ? "border-zinc-500 bg-zinc-900" : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"}`}
     >
+      {poster ? (
+        <div className="aspect-square w-full mb-2 overflow-hidden rounded-sm bg-black">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={poster} alt={asset.name} className="w-full h-full object-cover" />
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <span className="text-[10px] text-zinc-200 font-mono truncate">{asset.name}</span>
         <span className={`text-[8px] font-mono shrink-0 ${tierColor}`}>{tierLabel}</span>
@@ -123,6 +153,14 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
           <span className="text-[8px] font-mono text-red-500/70">no exports — generation failed</span>
         )}
         {isActive && hasExports ? <TurntableButton assetName={asset.name} /> : null}
+        {hasExports && glbForShare ? (
+          <button
+            onClick={handleShare}
+            className="text-[8px] font-mono px-1.5 py-0.5 border border-[#EF9F27]/50 rounded-sm text-[#EF9F27] hover:bg-[#EF9F27] hover:text-black transition-colors"
+          >
+            {copied ? "copied ✓" : "share / AR"}
+          </button>
+        ) : null}
       </div>
       {asset.textureUrls?.albedo && (
         <div className="mt-2">
@@ -188,13 +226,28 @@ function LeftPanel({ open }: { open: boolean }) {
   const isListening = useYiiyaStore(s => s.isListening);
   const isInterpreting = useYiiyaStore(s => s.isInterpreting);
   const interimTranscript = useYiiyaStore(s => s.interimTranscript);
-  const logs = useYiiyaStore(s => s.logs);
+  const globalLogs = useYiiyaStore(s => s.logs);
+  const assetLogs = useYiiyaStore(s => s.assetLogs);
+  const activeAssetId = useYiiyaStore(s => s.activeAssetId);
+  const generatedAssets = useYiiyaStore(s => s.generatedAssets);
+  const logs = activeAssetId && assetLogs[activeAssetId]?.length
+    ? assetLogs[activeAssetId]
+    : globalLogs;
+  const activeAsset =
+    generatedAssets.find(a => a.id === activeAssetId) ??
+    (generatedAssets.length ? generatedAssets[generatedAssets.length - 1] : null);
+  // Only a real mesh can be edited for free in-browser; a failed/fallback tile can't.
+  const canFreeEdit = Boolean(activeAsset && activeAsset.tier !== "fallback");
   const sessionStyleDNA = useYiiyaStore(s => s.sessionStyleDNA);
   const activeBrief = useYiiyaStore(s => s.activeBrief);
   const referenceImage = useYiiyaStore(s => s.referenceImage);
   const setReferenceImage = useYiiyaStore(s => s.setReferenceImage);
   const pendingClarify = useYiiyaStore(s => s.pendingClarify);
+  const pendingEditConfirm = useYiiyaStore(s => s.pendingEditConfirm);
   const groundingPreviewUrl = useYiiyaStore(s => s.groundingPreviewUrl);
+  const generationsRemaining = useYiiyaStore(s => s.generationsRemaining);
+  const generationsLimit = useYiiyaStore(s => s.generationsLimit);
+  const glbLoadFailed = useYiiyaStore(s => s.glbLoadFailed);
   const { toggleListening, submitManualTranscript, generateFromImage, cancelGeneration } = useSpeechInterpreter();
   const [manualText, setManualText] = useState("");
   const [clarifyReply, setClarifyReply] = useState("");
@@ -262,6 +315,26 @@ function LeftPanel({ open }: { open: boolean }) {
           ✕
         </button>
       </div>
+
+      {/* Expired-asset notice: an older generation's provider URL can lapse, so
+          the mesh 502s on load. Tell the user honestly and let them re-roll it. */}
+      {glbLoadFailed && canFreeEdit && activeAsset ? (
+        <div className="mx-3 mt-2 border border-red-900/60 bg-red-950/20 rounded-sm p-2.5">
+          <div className="text-[9px] font-mono text-red-400 leading-4 mb-2">
+            This asset&apos;s 3D file didn&apos;t load — older generations can expire.
+            Re-generate it to view and download again.
+          </div>
+          <button
+            onClick={() => {
+              useYiiyaStore.getState().setGlbLoadFailed(false);
+              submitManualTranscript(activeAsset.name, { forceGenerate: true });
+            }}
+            className="text-[8px] font-mono px-2 py-1 border border-red-800 bg-red-500/90 text-black rounded-sm hover:bg-red-400 transition-colors"
+          >
+            Re-generate &ldquo;{activeAsset.name}&rdquo;
+          </button>
+        </div>
+      ) : null}
 
       {/* Log feed */}
       <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[9px] leading-5">
@@ -345,6 +418,37 @@ function LeftPanel({ open }: { open: boolean }) {
         </div>
       ) : null}
 
+      {/* Edit-cost gate: a substantive change to the current mesh costs a full
+          generation. Confirm before spending it — "ask users what they want"
+          instead of silently regenerating (and producing a surprise new object). */}
+      {pendingEditConfirm && !isInterpreting ? (
+        <div className="mx-3 mb-2 border border-amber-900/60 bg-amber-950/20 rounded-sm p-2.5">
+          <div className="text-[9px] font-mono text-amber-400 leading-4 mb-2">
+            Regenerate <span className="text-amber-200">{pendingEditConfirm.assetName}</span> as
+            &ldquo;{pendingEditConfirm.transcript}&rdquo;? This spends one generation (1–4 min).
+            Your current mesh stays in the tray.
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => {
+                const t = pendingEditConfirm.transcript;
+                useYiiyaStore.getState().setPendingEditConfirm(null);
+                submitManualTranscript(t, { forceGenerate: true });
+              }}
+              className="text-[8px] font-mono px-2 py-1 border border-amber-700 bg-amber-500 text-black rounded-sm hover:bg-amber-400 transition-colors"
+            >
+              Yes — regenerate (1 gen)
+            </button>
+            <button
+              onClick={() => useYiiyaStore.getState().setPendingEditConfirm(null)}
+              className="text-[8px] font-mono px-2 py-1 border border-zinc-800 rounded-sm text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 transition-colors"
+            >
+              No — keep current
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Free reference preview: what the 3D build is following, shown the
           moment it exists — catch a misread before the paid part finishes. */}
       {groundingPreviewUrl && isInterpreting ? (
@@ -358,6 +462,28 @@ function LeftPanel({ open }: { open: boolean }) {
           <span className="text-[8px] font-mono text-zinc-600 leading-3">
             Building from this reference (free preview)
           </span>
+        </div>
+      ) : null}
+
+      {/* Free instant-edit chips — every one routes through the local-edit fast
+          path (0 tokens, no regeneration), teaching the free loop so users stop
+          accidentally spending a generation on "make it darker". */}
+      {canFreeEdit && !isInterpreting && !pendingClarify && !pendingEditConfirm ? (
+        <div className="px-3 pb-2">
+          <p className="text-[8px] font-mono text-zinc-700 tracking-widest uppercase mb-1">
+            Free instant edits · no generation
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {FREE_EDIT_CHIPS.map((c) => (
+              <button
+                key={c}
+                onClick={() => submitManualTranscript(c)}
+                className="text-[8px] font-mono px-2 py-1 border border-emerald-900/50 rounded-sm text-emerald-400/80 hover:text-emerald-200 hover:border-emerald-600 transition-colors"
+              >
+                {c}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -379,6 +505,14 @@ function LeftPanel({ open }: { open: boolean }) {
       <div className="px-3 py-1 border-t border-zinc-900 flex items-center gap-2">
         <span className={`text-[8px] font-mono ${statusColor}`}>{statusLabel}</span>
         {interimTranscript && <span className="text-[8px] font-mono text-zinc-600 italic truncate">&quot;{interimTranscript}&quot;</span>}
+        {generationsRemaining !== null && generationsLimit !== null ? (
+          <span
+            className={`ml-auto text-[8px] font-mono ${generationsRemaining <= 2 ? "text-amber-500" : "text-zinc-700"}`}
+            title="Free 3D generations left today · free instant edits don't count"
+          >
+            {generationsRemaining}/{generationsLimit} gens left today
+          </span>
+        ) : null}
       </div>
 
       {/* Reference image drop zone */}
@@ -757,6 +891,7 @@ export function YiiyaWorkspace() {
           <SceneCanvas
             activeGlbUrl={activeGlbUrl}
             activeAssetDbId={activeAsset?.dbId}
+            activeAssetLocalId={activeAsset?.id}
             activeMaterialOverride={activeAsset?.materialOverride}
           />
         </Suspense>
