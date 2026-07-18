@@ -90,6 +90,13 @@ function TurntableButton({ assetName }: { assetName: string }) {
 // classifyEditIntent → "local"). Kept in sync with lib/scene/local-edit.ts.
 const FREE_EDIT_CHIPS = ["matte black", "chrome", "gold", "glossy", "bigger", "smaller"] as const;
 
+/** Colour the readiness label so "draft" never reads as finished work. */
+function readinessColor(label: "draft" | "preview" | "handoff") {
+  if (label === "handoff") return "text-emerald-500";
+  if (label === "preview") return "text-amber-500";
+  return "text-zinc-500";
+}
+
 function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActive: boolean; onClick: () => void }) {
   const tierLabel = asset.tier === "hunyuan3d" ? "HY3D" : asset.tier === "trellis" ? "TRELLIS" : asset.tier === "library" ? "LIBRARY" : "FAILED";
   const tierColor = asset.tier === "hunyuan3d" ? "text-emerald-400" : asset.tier === "trellis" ? "text-blue-400" : asset.tier === "library" ? "text-amber-400" : "text-red-500";
@@ -131,8 +138,18 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
         <span className={`text-[8px] font-mono shrink-0 ${tierColor}`}>{tierLabel}</span>
       </div>
       <div className="text-[9px] text-zinc-600 font-mono mb-2">
-        {asset.scaleMeters}m · {asset.isWatertight ? "watertight" : "approx"}
+        {asset.scaleMeters}m
         {asset.triangleCount ? ` · ${asset.triangleCount >= 1000 ? `${(asset.triangleCount / 1000).toFixed(1)}k` : asset.triangleCount} tris` : ""}
+        {/* Readiness is measured; the old "watertight" label was inferred from
+            the provider tier and never actually checked. */}
+        {asset.readiness ? (
+          <>
+            {" · "}
+            <span className={readinessColor(asset.readiness.label)}>
+              {asset.readiness.score}% {asset.readiness.label}
+            </span>
+          </>
+        ) : null}
       </div>
       <div className="flex flex-wrap gap-1">
         {hasExports ? (

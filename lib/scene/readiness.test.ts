@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { GlbGeometry } from "@/lib/scene/glb-inspect";
-import { evaluateReadiness, TRIANGLE_BUDGETS } from "@/lib/scene/readiness";
+import {
+  destinationForTargetPlatform,
+  evaluateReadiness,
+  TRIANGLE_BUDGETS
+} from "@/lib/scene/readiness";
 
 function geometry(overrides: Partial<GlbGeometry> = {}): GlbGeometry {
   return {
@@ -195,6 +199,25 @@ describe("evaluateReadiness", () => {
 
     expect(find(report.checks, "Bounding box").status).toBe("failed");
     expect(report.label).toBe("draft");
+  });
+
+  it("maps a print target onto the print destination", () => {
+    // A print job must pick up the watertight/wall-thickness checks.
+    const report = evaluateReadiness(geometry(), {
+      ...brief,
+      destination: destinationForTargetPlatform("print")
+    });
+
+    expect(destinationForTargetPlatform("print")).toBe("print");
+    expect(report.checks.some((check) => check.label === "Watertight solid")).toBe(true);
+  });
+
+  it("maps engine and DCC targets onto animation, and unknown onto portfolio", () => {
+    expect(destinationForTargetPlatform("unreal")).toBe("animation");
+    expect(destinationForTargetPlatform("unity")).toBe("animation");
+    expect(destinationForTargetPlatform("blender")).toBe("animation");
+    expect(destinationForTargetPlatform("general")).toBe("portfolio");
+    expect(destinationForTargetPlatform("something-else")).toBe("portfolio");
   });
 
   it("excludes unverifiable checks from the score", () => {

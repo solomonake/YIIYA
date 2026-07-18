@@ -51,6 +51,26 @@ const PIVOT_TOLERANCE = 0.12;
 const PLAUSIBLE_MIN_METRES = 0.005;
 const PLAUSIBLE_MAX_METRES = 50;
 
+/**
+ * Map a ThreeDBrief `targetPlatform` onto a readiness destination.
+ *
+ * Takes a plain string rather than importing the pipeline's type, so this
+ * module stays free of a dependency on its own caller.
+ */
+export function destinationForTargetPlatform(platform: string): AssetDestination {
+  switch (platform) {
+    case "print":
+      return "print";
+    // Realtime engines and DCC tools all care about rig/animation readiness.
+    case "unreal":
+    case "unity":
+    case "blender":
+      return "animation";
+    default:
+      return "portfolio";
+  }
+}
+
 export function evaluateReadiness(
   geometry: GlbGeometry,
   brief: Pick<AssetBrief, "destination" | "qualityTargets" | "dimensions">

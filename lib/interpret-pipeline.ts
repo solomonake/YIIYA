@@ -7,7 +7,12 @@ import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 import { buildExportUrls } from "@/lib/scene/export-urls";
-import { inspectGlbUrl } from "@/lib/scene/glb-inspect";
+import { inspectGlbUrl, type GlbGeometry } from "@/lib/scene/glb-inspect";
+import {
+  destinationForTargetPlatform,
+  evaluateReadiness,
+  type ReadinessReport
+} from "@/lib/scene/readiness";
 import type { MaterialOverride } from "@/lib/scene/local-edit";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -90,7 +95,14 @@ export type GeneratedAsset = {
   };
   exportUrls: Partial<Record<"glb" | "obj" | "usd" | "fbx" | "stl", string>>;
   scaleMeters: number;
+  /**
+   * Undefined means "not verified", which is the normal case: watertightness
+   * needs a full-geometry pass we do not run. Never infer it from the provider
+   * tier — see runPackager.
+   */
   isWatertight?: boolean;
+  /** Destination-aware handoff readiness, when the mesh could be inspected. */
+  readiness?: ReadinessReport;
   /**
    * Client-side material/scale tweaks applied on top of the generated GLB
    * (color, finish, glow, scale). Kept off the mesh itself so they're free,
@@ -595,6 +607,16 @@ export type GlbValidation = {
   reason: string | null;
   sizeBytes: number;
   triangleCount?: number;
+  /** Full inspection output, used to score handoff readiness. */
+  geometry?: GlbGeometry;
+};
+
+type GeneratorOutcome = {
+  glbUrl: string;
+  tier: GeneratedAsset["tier"];
+  attempts: GeneratorAttempt[];
+  /** Present only when a provider mesh passed inspection. */
+  geometry?: GlbGeometry;
 };
 
 /**
@@ -623,7 +645,8 @@ async function validateGlbUrl(url: string): Promise<GlbValidation> {
     ok: inspection.ok,
     reason: inspection.reason,
     sizeBytes: inspection.sizeBytes,
-    triangleCount: inspection.geometry?.triangles
+    triangleCount: inspection.geometry?.triangles,
+    geometry: inspection.geometry ?? undefined
   };
 }
 
@@ -1167,9 +1190,9 @@ async function runSpatialGenerator(
   userImageMime?: string | null,
   userHfToken?: string,
   additionalViews?: Array<{ base64: string; mediaType: string }>
-): Promise<{ glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] }> {
+): Promise<GeneratorOutcome> {
   const attempts: GeneratorAttempt[] = [];
-  const placeholder = (): { glbUrl: string; tier: GeneratedAsset["tier"]; attempts: GeneratorAttempt[] } => ({
+  const placeholder = (): GeneratorOutcome => ({
     glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
     tier: "fallback",
     attempts
@@ -1288,7 +1311,7 @@ async function runSpatialGenerator(
         mirror.mirrored || !isAllowedProviderUrl(mirror.url)
           ? mirror.url
           : `/api/3d/proxy?src=${encodeURIComponent(mirror.url)}`;
-      return { glbUrl, tier: entry.tier, attempts };
+      return { glbUrl, tier: entry.tier, attempts, geometry: v.geometry };
     } else {
       recordCircuit(key, false);
       console.log(`[GENERATOR] ${entry.name} GLB invalid: ${v.reason}`);
@@ -1341,7 +1364,8 @@ async function runPackager(
   glbUrl: string,
   tier: GeneratedAsset["tier"],
   textureUrls: GeneratedAsset["textureUrls"],
-  triangleCount?: number
+  triangleCount?: number,
+  geometry?: GlbGeometry
 ): Promise<GeneratedAsset> {
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   // Only advertise formats /api/3d/convert genuinely produces. USD needs an
@@ -1352,17 +1376,40 @@ async function runPackager(
       ? {}
       : buildExportUrls(glbUrl, { usdzConfigured: Boolean(process.env.USDZ_CONVERTER_URL) });
 
+  const readiness = geometry
+    ? evaluateReadiness(geometry, {
+        destination: destinationForTargetPlatform(brief.targetPlatform),
+        qualityTargets: {
+          topology: "preview",
+          texture: textureUrls ? "pbr" : "none",
+          manufacturable: brief.targetPlatform === "print",
+          riggable: brief.useCase === "character_accessory",
+          cadFriendly: false
+        },
+        dimensions: undefined
+      })
+    : undefined;
+
   return {
     id,
     name: brief.primaryObject,
     glbUrl,
+    // Prefer the inspected count over any caller-supplied value.
+    triangleCount: geometry?.triangles ?? triangleCount,
     tier,
-    triangleCount,
     materialBrief: brief.materialBrief,
     textureUrls,
     exportUrls,
-    scaleMeters: estimateScale(brief),
-    isWatertight: tier !== "fallback"
+    scaleMeters: geometry?.bounds
+      ? Number(geometry.bounds.maxDimension.toFixed(2))
+      : estimateScale(brief),
+    // Watertightness cannot be determined from the glTF JSON chunk, so this
+    // stays undefined ("unverified") rather than being inferred from which
+    // provider happened to run. It previously reported `tier !== "fallback"`,
+    // which surfaced a literal "watertight" label in the asset tray for meshes
+    // nothing had ever checked — a claim that fails silently in a slicer.
+    isWatertight: undefined,
+    readiness
   };
 }
 
@@ -1456,7 +1503,7 @@ export async function* runInterpretPipeline(
 
       yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) — Hunyuan3D / TRELLIS / Tripo / Meshy cascade…`, progress: 0.1 + 0.6 * (i / slots.length) };
 
-      const { glbUrl, tier, attempts } = await runSpatialGenerator(
+      const { glbUrl, tier, attempts, geometry } = await runSpatialGenerator(
         slotBrief,
         groundingResult,
         body.referenceImage?.base64 ?? null,
@@ -1482,7 +1529,14 @@ export async function* runInterpretPipeline(
       yield { type: "generating", log: meshReadyLog, progress: 0.8 };
 
       const textureUrls = tier === "fallback" ? undefined : await generatePBRTextures(slotBrief);
-      const asset = await runPackager(slotBrief, glbUrl, tier, textureUrls, winning?.triangleCount);
+      const asset = await runPackager(
+        slotBrief,
+        glbUrl,
+        tier,
+        textureUrls,
+        winning?.triangleCount,
+        geometry
+      );
       generatedAssets.push(asset);
 
       yield {

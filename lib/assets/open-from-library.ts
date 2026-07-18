@@ -60,7 +60,8 @@ export function useOpenAssetFromLibrary() {
           textureUrls: row.brief_json?.textureUrls ?? undefined,
           exportUrls: buildExportUrls(row.glb_url),
           scaleMeters: row.scale_meters ?? 1,
-          isWatertight: row.tier !== "fallback"
+          // Unknown, not inferred from tier — see runPackager in interpret-pipeline.
+          isWatertight: undefined
         };
         addGeneratedAsset(asset);
         addLog(`[LIBRARY] Reopened "${asset.name}" from your history.`);

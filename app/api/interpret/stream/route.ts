@@ -78,7 +78,9 @@ export async function POST(request: NextRequest) {
         textureUrls: (cached.brief_json?.textureUrls ?? undefined) as GeneratedAsset["textureUrls"],
         exportUrls: buildExportUrls(cached.glb_url, { usdzConfigured: Boolean(process.env.USDZ_CONVERTER_URL) }),
         scaleMeters: cached.scale_meters ?? 1,
-        isWatertight: true
+        // Not verified for cached rows either; watertightness needs a
+        // full-geometry pass. Leave it unknown rather than asserting true.
+        isWatertight: undefined
       };
       const events = [
         { type: "generating", log: `[CACHE] You already generated "${cached.object_name}" with this exact prompt — returning it instantly ($0). Reword the prompt slightly for a fresh roll.`, progress: 0.9 },
