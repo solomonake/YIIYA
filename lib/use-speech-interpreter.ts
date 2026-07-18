@@ -196,6 +196,17 @@ export function useSpeechInterpreter() {
         signal: abortController.signal
       });
 
+      // Surface the daily free-generation quota (server sets these headers on
+      // both the streaming and cached responses) so the UI can show N/M left.
+      const remainingHeader = res.headers.get("X-Gen-Remaining");
+      if (remainingHeader !== null) {
+        const limitHeader = res.headers.get("X-Gen-Limit");
+        store.setGenerationQuota(
+          Number(remainingHeader),
+          limitHeader ? Number(limitHeader) : null
+        );
+      }
+
       if (!res.ok || !res.body) {
         addLog(`[ERROR] Pipeline request failed: ${res.status}`);
         return;

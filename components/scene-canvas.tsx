@@ -864,7 +864,11 @@ function StarterScene({
       ) : null}
 
       {activeGlbUrl ? (
-        <GlbErrorBoundary fallback={<GlbLoadFailureFallback />}>
+        <GlbErrorBoundary
+          fallback={<GlbLoadFailureFallback />}
+          onError={() => useYiiyaStore.getState().setGlbLoadFailed(true)}
+          onRecover={() => useYiiyaStore.getState().setGlbLoadFailed(false)}
+        >
           <Suspense fallback={<GlbLoadFailureFallback />}>
             <ActiveGlbViewer
               url={activeGlbUrl}

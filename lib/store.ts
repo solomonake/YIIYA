@@ -164,6 +164,11 @@ export type YiiyaStore = StageSlice & {
   pendingEditConfirm: { transcript: string; assetName: string } | null;
   /** The free reference photo the current/last generation is building from. */
   groundingPreviewUrl: string | null;
+  /** Daily free-generation quota surfaced by the server (null = unknown/exempt). */
+  generationsRemaining: number | null;
+  generationsLimit: number | null;
+  /** True when the active asset's GLB failed to load (e.g. an expired provider URL). */
+  glbLoadFailed: boolean;
 
   // Actions
   addSceneObject: (obj: Omit<SceneObject, "id" | "materializedAt">) => string;
@@ -196,6 +201,8 @@ export type YiiyaStore = StageSlice & {
   setPendingClarify: (c: PendingClarify | null) => void;
   setPendingEditConfirm: (c: { transcript: string; assetName: string } | null) => void;
   setGroundingPreviewUrl: (url: string | null) => void;
+  setGenerationQuota: (remaining: number | null, limit: number | null) => void;
+  setGlbLoadFailed: (failed: boolean) => void;
   applyAction: (action: YiiyaAction) => void;
 };
 
@@ -257,6 +264,9 @@ export const useYiiyaStore = create<YiiyaStore>()(
   pendingClarify: null,
   pendingEditConfirm: null,
   groundingPreviewUrl: null,
+  generationsRemaining: null,
+  generationsLimit: null,
+  glbLoadFailed: false,
 
   // Scene object methods
   addSceneObject: (obj) => {
@@ -366,6 +376,8 @@ export const useYiiyaStore = create<YiiyaStore>()(
   setPendingClarify: (c) => set({ pendingClarify: c }),
   setPendingEditConfirm: (c) => set({ pendingEditConfirm: c }),
   setGroundingPreviewUrl: (url) => set({ groundingPreviewUrl: url }),
+  setGenerationQuota: (remaining, limit) => set({ generationsRemaining: remaining, generationsLimit: limit }),
+  setGlbLoadFailed: (failed) => set({ glbLoadFailed: failed }),
 
   // Action dispatcher (for pipeline → store bridge)
   applyAction: (action) => {
