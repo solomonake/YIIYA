@@ -7,6 +7,7 @@ import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 import { buildExportUrls } from "@/lib/scene/export-urls";
+import { inspectGlbUrl } from "@/lib/scene/glb-inspect";
 import type { MaterialOverride } from "@/lib/scene/local-edit";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -596,87 +597,34 @@ export type GlbValidation = {
   triangleCount?: number;
 };
 
-// Minimum GLB size for a real mesh. The placeholder route returns ~120 bytes;
-// real provider outputs are typically ≥ 50KB even for low-poly assets.
-const MIN_GLB_BYTES = 2048;
-
+/**
+ * Validate a provider GLB before we show it or charge for it.
+ *
+ * Delegates to lib/scene/glb-inspect, which fixes two blind spots this
+ * function had while it was implemented inline here:
+ *
+ *  - Primitives without an `indices` accessor were skipped, so any provider
+ *    returning non-indexed geometry produced no triangle count and bypassed
+ *    the degenerate-mesh check entirely.
+ *  - The JSON chunk was read from a fixed 32KB range. A larger chunk failed
+ *    the `jsonChunkLength < buf.length - 20` guard, which left triangleCount
+ *    undefined and let the mesh PASS with no triangle check at all. The
+ *    inspector detects that truncation and widens the range once.
+ *
+ * It also honours TRIANGLE_STRIP/FAN topology instead of assuming n/3, and
+ * returns bounds, UV/normal presence, and material counts for the readiness
+ * layer. Kept as a thin wrapper so existing callers and the GlbValidation
+ * shape are unchanged.
+ */
 async function validateGlbUrl(url: string): Promise<GlbValidation> {
-  // Skip validation for our own placeholder route — it's intentionally tiny.
-  if (url.startsWith("/api/3d/placeholder") || url.includes("/placeholder?")) {
-    return { ok: false, reason: "Placeholder URL", sizeBytes: 0 };
-  }
+  const inspection = await inspectGlbUrl(url, { headers: providerAuthHeaders(url) });
 
-  try {
-    // Fetch the first 32KB. That's enough to read the GLB header + JSON chunk
-    // (where mesh primitives live) without downloading the whole binary payload.
-    const res = await fetch(url, {
-      headers: { Range: "bytes=0-32767", ...providerAuthHeaders(url) },
-      signal: AbortSignal.timeout(15_000)
-    });
-    if (!res.ok && res.status !== 206) {
-      return { ok: false, reason: `HTTP ${res.status}`, sizeBytes: 0 };
-    }
-
-    const contentRange = res.headers.get("content-range");
-    const totalSize = contentRange?.match(/\/(\d+)$/)?.[1]
-      ? Number(contentRange.match(/\/(\d+)$/)?.[1])
-      : Number(res.headers.get("content-length") ?? 0);
-    const buf = Buffer.from(await res.arrayBuffer());
-
-    if (totalSize > 0 && totalSize < MIN_GLB_BYTES) {
-      return { ok: false, reason: `File too small (${totalSize} bytes)`, sizeBytes: totalSize };
-    }
-
-    // GLB magic: 'glTF' = 0x46546C67 (little endian)
-    if (buf.length < 12 || buf.readUInt32LE(0) !== 0x46546c67) {
-      return { ok: false, reason: "Not a valid GLB (magic mismatch)", sizeBytes: totalSize || buf.length };
-    }
-
-    // Parse JSON chunk to count primitives.
-    let triangleCount: number | undefined;
-    try {
-      const jsonChunkLength = buf.readUInt32LE(12);
-      const jsonChunkType = buf.readUInt32LE(16); // 'JSON' = 0x4E4F534A
-      if (jsonChunkType === 0x4e4f534a && jsonChunkLength > 0 && jsonChunkLength < buf.length - 20) {
-        const jsonText = buf.subarray(20, 20 + jsonChunkLength).toString("utf-8");
-        const gltf = JSON.parse(jsonText) as {
-          meshes?: Array<{ primitives?: Array<{ indices?: number }> }>;
-          accessors?: Array<{ count?: number }>;
-        };
-        const meshes = gltf.meshes ?? [];
-        let totalIndices = 0;
-        for (const mesh of meshes) {
-          for (const prim of mesh.primitives ?? []) {
-            if (typeof prim.indices === "number" && gltf.accessors?.[prim.indices]?.count) {
-              totalIndices += gltf.accessors[prim.indices].count ?? 0;
-            }
-          }
-        }
-        if (totalIndices > 0) triangleCount = Math.floor(totalIndices / 3);
-      }
-    } catch {
-      // Header parse failed — not fatal; size + magic already passed.
-    }
-
-    if (triangleCount !== undefined && triangleCount < 50) {
-      return {
-        ok: false,
-        reason: `Degenerate mesh (${triangleCount} triangles)`,
-        sizeBytes: totalSize || buf.length,
-        triangleCount
-      };
-    }
-
-    return {
-      ok: true,
-      reason: null,
-      sizeBytes: totalSize || buf.length,
-      triangleCount
-    };
-  } catch (err) {
-    const msg = errMessage(err);
-    return { ok: false, reason: msg.slice(0, 100), sizeBytes: 0 };
-  }
+  return {
+    ok: inspection.ok,
+    reason: inspection.reason,
+    sizeBytes: inspection.sizeBytes,
+    triangleCount: inspection.geometry?.triangles
+  };
 }
 
 async function generateViaHunyuan3D(
