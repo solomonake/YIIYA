@@ -2,6 +2,8 @@
 
 import { FilesetResolver, InteractiveSegmenter } from "@mediapipe/tasks-vision";
 
+import { analyzeTappedRegion, isObjectPixel } from "@/lib/vision/mask-region";
+
 // Google's public CDN + model bucket — free, no API key, same hosts every
 // official MediaPipe web example points at. Fetched lazily on first use so
 // desktop users who never open /capture never pay this download.
@@ -79,6 +81,22 @@ export async function segmentAtPointWithCentroid(
   const maskData = mask.getAsUint8Array();
   mask.close();
 
+  // Which value class is the tapped object? Decided per invocation from the
+  // tap point itself (lib/vision/mask-region.ts) — the mask's polarity is NOT
+  // stable across MediaPipe versions/delegates, and assuming `>0 = object`
+  // shipped white-silhouette captures: the object was painted over and the
+  // background kept, so the 3D providers reconstructed a white blob.
+  const region = analyzeTappedRegion(
+    maskData,
+    width,
+    height,
+    xNorm * width,
+    yNorm * height
+  );
+  if (!region) {
+    throw new Error("No object detected there — try tapping directly on it.");
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -87,34 +105,18 @@ export async function segmentAtPointWithCentroid(
   ctx.drawImage(source, 0, 0, width, height);
   const frame = ctx.getImageData(0, 0, width, height);
 
-  let minX = width;
-  let minY = height;
-  let maxX = 0;
-  let maxY = 0;
-  let sumX = 0;
-  let sumY = 0;
-  let maskCount = 0;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      if (maskData[i] > 0) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-        sumX += x;
-        sumY += y;
-        maskCount++;
-      } else {
-        const p = i * 4;
-        frame.data[p] = 255;
-        frame.data[p + 1] = 255;
-        frame.data[p + 2] = 255;
-      }
+  // Keep the object's real pixels; paint everything else studio-white.
+  for (let i = 0; i < width * height; i++) {
+    if (!isObjectPixel(maskData, i, region)) {
+      const p = i * 4;
+      frame.data[p] = 255;
+      frame.data[p + 1] = 255;
+      frame.data[p + 2] = 255;
     }
   }
   ctx.putImageData(frame, 0, 0);
+
+  const { minX, minY, maxX, maxY } = region;
 
   if (maxX <= minX || maxY <= minY) {
     throw new Error("No object detected there — try tapping directly on it.");
@@ -145,7 +147,10 @@ export async function segmentAtPointWithCentroid(
   return {
     dataUrl,
     base64: dataUrl.split(",")[1],
-    centroidXNorm: sumX / maskCount / width,
-    centroidYNorm: sumY / maskCount / height
+    // Object-class centroid. The old code averaged whichever class happened
+    // to be nonzero — with inverted masks that was the BACKGROUND centroid,
+    // which is why orbit tracking drifted off the object.
+    centroidXNorm: region.centroidX / width,
+    centroidYNorm: region.centroidY / height
   };
 }
