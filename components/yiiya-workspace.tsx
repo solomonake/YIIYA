@@ -850,10 +850,10 @@ export function YiiyaWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // One-tap mobile capture flow: /capture sets referenceImage in the store
-  // then navigates here with ?autoGenerate=1. Fire the generation once the
-  // image is actually in the store, then scrub the query param so a refresh
-  // doesn't re-trigger it.
+  // Orbit capture flow: /capture sets referenceImage (with additionalViews)
+  // in the store then navigates here with ?autoGenerate=1. Fire the
+  // generation once the image is actually in the store, then scrub the query
+  // param so a refresh doesn't re-trigger it.
   useEffect(() => {
     if (typeof window === "undefined" || !referenceImage) return;
     const params = new URLSearchParams(window.location.search);
@@ -867,6 +867,46 @@ export function YiiyaWorkspace() {
     autoSubmit("Generate a 3D model of this object.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceImage]);
+
+  // Multi-object capture queue: /capture parks one ReferenceImage per tapped
+  // object in the store (an explicit "N objects -> N generations" tap is the
+  // consent), and this effect consumes them one at a time — the next item
+  // fires only after the current generation settles. If a queued generation
+  // produces NO new asset (provider failure, quota 429), the queue clears
+  // instead of burning the remaining generations on a broken run.
+  const isQueueInterpreting = useYiiyaStore(s => s.isInterpreting);
+  const captureQueueLength = useYiiyaStore(s => s.captureQueue.length);
+  const queueGuardRef = useRef<{ assetCountAtSubmit: number } | null>(null);
+  useEffect(() => {
+    if (isQueueInterpreting || captureQueueLength === 0) {
+      if (captureQueueLength === 0) queueGuardRef.current = null;
+      return;
+    }
+
+    const state = useYiiyaStore.getState();
+    const guard = queueGuardRef.current;
+    if (guard && state.generatedAssets.length <= guard.assetCountAtSubmit) {
+      state.setCaptureQueue([]);
+      queueGuardRef.current = null;
+      addLog(
+        `[CAPTURE] Stopping the queue — the last object didn't generate. ${captureQueueLength} object${captureQueueLength === 1 ? "" : "s"} skipped, no generations spent on them.`
+      );
+      return;
+    }
+
+    const next = state.consumeCaptureQueue();
+    if (!next) return;
+    queueGuardRef.current = { assetCountAtSubmit: state.generatedAssets.length };
+    // Re-read: `state` is a pre-consume snapshot, so its queue is stale.
+    const position = useYiiyaStore.getState().captureQueue.length;
+    addLog(
+      position > 0
+        ? `[CAPTURE] Generating "${next.name}" — ${position} more queued after this.`
+        : `[CAPTURE] Generating "${next.name}".`
+    );
+    autoSubmit("Generate a 3D model of this object.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isQueueInterpreting, captureQueueLength]);
 
   // Undo/redo over the asset generation history: Cmd/Ctrl+Z steps back to
   // the previous asset, Cmd/Ctrl+Shift+Z steps forward. Deliberately not a

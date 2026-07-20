@@ -140,6 +140,13 @@ export type YiiyaStore = StageSlice & {
   sessionStyleDNA: StyleDNA | null;
   activeBrief: ThreeDBrief | null;
   referenceImage: ReferenceImage | null;
+  /**
+   * Objects captured in one camera frame, waiting to be generated one after
+   * another. Populated ONLY by an explicit "Generate N objects" tap on
+   * /capture — the workspace consumes it sequentially, one generation per
+   * item, and stops on the first failure so a broken run can't drain quota.
+   */
+  captureQueue: ReferenceImage[];
   conversationHistory: YiiyaMessage[];
 
   // UI state
@@ -183,6 +190,9 @@ export type YiiyaStore = StageSlice & {
   setSessionStyleDNA: (dna: StyleDNA | null) => void;
   setActiveBrief: (brief: ThreeDBrief | null) => void;
   setReferenceImage: (img: ReferenceImage | null) => void;
+  setCaptureQueue: (items: ReferenceImage[]) => void;
+  /** Pops the queue head into referenceImage. Returns it, or null when empty. */
+  consumeCaptureQueue: () => ReferenceImage | null;
   addConversationMessage: (msg: YiiyaMessage) => void;
   setIsListening: (v: boolean) => void;
   setIsInterpreting: (v: boolean) => void;
@@ -244,6 +254,7 @@ export const useYiiyaStore = create<YiiyaStore>()(
   sessionStyleDNA: null,
   activeBrief: null,
   referenceImage: null,
+  captureQueue: [],
   conversationHistory: [],
 
   // UI
@@ -317,6 +328,13 @@ export const useYiiyaStore = create<YiiyaStore>()(
   setSessionStyleDNA: (dna) => set({ sessionStyleDNA: dna }),
   setActiveBrief: (brief) => set({ activeBrief: brief }),
   setReferenceImage: (img) => set({ referenceImage: img }),
+  setCaptureQueue: (items) => set({ captureQueue: items }),
+  consumeCaptureQueue: () => {
+    const [next, ...rest] = get().captureQueue;
+    if (!next) return null;
+    set({ captureQueue: rest, referenceImage: next });
+    return next;
+  },
 
   addConversationMessage: (msg) => set(s => ({
     conversationHistory: [...s.conversationHistory.slice(-9), msg]
