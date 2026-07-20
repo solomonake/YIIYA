@@ -1,5 +1,51 @@
 # Current agent checkpoint
 
+Generated: 2026-07-20 (Codex public-readiness pass for Google SWE intern recruiting)
+
+## Current state
+
+Public-readiness docs work is complete in the working tree:
+
+- Added a new root `README.md` that frames YIIYA as an AI 3D/CAD asset studio,
+  not a website builder.
+- Sanitized `.env.example` by replacing the real-looking exempt email with
+  `founder@example.com`.
+- Confirmed this worktree has no visible untracked duplicate files matching
+  `* 2.*`, including `page 2.tsx`-style files.
+- Confirmed `.env.local` is ignored by `.gitignore` and is not tracked.
+- Ran a tracked-file obvious-secret regex scan for common key/token shapes; no
+  matching files were found.
+- Checked tracked email-shaped strings after sanitization; only placeholders
+  and package-lock deprecation text remain.
+
+## Proof
+
+- `node -v` -> `v20.20.2`.
+- `npm install` completed and restored ignored `node_modules`; npm reported 57
+  dependency audit findings (42 moderate, 13 high, 2 critical). No audit fix was
+  run.
+- `bash scripts/agent-check.sh npm run typecheck` -> exit 0 in 7s.
+- `bash scripts/agent-check.sh npm run test` -> exit 0; 19 files / 83 tests
+  passed.
+- `git check-ignore -v .env.local` -> `.gitignore:28:.env*.local`.
+
+## Public-readiness blockers
+
+- Owner should review the README claims and decide whether screenshot/GIF
+  placeholders are acceptable for the first public version.
+- The live demo at `https://yiiya.vercel.app` was not reverified in this pass.
+- Dependency audit findings remain for a separate dependency-maintenance pass.
+- GitHub visibility, commit, push, deploy, and production provider runs remain
+  human-approval boundaries.
+
+## Next exact action
+
+Review the new `README.md`; if the framing and placeholder screenshots are
+acceptable, commit `README.md` and `.env.example`, then switch the GitHub repo to
+public from GitHub settings.
+
+---
+
 Generated: 2026-07-18 (claude-opus-4.8 session — rounds 3–4 merged & deployed)
 
 ## State
