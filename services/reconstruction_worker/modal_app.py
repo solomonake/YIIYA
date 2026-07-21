@@ -31,10 +31,22 @@ STAGE_ORDER = [
     ("packaging", "package_exports", 0.97),
 ]
 
-image = (
+# The base image is intentionally lightweight (ffmpeg only). COLMAP + Open3D add
+# ~1GB and a slow build, so they are layered on ONLY when YIIYA_ENABLE_COLMAP is
+# set at deploy time. Note: the apt `colmap` package is CPU-only — dense
+# patch-match stereo needs a CUDA COLMAP build (see COLMAP.md); until then the
+# dense stage raises and the pipeline falls back to single-image. SfM (poses)
+# still runs on CPU, which is enough to validate the wiring end-to-end.
+_ENABLE_COLMAP_IMAGE = os.getenv("YIIYA_ENABLE_COLMAP", "").strip().lower() in {"1", "true", "yes"}
+_base_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg")
     .pip_install_from_requirements("requirements.txt")
+)
+image = (
+    _base_image.apt_install("colmap").pip_install("pycolmap>=3.10", "open3d>=0.18")
+    if _ENABLE_COLMAP_IMAGE
+    else _base_image
 )
 app = modal.App(APP_NAME)
 
@@ -429,42 +441,105 @@ def select_multiview_keyframes(frames: list[str], count: int = 3) -> list[str]:
     return [frames[round(i * step)] for i in range(count)]
 
 
-def run_colmap_reconstruction(frames_dir: Path) -> tuple[str | None, list[str]]:
-    """SPIKE — real multi-view (COLMAP) reconstruction, flag-gated and inert by default.
+def run_colmap_reconstruction(
+    frames_dir: Path,
+    workspace: Path,
+    artifact_client: "ArtifactClient",
+    scan_id: str,
+) -> tuple[str | None, list[str]]:
+    """Real multi-view (COLMAP) reconstruction — flag-gated, inert by default.
 
-    This is scaffolding, not a shipped stage. Turning it on requires two things
-    that this worker build does NOT yet provide, both called out in the handoff:
+    Flow: incremental Structure-from-Motion recovers camera poses from the orbit
+    frames (pycolmap), dense patch-match stereo fuses them into a point cloud
+    (COLMAP, CUDA), and Poisson surface reconstruction (Open3D) turns that cloud
+    into a mesh, which is uploaded as the creator GLB. Every stage is wrapped:
+    any failure (too few registered images, no CUDA for dense, sparse cloud)
+    returns (None, reason) so the pipeline falls back to the single-image path.
 
-      1. COLMAP + pycolmap in the Modal image. The current image only apt-installs
-         ffmpeg (see `image` at the top of this file). COLMAP needs its own build
-         (or the `colmap` apt package on a CUDA base image) plus `pip install
-         pycolmap`.
-      2. On-device or worker-side segmentation of each frame to the object, since
-         camera_solve/dense_reconstruct degrade badly with cluttered backgrounds.
-
-    Until both exist, this returns (None, reason) so the pipeline cleanly falls
-    through to the single-image fal path — never a silent failure. Enable the
-    attempt with YIIYA_ENABLE_COLMAP=1 once the image is built.
+    Requires the COLMAP-enabled image and YIIYA_ENABLE_COLMAP=1 — see COLMAP.md.
+    Marked UNVERIFIED: authored against the documented pycolmap/Open3D APIs but
+    not run end-to-end here (needs the built image + a real orbit clip).
     """
-    if os.getenv("YIIYA_ENABLE_COLMAP", "").strip() not in {"1", "true", "yes"}:
+    if os.getenv("YIIYA_ENABLE_COLMAP", "").strip().lower() not in {"1", "true", "yes"}:
         return None, [
-            "COLMAP multi-view reconstruction is disabled (set YIIYA_ENABLE_COLMAP=1 after adding COLMAP + pycolmap to the Modal image)."
+            "COLMAP multi-view reconstruction is disabled (set YIIYA_ENABLE_COLMAP=1 on the COLMAP-enabled image — see COLMAP.md)."
         ]
 
     try:
-        import pycolmap  # type: ignore  # noqa: F401
-    except Exception:
+        import pycolmap  # type: ignore
+        import open3d as o3d  # type: ignore
+    except Exception as error:  # noqa: BLE001
         return None, [
-            "COLMAP was requested but pycolmap is not installed in the worker image; add it to requirements.txt and rebuild."
+            f"COLMAP requested but its libraries are missing from the image ({error}); rebuild with the COLMAP.md spec."
         ]
 
-    # Implementation placeholder: feature-extract → match → incremental SfM →
-    # dense (patch-match) → Poisson surface → texture bake. Deferred to the phase
-    # that ships the COLMAP-enabled image; return a clear reason for now.
-    _ = list(frames_dir.glob("frame-*.jpg"))
-    return None, [
-        "COLMAP pipeline is scaffolded but not yet implemented in this worker build; falling back to single-image mesh."
-    ]
+    frames = sorted(str(p) for p in frames_dir.glob("frame-*.jpg"))
+    if len(frames) < 8:
+        return None, [
+            f"COLMAP needs a solid orbit (~8+ frames); only {len(frames)} available. Fell back to single-image."
+        ]
+
+    warnings: list[str] = []
+    try:
+        colmap_dir = workspace / "colmap"
+        sparse_dir = colmap_dir / "sparse"
+        mvs_dir = colmap_dir / "dense"
+        sparse_dir.mkdir(parents=True, exist_ok=True)
+        mvs_dir.mkdir(parents=True, exist_ok=True)
+        database_path = colmap_dir / "database.db"
+
+        # ── Sparse SfM: features → exhaustive matching → incremental mapping ──
+        pycolmap.extract_features(database_path, frames_dir)
+        pycolmap.match_exhaustive(database_path)
+        maps = pycolmap.incremental_mapping(database_path, frames_dir, sparse_dir)
+        if not maps:
+            return None, ["COLMAP SfM registered no cameras (low texture / too few overlaps). Fell back."]
+        reconstruction = maps[0]
+        registered = reconstruction.num_reg_images()
+        if registered < max(6, len(frames) // 2):
+            warnings.append(
+                f"COLMAP registered only {registered}/{len(frames)} views; geometry may be partial."
+            )
+
+        # ── Dense MVS (CUDA COLMAP): undistort → patch-match → fusion ──────────
+        best_model = sparse_dir / "0"
+        pycolmap.undistort_images(mvs_dir, best_model, frames_dir)
+        pycolmap.patch_match_stereo(mvs_dir)  # requires a CUDA COLMAP build
+        fused_ply = mvs_dir / "fused.ply"
+        pycolmap.stereo_fusion(fused_ply, mvs_dir)
+
+        # ── Poisson surface reconstruction (Open3D) → GLB ─────────────────────
+        pcd = o3d.io.read_point_cloud(str(fused_ply))
+        if len(pcd.points) < 1000:
+            return None, [f"COLMAP dense cloud too sparse ({len(pcd.points)} pts). Fell back."]
+        pcd.estimate_normals()
+        mesh, _densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=9)
+        mesh.compute_vertex_normals()
+        colmap_glb = workspace / "colmap.glb"
+        o3d.io.write_triangle_mesh(str(colmap_glb), mesh)
+
+        # ── Upload so downstream packaging/exports see a URL like any provider ─
+        url = artifact_client.upload(
+            scan_id,
+            colmap_glb,
+            target="asset",
+            label="COLMAP reconstruction",
+            asset_kind="textured-mesh",
+            file_format="glb",
+            status="ready",
+            mime_type="model/gltf-binary",
+            metadata={"stage": "colmap", "registeredViews": registered},
+        )
+        if not url:
+            return None, ["COLMAP produced a mesh but the artifact upload failed. Fell back."]
+        warnings.append(
+            f"COLMAP multi-view reconstruction succeeded from {registered} views (dense Poisson mesh)."
+        )
+        return url, warnings
+    except Exception as error:  # noqa: BLE001 — any stage failing → clean fallback
+        return None, [
+            f"COLMAP reconstruction failed ({str(error)[:180]}); fell back to single-image mesh."
+        ]
 
 
 def run_fal_mesh_fallback(image_url: str) -> tuple[str | None, list[str]]:
@@ -631,7 +706,9 @@ def run_worker_pipeline(job: DispatchPayload) -> dict[str, Any]:
         # when an orbit clip supplied frames. Inert unless YIIYA_ENABLE_COLMAP=1
         # on a COLMAP-enabled image, so today it records why and falls back.
         if extracted_frames:
-            colmap_glb, colmap_warnings = run_colmap_reconstruction(workspace / "frames")
+            colmap_glb, colmap_warnings = run_colmap_reconstruction(
+                workspace / "frames", workspace, artifact_client, job.scan_id
+            )
             fallback_warnings.extend(colmap_warnings)
             if colmap_glb:
                 glb_url = colmap_glb
