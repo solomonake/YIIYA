@@ -1,0 +1,69 @@
+# =============================================================================
+# YIIYA reconstruction worker — COLMAP + CUDA container
+# =============================================================================
+# Portable image for the multi-view (orbit) reconstruction path. Use this to run
+# the worker on any container host WITH A GPU — Google Cloud Run (GPU), GKE, or a
+# GPU VM — as an alternative to Modal (Modal builds its own image inside
+# modal_app.py, so you do not need this file for the Modal path).
+#
+# THIS RUNS IN THE CLOUD, NOT ON YOUR LAPTOP. You *build* it once (locally or in
+# CI), *push* it to a registry (Google Artifact Registry / Docker Hub), and the
+# cloud host *runs* it on demand. Building locally does not run reconstruction on
+# your machine — it just bakes the environment. See DOCKER.md for the full story.
+#
+# Build (needs Docker + ~15-25 min the first time):
+#   docker build -f Dockerfile.colmap -t yiiya-reconstruction:colmap .
+# Push to Google Artifact Registry:
+#   docker tag yiiya-reconstruction:colmap REGION-docker.pkg.dev/PROJECT/REPO/yiiya-reconstruction:colmap
+#   docker push REGION-docker.pkg.dev/PROJECT/REPO/yiiya-reconstruction:colmap
+# =============================================================================
+
+# CUDA "devel" base so we can BUILD COLMAP with GPU (dense stereo) support.
+# 12.4.1 matches recent pycolmap wheels; ubuntu22.04 has the deps we need.
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- System + COLMAP build dependencies ------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git cmake ninja-build build-essential \
+      python3.11 python3-pip python3.11-venv \
+      ffmpeg \
+      libboost-program-options-dev libboost-graph-dev libboost-system-dev \
+      libeigen3-dev libflann-dev libfreeimage-dev libmetis-dev \
+      libgoogle-glog-dev libgtest-dev libsqlite3-dev libglew-dev \
+      libcgal-dev libceres-dev qtbase5-dev libqt5opengl5-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Build COLMAP with CUDA -------------------------------------------------
+# CMAKE_CUDA_ARCHITECTURES must match your GPU:
+#   75 = T4 (default here) · 86 = A10G · 89 = L4/L40S · 80 = A100
+# Cloud Run GPU today is L4 → set 89. Override at build time:
+#   docker build --build-arg CUDA_ARCH=89 ...
+ARG CUDA_ARCH=75
+RUN git clone --depth 1 https://github.com/colmap/colmap.git /opt/colmap \
+    && cmake -S /opt/colmap -B /opt/colmap/build -GNinja \
+         -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH} \
+         -DCMAKE_INSTALL_PREFIX=/usr/local \
+    && cmake --build /opt/colmap/build --target install \
+    && rm -rf /opt/colmap/build
+
+# --- Python deps ------------------------------------------------------------
+WORKDIR /app
+COPY requirements.txt .
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip \
+    && python3.11 -m pip install --no-cache-dir -r requirements.txt \
+    && python3.11 -m pip install --no-cache-dir "pycolmap>=3.10" "open3d>=0.18" \
+       "fastapi>=0.110" "uvicorn[standard]>=0.29"
+
+# --- Worker code ------------------------------------------------------------
+COPY . .
+
+# Flip the reconstruction path on inside the container.
+ENV YIIYA_ENABLE_COLMAP=1
+
+# Cloud Run sends requests to $PORT (default 8080). server.py is a thin HTTP
+# wrapper around run_worker_pipeline (see DOCKER.md for the ~25-line file).
+ENV PORT=8080
+EXPOSE 8080
+CMD ["python3.11", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
