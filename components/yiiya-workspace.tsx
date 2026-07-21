@@ -3,8 +3,9 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useYiiyaStore } from "@/lib/store";
+import { useYiiyaStore, type ReferenceImage } from "@/lib/store";
 import { useSpeechInterpreter } from "@/lib/use-speech-interpreter";
+import { PhoneCompanionOrbit } from "@/components/phone-companion-orbit";
 import type { GeneratedAsset } from "@/lib/interpret-pipeline";
 import { useSupabaseSession } from "@/lib/auth/use-session";
 import { useOpenAssetFromLibrary } from "@/lib/assets/open-from-library";
@@ -270,6 +271,33 @@ function LeftPanel({ open }: { open: boolean }) {
   const [clarifyReply, setClarifyReply] = useState("");
   const logsEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showPhoneOrbit, setShowPhoneOrbit] = useState(false);
+  // The "Orbit with phone" affordance only makes sense on the fixed-camera
+  // device (laptop/desktop). On a touch phone the user should just orbit here
+  // via /capture, so hide the companion button there.
+  const [canOrbitWithPhone, setCanOrbitWithPhone] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const coarse =
+      window.matchMedia?.("(pointer: coarse)").matches ||
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    setCanOrbitWithPhone(!coarse);
+  }, []);
+
+  // Phone finished its orbit and uploaded views: hydrate the reference image and
+  // fire the SAME proven trigger the on-device orbit uses (set the ref, flag
+  // ?autoGenerate=1, let the effect below submit). No bespoke generation path.
+  const handleCompanionReady = useCallback(
+    (ref: ReferenceImage) => {
+      setShowPhoneOrbit(false);
+      const url = new URL(window.location.href);
+      url.searchParams.set("autoGenerate", "1");
+      window.history.replaceState({}, "", url.toString());
+      setReferenceImage(ref);
+      useYiiyaStore.getState().addLog("[CAPTURE] Orbit received from phone — generating.");
+    },
+    [setReferenceImage]
+  );
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -584,6 +612,24 @@ function LeftPanel({ open }: { open: boolean }) {
           <div className="text-[9px] font-mono text-zinc-800 text-center">Drop or click — photo → 3D</div>
         )}
       </div>
+
+      {/* Orbit-with-phone: real geometry on a fixed-camera laptop. A single
+          webcam photo guesses the unseen sides; scanning a QR lets the phone do
+          the walk-around and ship 3 views back. */}
+      {canOrbitWithPhone && (
+        <button
+          onClick={() => setShowPhoneOrbit(true)}
+          className="mx-3 mb-2 w-[calc(100%-1.5rem)] rounded-sm border border-zinc-900 py-1.5 text-[9px] font-mono text-zinc-500 hover:border-zinc-700 hover:text-zinc-300 transition-colors"
+        >
+          📱 Orbit with phone — real 3D, not a guessed backside
+        </button>
+      )}
+      {showPhoneOrbit && (
+        <PhoneCompanionOrbit
+          onReady={handleCompanionReady}
+          onClose={() => setShowPhoneOrbit(false)}
+        />
+      )}
 
       {/* Hint / cancel bar */}
       <div className="px-3 pb-1 flex items-center justify-between">

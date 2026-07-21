@@ -10,6 +10,37 @@ export function isVercelBlobConfigured() {
 }
 
 /**
+ * Upload raw image bytes to Vercel Blob and return a durable public https URL.
+ * Accepts either raw base64 or a `data:<mime>;base64,...` data URL. Returns null
+ * when Blob isn't configured or the upload fails, so callers can degrade rather
+ * than throw. Used by the phone-companion capture route to host orbit views —
+ * the KV then stores only these URLs, never the bytes.
+ */
+export async function uploadImageToBlob(
+  base64: string,
+  mime = "image/png",
+  prefix = "capture"
+): Promise<string | null> {
+  if (!isVercelBlobConfigured()) return null;
+  try {
+    const payload = base64.startsWith("data:")
+      ? base64.slice(base64.indexOf(",") + 1)
+      : base64;
+    const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+    const name = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { put } = await import("@vercel/blob");
+    const blob = await put(name, Buffer.from(payload, "base64"), {
+      access: "public",
+      contentType: mime,
+      addRandomSuffix: false
+    });
+    return blob.url;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Download a GLB from a provider URL (typically an ephemeral HuggingFace
  * Space temp file) and re-host it on Vercel Blob so the URL persists past
  * the Space's tmpfs lifetime. Returns the durable URL, or the original on
