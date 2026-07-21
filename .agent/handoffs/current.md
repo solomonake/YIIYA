@@ -1,106 +1,127 @@
 # Current agent checkpoint
 
-Generated: 2026-07-20 (Codex public-readiness pass for Google SWE intern recruiting)
+Generated: 2026-07-21 (Claude session — realism phases 1-5, device-aware guided
+orbit, portable COLMAP Docker worker). **Next phase: phone-companion orbit (a).**
 
-## Current state
+> Read this + `git fetch origin` first. The local checkout goes stale silently.
+> Strategy source: `docs/PRODUCT_STRATEGY_2026-07.md`. Merge to `main`
+> auto-deploys to Vercel prod — re-confirm with the founder before each push.
 
-Public-readiness docs work is complete in the working tree:
+## State — what shipped this session (all on `main`, deployed)
 
-- Added a new root `README.md` that frames YIIYA as an AI 3D/CAD asset studio,
-  not a website builder.
-- Sanitized `.env.example` by replacing the real-looking exempt email with
-  `founder@example.com`.
-- Confirmed this worktree has no visible untracked duplicate files matching
-  `* 2.*`, including `page 2.tsx`-style files.
-- Confirmed `.env.local` is ignored by `.gitignore` and is not tracked.
-- Ran a tracked-file obvious-secret regex scan for common key/token shapes; no
-  matching files were found.
-- Checked tracked email-shaped strings after sanitization; only placeholders
-  and package-lock deprecation text remain.
+Commits `94005c4..2f7588e`:
 
-## Proof
+| Commit | Shipped |
+|--------|---------|
+| `a4d3080` | Realism phases 1-3 + free-first cost mode in the `/app` cascade (`lib/interpret-pipeline.ts`): TRELLIS 2048 textures for high-poly; opt-in fal-Hunyuan octree/steps knobs; `isPersonSubject()` face routing + a `[CAPTURE]` "use Orbit" tip; Rodin provider (opt-in `FAL_ENABLE_RODIN`); `YIIYA_FREE_FIRST=1` tries free HF/Tripo/Meshy before paid fal. |
+| `f234161` | Real pycolmap SfM→dense→Poisson reconstruction in the Modal worker (`services/reconstruction_worker/modal_app.py`), flag-gated `YIIYA_ENABLE_COLMAP`, fully guarded fallback. `COLMAP.md` spec. |
+| `2f7588e` | **Device-aware + guided orbit** (`app/capture/page.tsx`): orbit offered only on mobile (`pointer:coarse`/UA), device-correct camera facing, progress ring + directional coaching, explicit retry. Portable `Dockerfile.colmap` + `server.py` + `DOCKER.md` for Cloud Run GPU. |
 
-- `node -v` -> `v20.20.2`.
-- `npm install` completed and restored ignored `node_modules`; npm reported 57
-  dependency audit findings (42 moderate, 13 high, 2 critical). No audit fix was
-  run.
-- `bash scripts/agent-check.sh npm run typecheck` -> exit 0 in 7s.
-- `bash scripts/agent-check.sh npm run test` -> exit 0; 19 files / 83 tests
-  passed.
-- `git check-ignore -v .env.local` -> `.gitignore:28:.env*.local`.
+**Proof:** `tsc --noEmit` clean; 127/127 vitest; `modal_app.py`/`server.py`
+py_compile OK.
 
-## Public-readiness blockers
+**NOT verified (needs founder — device + credits):** live orbit visuals
+(ring/coaching), any generation quality delta, the Rodin/Hunyuan fal schemas,
+the trimesh repair (Modal-only), the COLMAP container (needs the built GPU
+image). All are gated/guarded so a wrong assumption degrades, never breaks the
+working single-image path.
 
-- Owner should review the README claims and decide whether screenshot/GIF
-  placeholders are acceptable for the first public version.
-- The live demo at `https://yiiya.vercel.app` was not reverified in this pass.
-- Dependency audit findings remain for a separate dependency-maintenance pass.
-- GitHub visibility, commit, push, deploy, and production provider runs remain
-  human-approval boundaries.
+## NEXT PHASE — Phone-companion orbit (option a)
 
-## Next exact action
+**Goal (falsifiable):** A laptop user clicks "Orbit with phone", scans a QR with
+their phone, walks around the object on the phone, and within ~10s the laptop
+`/app` auto-generates from the 3 orbit views — no app install, no cable.
 
-Review the new `README.md`; if the framing and placeholder screenshots are
-acceptable, commit `README.md` and `.env.example`, then switch the GitHub repo to
-public from GitHub settings.
+**Why this / evidence:** Founder's laptop demos can't orbit (fixed webcam), so
+recruiter demos are stuck on hallucinated single-image busts. This unlocks
+orbit-quality on the laptop, which is the recruiter story. Latency is NOT a
+blocker: nothing is streamed — the phone does the orbit + segmentation locally
+and only uploads 3 finished PNGs; the laptop polls. Seconds, not real-time.
 
----
+### Design (grounded in existing primitives)
 
-Generated: 2026-07-20 (claude session — round 5: handoff-truth + capture fix, pushed to `main`)
+```
+Laptop /app  ──"Orbit with phone"──►  create session id  ──►  show QR of
+   │                                                     yiiya.app/capture?session=<id>
+   │  polls GET /api/capture-session/<id> every 2s
+   ▼
+Phone opens that URL  ──►  existing /capture orbit flow runs (already built!)
+   │  on success, instead of router.push, POST the 3 views to the session
+   ▼
+POST /api/capture-session/<id>  stores {front,left,back} view URLs (+status=ready)
+   ▼
+Laptop poll returns ready  ──►  setReferenceImage({...additionalViews})  ──►
+   router.push("/app?autoGenerate=1")   (this path ALREADY works — workspace
+   consumes it at components/yiiya-workspace.tsx:860)
+```
 
-## State
+### Exact build list
 
-**Round 5 is pushed to `main`** (5 commits, `2d0b7b9..8af71fb` → Vercel prod
-deploy). Driven by founder live screenshots (white-silhouette captures) and
-the round-3/4 checkpoint. Strategy source is still
-`docs/PRODUCT_STRATEGY_2026-07.md`.
+1. **Session store** — use Upstash Redis (already wired: `@upstash/redis`, see
+   `lib/security/rate-limit.ts:20-45` for the client pattern). New
+   `lib/capture-session.ts`: `createSession()` → random id, `putSession(id,
+   data)`, `getSession(id)`. TTL ~600s. Store `{ status: "pending"|"ready",
+   views: string[] }` (blob URLs, not base64 — keep the KV small).
+2. **API routes** (mirror `app/api/scan/jobs/route.ts` shape):
+   - `POST /api/capture-session` → `{ id }`.
+   - `GET  /api/capture-session/[id]` → `{ status, views }` (laptop polls).
+   - `POST /api/capture-session/[id]` → phone submits view URLs (validate 3).
+3. **Phone upload**: in `app/capture/page.tsx` `handleOrbit`, when a
+   `?session=<id>` param is present AND `usable>=3`, upload the 3 view PNGs to
+   Blob (reuse the `put` pattern from `lib/interpret-pipeline.ts:579
+   uploadImageToBlob` — may need a small `/api/capture-session/[id]/upload` or
+   client-side `@vercel/blob` upload), then POST the URLs to the session and show
+   "Sent to your laptop ✓" instead of navigating.
+4. **Laptop UI**: in `components/yiiya-workspace.tsx` (desktop reference-drop
+   area ~line 541-565), add an "Orbit with phone" button → creates a session,
+   renders a QR (add `qrcode` dep or a tiny inline SVG QR — prefer a lib), polls,
+   and on `ready` fetches the view URLs → base64 → `setReferenceImage({...
+   additionalViews})` → `router.push("/app?autoGenerate=1")`.
+5. Reuse `app/capture/page.tsx`'s `isMobile` gate so the laptop-only button and
+   phone-only submit behavior are correct.
 
-| Commit | Shipped | Root cause found |
-|--------|---------|------------------|
-| `2d0b7b9` | Real GLB inspection (`lib/scene/glb-inspect.ts`) + destination-aware readiness (`lib/scene/readiness.ts`) | `validateGlbUrl` skipped non-indexed primitives (degenerate check never ran) and silently PASSED any GLB whose JSON chunk overflowed its fixed 32KB range |
-| `77c538a` | Removed all 35 `@ts-nocheck`; deleted `project-persistence.ts` + `timeline-snapshots.ts` (0 importers, broken since pivot); CI guard `scripts/check-no-ts-nocheck.mjs` wired into `npm run typecheck` | 33/35 pragmas suppressed nothing; the 2 real ones hid dead pre-pivot code. NOTE: `supabase-projects.ts`, `lib/brief/*`, `lib/cursor/*`, `lib/critic/*`, `lib/agent/*`, `lib/memory/*` are listed as dead-code candidates in older docs but ARE imported — do not delete on the strength of that list |
-| `3d74d6d` | Honest readiness in the tray ("62% preview") replacing the fabricated "watertight" label; readiness threaded through `runPackager` | `isWatertight: tier !== "fallback"` asserted watertightness from which provider answered; stream route hardcoded `true` |
-| `f063f8c` | **Capture polarity fix** — tapped object kept in full colour (`lib/vision/mask-region.ts`) | `segment.ts` assumed MediaPipe category mask `>0` = object; production polarity is REVERSED, so the object was painted white and the background kept → white-silhouette cutouts → white 3D blobs, and orbit tracked the background centroid. Polarity now decided per tap (5x5 vote at the tap point, smaller-class tiebreak) so a future MediaPipe/delegate flip cannot re-break it |
-| `8af71fb` | **Multi-object capture** — tap up to 4 objects, removable chips, "N objects → N generations" pricing, sequential queue in the workspace that stops on first failure | single `referenceImage` slot forced one object per capture |
+### Acceptance criteria
 
-**Proof:** `tsc --noEmit` clean (whole repo — zero `@ts-nocheck` remain, guard
-enforces it); 127/127 vitest; `/capture` + `/app` compile, render, zero console
-errors in dev browser. `/capture` requests camera and degrades correctly when
-denied.
+- [ ] Laptop shows a scannable QR; phone opens straight into the orbit flow.
+- [ ] Phone orbit success → laptop auto-generates within ~10s, mesh has real
+      geometry (front/left/back), not a guessed backside.
+- [ ] Session expires cleanly; a stale/invalid id shows a friendly "expired, retry".
+- [ ] No base64 in Redis (URLs only); no secrets in the QR URL beyond the opaque id.
+- [ ] Single-image + mobile-native orbit paths untouched.
 
-## NOT verified (needs the founder — phone + provider credits)
+### First executable action
 
-This is the top of the next session's list, in order:
+Create `lib/capture-session.ts` with `createSession/getSession/putSession` over
+Upstash (copy the redis() lazy-init from `lib/security/rate-limit.ts:42-45`),
+plus a unit test in `lib/capture-session.test.ts`. Then the three API routes.
+Build UI last so the data path is proven first.
 
-1. **Live capture test on the deployed app** (the whole round hinges on this):
-   phone → `/capture` → tap ONE object → the preview chip must show the object
-   **in its real colours on white** (not a white silhouette). Then Generate:
-   the mesh should carry colour/likeness. Compare against the founder's
-   2026-07-20 screenshots (white bust / white AirPods case).
-2. **Multi-object**: tap 2-3 objects → chips accumulate → button reads
-   "N objects → 3D (N generations)" → studio generates them sequentially with
-   `[CAPTURE]` logs between; a failure stops the queue with a skip log.
-3. **Orbit** after the fix: tracking should now hold the OBJECT centroid, so
-   walk-arounds should degrade less often to "Only N/3 views tracked".
-4. Tray now shows measured readiness ("NN% preview/handoff") instead of
-   "watertight" — sanity-check it on a fresh generation.
+## Human boundaries — what only the founder can do
 
-## Still open from earlier sessions
+- **Env before this works live:** `HUGGINGFACE_TOKEN` (free path), verify Rodin
+  in fal playground → `FAL_ENABLE_RODIN=1`. Upstash keys already set (rate-limit
+  uses them). Blob token already set.
+- **Device testing:** every capture/orbit change needs a real phone + laptop; the
+  agent cannot drive a camera.
+- **Provider credits:** any live generation-quality check spends fal credits.
+- **Modal/COLMAP:** deploying the reconstruction worker + building the CUDA image
+  (see `COLMAP.md` / `DOCKER.md`) is founder infra work.
 
-- Roadmap #8 `.usdz`: blocked on infra, not code. `usdzconvert` cannot run on
-  Vercel serverless; the real path is a small converter worker (Modal, next to
-  the existing `services/reconstruction_worker` + `services/cad_worker`)
-  exposing `POST /usdz-from-glb`, then set `USDZ_CONVERTER_URL` (missing from
-  `.env.example` — add it when wiring). Reality Converter remains the manual
-  fallback and the in-app copy already says so.
-- #9 Shopify AR (founder decision), Phase 10b generation queue (Supabase
-  migration), Meshy retexture PR #14 (needs funded `MESHY_API_KEY`).
-- Scan platform still unreachable from `/app` — clarify purpose with founder.
+## Backlog (after phone-companion)
+
+- (b) Fast-preview tier: show a low-texture mesh from the first provider in ~15s,
+  hot-swap the 2K version — perceived-speed win. Cascade already returns the
+  first valid mesh; add a "fast tier first" ordering.
+- (c) `/app` workspace responsive/UX overhaul (mobile log panel, touch targets) —
+  `components/yiiya-workspace.tsx`, the untouched large surface.
+- `.usdz` converter worker (blocked on infra, not code — see prior notes).
+- Frame segmentation before COLMAP SfM (rembg/SAM) for cluttered backgrounds.
 
 ## Operating notes that still hold
 
-Machine-load triage before code triage (`uptime` first; serialize tsc/vitest;
-never broad-pkill); dev server restart + hard reload before trusting in-page
-verification; `tsc --noEmit` + `vitest run` are the real local gates; only
-deployed envs can generate (local provider keys empty). Merge to `main`
-auto-deploys — re-confirm with the founder before each merge batch.
+Machine-load triage before code triage (`uptime` first; this session ran at load
+~16 — serialize tsc/vitest, never run them in parallel). `tsc --noEmit` +
+`vitest run` are the real local gates. Only deployed envs generate (local
+provider keys empty). On-device MediaPipe segmentation runs in the browser, not
+the server. Capture/orbit changes are camera-gated → verify on a real device and
+report the gap; do not claim live-verified without one.
