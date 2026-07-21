@@ -318,6 +318,53 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2))
 
 
+def repair_mesh_for_print(mesh: Any) -> dict[str, Any]:
+    """Best-effort watertight repair so the print STL survives a slicer.
+
+    Every step is defensive: trimesh's API drifts across versions and some
+    repairs raise on pathological input, so each is wrapped and the log records
+    exactly what ran. The point is honesty — the caller reports the *post-repair*
+    watertight status, never an aspirational one. No external service, no cost:
+    trimesh (already a dependency) does the whole pass locally.
+    """
+    import trimesh
+
+    steps: list[dict[str, Any]] = []
+    before = bool(getattr(mesh, "is_watertight", False))
+
+    def attempt(label: str, fn) -> None:
+        try:
+            fn()
+            steps.append({"step": label, "ran": True})
+        except Exception as error:  # noqa: BLE001 — repairs are best-effort
+            steps.append({"step": label, "ran": False, "error": str(error)[:200]})
+
+    # Weld coincident vertices, then drop degenerate/duplicate/unreferenced faces
+    # so downstream normal/winding fixes operate on clean topology.
+    attempt("merge_vertices", lambda: mesh.merge_vertices())
+    attempt("remove_infinite_values", lambda: mesh.remove_infinite_values())
+    if hasattr(mesh, "update_faces") and hasattr(mesh, "nondegenerate_faces"):
+        attempt("drop_degenerate_faces", lambda: mesh.update_faces(mesh.nondegenerate_faces()))
+    if hasattr(mesh, "update_faces") and hasattr(mesh, "unique_faces"):
+        attempt("drop_duplicate_faces", lambda: mesh.update_faces(mesh.unique_faces()))
+    attempt("remove_unreferenced_vertices", lambda: mesh.remove_unreferenced_vertices())
+    # Consistent winding + outward normals, flip if the solid was inverted,
+    # then close remaining holes. fill_holes only succeeds on small gaps, which
+    # is exactly the single-image-mesh failure mode.
+    attempt("fix_winding", lambda: trimesh.repair.fix_winding(mesh))
+    attempt("fix_inversion", lambda: trimesh.repair.fix_inversion(mesh))
+    attempt("fix_normals", lambda: trimesh.repair.fix_normals(mesh))
+    attempt("fill_holes", lambda: trimesh.repair.fill_holes(mesh))
+
+    after = bool(getattr(mesh, "is_watertight", False))
+    return {
+        "watertightBefore": before,
+        "watertightAfter": after,
+        "repaired": after and not before,
+        "steps": steps,
+    }
+
+
 def convert_mesh_exports(glb_url: str, workspace: Path) -> dict[str, Any]:
     import trimesh
 
@@ -332,10 +379,14 @@ def convert_mesh_exports(glb_url: str, workspace: Path) -> dict[str, Any]:
     if mesh.is_empty:
         raise ValueError("Loaded fallback GLB did not contain mesh geometry.")
 
+    # OBJ keeps the raw creator geometry (DCC tools tolerate open meshes). The
+    # print STL gets a watertight-repair pass first, because a slicer will not.
     obj_export = mesh.export(file_type="obj")
     if isinstance(obj_export, bytes):
         obj_export = obj_export.decode("utf-8")
     obj_path.write_text(obj_export)
+
+    repair_report = repair_mesh_for_print(mesh)
 
     stl_export = mesh.export(file_type="stl")
     if isinstance(stl_export, str):
@@ -346,6 +397,8 @@ def convert_mesh_exports(glb_url: str, workspace: Path) -> dict[str, Any]:
         "triangleCount": int(len(mesh.faces)),
         "vertexCount": int(len(mesh.vertices)),
         "watertight": bool(mesh.is_watertight),
+        "printRepair": repair_report,
+        "printReady": bool(mesh.is_watertight),
         "bounds": mesh.bounds.tolist(),
         "extents": mesh.extents.tolist(),
         "volume": float(mesh.volume) if mesh.is_volume else None,
@@ -359,6 +412,59 @@ def convert_mesh_exports(glb_url: str, workspace: Path) -> dict[str, Any]:
         "geometry_report_path": str(geometry_report_path),
         "geometry_report": geometry_report,
     }
+
+
+def select_multiview_keyframes(frames: list[str], count: int = 3) -> list[str]:
+    """Pick `count` frames spread evenly across an orbit clip.
+
+    Feeding evenly-spaced views (front / side / back) to a multi-view stack is
+    what stops the reconstructor from hallucinating the unseen sides — the core
+    limitation of the current single-image path. Kept trivial and deterministic.
+    """
+    if not frames:
+        return []
+    if len(frames) <= count:
+        return list(frames)
+    step = (len(frames) - 1) / (count - 1)
+    return [frames[round(i * step)] for i in range(count)]
+
+
+def run_colmap_reconstruction(frames_dir: Path) -> tuple[str | None, list[str]]:
+    """SPIKE — real multi-view (COLMAP) reconstruction, flag-gated and inert by default.
+
+    This is scaffolding, not a shipped stage. Turning it on requires two things
+    that this worker build does NOT yet provide, both called out in the handoff:
+
+      1. COLMAP + pycolmap in the Modal image. The current image only apt-installs
+         ffmpeg (see `image` at the top of this file). COLMAP needs its own build
+         (or the `colmap` apt package on a CUDA base image) plus `pip install
+         pycolmap`.
+      2. On-device or worker-side segmentation of each frame to the object, since
+         camera_solve/dense_reconstruct degrade badly with cluttered backgrounds.
+
+    Until both exist, this returns (None, reason) so the pipeline cleanly falls
+    through to the single-image fal path — never a silent failure. Enable the
+    attempt with YIIYA_ENABLE_COLMAP=1 once the image is built.
+    """
+    if os.getenv("YIIYA_ENABLE_COLMAP", "").strip() not in {"1", "true", "yes"}:
+        return None, [
+            "COLMAP multi-view reconstruction is disabled (set YIIYA_ENABLE_COLMAP=1 after adding COLMAP + pycolmap to the Modal image)."
+        ]
+
+    try:
+        import pycolmap  # type: ignore  # noqa: F401
+    except Exception:
+        return None, [
+            "COLMAP was requested but pycolmap is not installed in the worker image; add it to requirements.txt and rebuild."
+        ]
+
+    # Implementation placeholder: feature-extract → match → incremental SfM →
+    # dense (patch-match) → Poisson surface → texture bake. Deferred to the phase
+    # that ships the COLMAP-enabled image; return a clear reason for now.
+    _ = list(frames_dir.glob("frame-*.jpg"))
+    return None, [
+        "COLMAP pipeline is scaffolded but not yet implemented in this worker build; falling back to single-image mesh."
+    ]
 
 
 def run_fal_mesh_fallback(image_url: str) -> tuple[str | None, list[str]]:
@@ -499,8 +605,8 @@ def run_worker_pipeline(job: DispatchPayload) -> dict[str, Any]:
             },
             {
                 "stage": "mesh_cleanup",
-                "status": "deferred",
-                "detail": "PyMeshLab/Open3D cleanup is not wired in this worker build yet.",
+                "status": "partial",
+                "detail": "A trimesh watertight-repair pass runs on the print STL during packaging (weld, drop degenerate/duplicate faces, fix winding/normals, fill small holes). Heavier PyMeshLab/Open3D remeshing is still deferred.",
             },
             {
                 "stage": "retopo_uv",
@@ -520,13 +626,26 @@ def run_worker_pipeline(job: DispatchPayload) -> dict[str, Any]:
         glb_url: str | None = None
         fallback_warnings: list[str] = []
         converted_exports: dict[str, Any] | None = None
-        if reference_image:
+
+        # Phase 5 spike: attempt real multi-view (COLMAP) reconstruction first
+        # when an orbit clip supplied frames. Inert unless YIIYA_ENABLE_COLMAP=1
+        # on a COLMAP-enabled image, so today it records why and falls back.
+        if extracted_frames:
+            colmap_glb, colmap_warnings = run_colmap_reconstruction(workspace / "frames")
+            fallback_warnings.extend(colmap_warnings)
+            if colmap_glb:
+                glb_url = colmap_glb
+
+        if not glb_url and reference_image:
             webhook.emit(stage_payload(job, "texturing", "appearance_bake", 0.93))
-            glb_url, fallback_warnings = run_fal_mesh_fallback(reference_image)
-        else:
-            fallback_warnings = [
+            fal_glb, fal_warnings = run_fal_mesh_fallback(reference_image)
+            fallback_warnings.extend(fal_warnings)
+            if fal_glb:
+                glb_url = fal_glb
+        elif not glb_url and not reference_image:
+            fallback_warnings.append(
                 "No preview image or extracted frame was available for the mesh fallback."
-            ]
+            )
 
         if glb_url:
             try:
