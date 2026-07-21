@@ -617,6 +617,8 @@ type GeneratorOutcome = {
   attempts: GeneratorAttempt[];
   /** Present only when a provider mesh passed inspection. */
   geometry?: GlbGeometry;
+  /** User-facing capture tips surfaced in the studio log (e.g. "use Orbit"). */
+  notes?: string[];
 };
 
 /**
@@ -914,7 +916,44 @@ async function generateViaStableFast3D(
   }
 }
 
-async function generateViaFalTrellis(refUrl: string): Promise<{ url: string | null; error: string | null }> {
+// ─── Quality knobs for the paid fal tiers ────────────────────────────────────
+// The free HF Spaces already scale texture/octree with polygonBudget; these
+// bring the paid fal providers to parity so a "high poly" hero asset (e.g. a
+// face) is textured at 2K and meshed at a higher octree instead of the provider
+// defaults. Each knob has an env override so credits can be tuned live.
+function falTextureSize(brief: ThreeDBrief): string {
+  const env = process.env.FAL_TEXTURE_SIZE?.trim();
+  if (env) return env;
+  return brief.polygonBudget === "high" ? "2048" : "1024";
+}
+
+// Extra fal-Hunyuan geometry knobs. These are OPT-IN via env only: the base
+// fal-ai/hunyuan3d/v2 path is the one that currently works in production, and we
+// won't risk it on field names we cannot verify without spending credits. Set
+// FAL_HUNYUAN_OCTREE / FAL_HUNYUAN_STEPS after confirming them in the fal
+// playground to raise geometric detail; empty = today's exact behavior.
+function falHunyuanExtraInput(): Record<string, number> {
+  const out: Record<string, number> = {};
+  const octreeEnv = Number(process.env.FAL_HUNYUAN_OCTREE);
+  const stepsEnv = Number(process.env.FAL_HUNYUAN_STEPS);
+  if (Number.isFinite(octreeEnv) && octreeEnv > 0) out.octree_resolution = octreeEnv;
+  if (Number.isFinite(stepsEnv) && stepsEnv > 0) out.num_inference_steps = stepsEnv;
+  return out;
+}
+
+// Subject-class detection. Faces are the hardest single-image case, so when the
+// subject is a person we (a) prefer photoreal-texture / face-tuned providers and
+// (b) nudge the user toward Orbit capture, which unlocks the multi-view path.
+// The analyst captions people as "male/female subject", and the tap flow labels
+// the object generically ("this object"), so we match both the object noun and
+// the description text with person cues.
+const PERSON_SUBJECT_RE =
+  /\b(person|people|human|male|female|face|head|bust|portrait|selfie|self[- ]?portrait|man|woman|boy|girl|guy|lady|character|figure|body|myself)\b/i;
+function isPersonSubject(brief: ThreeDBrief): boolean {
+  return PERSON_SUBJECT_RE.test(brief.primaryObject) || PERSON_SUBJECT_RE.test(brief.description ?? "");
+}
+
+async function generateViaFalTrellis(refUrl: string, brief: ThreeDBrief): Promise<{ url: string | null; error: string | null }> {
   try {
     const falKey = process.env.FAL_KEY;
     if (!falKey) return { url: null, error: "FAL_KEY not set (paid fallback skipped)" };
@@ -928,7 +967,7 @@ async function generateViaFalTrellis(refUrl: string): Promise<{ url: string | nu
     const result = await (fal.subscribe as (m: string, o: unknown) => Promise<FalResult>)(
       process.env.FAL_TRELLIS_MODEL ?? "fal-ai/trellis-2",
       {
-        input: { image_url: `data:${imgData.mediaType};base64,${imgData.base64}`, texture_size: "1024" },
+        input: { image_url: `data:${imgData.mediaType};base64,${imgData.base64}`, texture_size: falTextureSize(brief) },
         logs: false
       }
     );
@@ -966,7 +1005,12 @@ async function generateViaFalHunyuan(refUrl: string): Promise<{ url: string | nu
     const result = await (fal.subscribe as (m: string, o: unknown) => Promise<FalResult>)(
       process.env.FAL_HUNYUAN_MODEL ?? "fal-ai/hunyuan3d/v2",
       {
-        input: { input_image_url: dataUri, image_url: dataUri, textured_mesh: true },
+        input: {
+          input_image_url: dataUri,
+          image_url: dataUri,
+          textured_mesh: true,
+          ...falHunyuanExtraInput()
+        },
         logs: false
       }
     );
@@ -1019,6 +1063,45 @@ async function generateViaFalHunyuanMultiView(
   } catch (err) {
     const msg = errMessage(err);
     console.error("[FAL-HUNYUAN-MV]", msg);
+    return { url: null, error: msg.slice(0, 200) };
+  }
+}
+
+// fal Hyper3D Rodin — rated the strongest photoreal single-image reconstructor
+// in the 2026 field and the best fit for the hardest case (faces/busts). Paid
+// via fal credits; enabled only when FAL_KEY is set and preferred for person
+// subjects. Accepts a data URI, so it works for uploads and studio photos.
+async function generateViaFalRodin(refUrl: string, brief: ThreeDBrief): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) return { url: null, error: "FAL_KEY not set" };
+    const { fal } = await import("@fal-ai/client");
+    fal.config({ credentials: falKey });
+
+    const imgData = await fetchImageAsBase64(refUrl);
+    if (!imgData) return { url: null, error: "Reference image fetch failed" };
+    const dataUri = `data:${imgData.mediaType};base64,${imgData.base64}`;
+
+    type FalResult = { data?: { model_mesh?: { url?: string }; model_glb?: { url?: string } } };
+    const result = await (fal.subscribe as (m: string, o: unknown) => Promise<FalResult>)(
+      process.env.FAL_RODIN_MODEL ?? "fal-ai/hyper3d/rodin",
+      {
+        input: {
+          input_image_urls: [dataUri],
+          geometry_file_format: "glb",
+          material: "PBR",
+          quality: brief.polygonBudget === "high" ? "high" : "medium",
+          tier: "Regular"
+        },
+        logs: false
+      }
+    );
+    const url = result?.data?.model_mesh?.url ?? result?.data?.model_glb?.url ?? null;
+    if (!url) return { url: null, error: "fal rodin returned no GLB" };
+    return { url, error: null };
+  } catch (err) {
+    const msg = errMessage(err);
+    console.error("[FAL-RODIN]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
 }
@@ -1174,6 +1257,7 @@ const DEFAULT_PROVIDER_ORDER = [
   "fal-hunyuan-mv",
   "fal-hunyuan",
   "fal-trellis",
+  "fal-rodin",
   "tripo",
   "meshy",
   "hf-trellis2",
@@ -1181,6 +1265,40 @@ const DEFAULT_PROVIDER_ORDER = [
   "hf-hunyuan",
   "hf-stablefast",
   "hf-instantmesh"
+];
+
+// Free-first order (set YIIYA_FREE_FIRST=1): HF ZeroGPU Spaces — free with a
+// HuggingFace token — and the free monthly Tripo/Meshy tiers BEFORE any paid fal
+// credit. Slower and less reliable (ZeroGPU cold-starts), but $0 per generation.
+// MV stays first: it only fires when a walk-around supplied extra views, and is
+// harmless (skipped) otherwise.
+const FREE_FIRST_PROVIDER_ORDER = [
+  "fal-hunyuan-mv",
+  "hf-trellis2",
+  "hf-hunyuan",
+  "tripo",
+  "meshy",
+  "hf-trellis",
+  "hf-stablefast",
+  "hf-instantmesh",
+  "fal-hunyuan",
+  "fal-trellis",
+  "fal-rodin"
+];
+
+// Person/face subjects: multi-view first (best geometry when available), then
+// the face-tuned Rodin and photoreal-texture TRELLIS tiers before the general
+// object models. TRELLIS' Gaussian-splat textures read as the most photoreal
+// skin in the 2026 field, which is what "looks like me" hinges on.
+const PERSON_PROVIDER_ORDER = [
+  "fal-hunyuan-mv",
+  "fal-rodin",
+  "fal-trellis",
+  "hf-trellis2",
+  "fal-hunyuan",
+  "tripo",
+  "meshy",
+  "hf-hunyuan"
 ];
 
 async function runSpatialGenerator(
@@ -1192,10 +1310,12 @@ async function runSpatialGenerator(
   additionalViews?: Array<{ base64: string; mediaType: string }>
 ): Promise<GeneratorOutcome> {
   const attempts: GeneratorAttempt[] = [];
+  const notes: string[] = [];
   const placeholder = (): GeneratorOutcome => ({
     glbUrl: `/api/3d/placeholder?name=${encodeURIComponent(brief.primaryObject)}`,
     tier: "fallback",
-    attempts
+    attempts,
+    notes
   });
 
   // User upload → data URI fed directly to image-to-3D models (never re-imagined
@@ -1227,6 +1347,10 @@ async function runSpatialGenerator(
   };
 
   const hasFal = Boolean(process.env.FAL_KEY);
+  // Rodin is opt-in: its fal schema is unverified here, so we don't route to it
+  // (and risk a wasted 120s attempt) until the founder confirms it works and
+  // flips FAL_ENABLE_RODIN=1. Listing it in the person order is harmless while off.
+  const rodinEnabled = process.env.FAL_ENABLE_RODIN === "1" || process.env.FAL_ENABLE_RODIN === "true";
   // A user-supplied HF token (Settings → "Use your own HuggingFace token")
   // unlocks that user's own free ZeroGPU quota instead of the shared
   // server-side one, so HF providers stay enabled even without a server
@@ -1251,7 +1375,8 @@ async function runSpatialGenerator(
       run: () => generateViaFalHunyuanMultiView(mvViews!.front, mvViews!.left, mvViews!.back)
     },
     "fal-hunyuan": { name: "hunyuan3d (fal)", tier: "hunyuan3d", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalHunyuan(inputRef) },
-    "fal-trellis": { name: "trellis-2 (fal)", tier: "trellis", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalTrellis(inputRef) },
+    "fal-trellis": { name: "trellis-2 (fal)", tier: "trellis", enabled: hasFal, timeoutMs: 95_000, run: () => generateViaFalTrellis(inputRef, brief) },
+    "fal-rodin": { name: "rodin (fal)", tier: "hunyuan3d", enabled: hasFal && rodinEnabled, timeoutMs: 120_000, run: () => generateViaFalRodin(inputRef, brief) },
     "tripo": { name: "tripo", tier: "trellis", enabled: Boolean(process.env.TRIPO_API_KEY), timeoutMs: 95_000, run: () => needsUrl(generateViaTripo) },
     "meshy": { name: "meshy", tier: "hunyuan3d", enabled: Boolean(process.env.MESHY_API_KEY), timeoutMs: 125_000, run: () => needsUrl(generateViaMeshy) },
     "hf-trellis2": { name: "trellis-2 (hf official)", tier: "trellis", enabled: hasHf, timeoutMs: 120_000, run: () => generateViaTrellis2Official(inputRef, brief, userHfToken) },
@@ -1261,7 +1386,26 @@ async function runSpatialGenerator(
     "hf-instantmesh": { name: "instantmesh (hf)", tier: "library", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaInstantMesh(inputRef, userHfToken) }
   };
 
-  const order = (process.env.YIIYA_PROVIDER_ORDER?.split(",").map((s) => s.trim()).filter(Boolean)) ?? DEFAULT_PROVIDER_ORDER;
+  // Order precedence: explicit env override > person/face tuning > free-first
+  // cost mode > default. A person captured from a single photo also gets a
+  // capture tip, since Orbit is what unlocks the far better multi-view path.
+  const explicitOrder = process.env.YIIYA_PROVIDER_ORDER?.split(",").map((s) => s.trim()).filter(Boolean);
+  const freeFirst = process.env.YIIYA_FREE_FIRST === "1" || process.env.YIIYA_FREE_FIRST === "true";
+  const person = isPersonSubject(brief);
+  const order =
+    explicitOrder && explicitOrder.length > 0
+      ? explicitOrder
+      : person
+        ? PERSON_PROVIDER_ORDER
+        : freeFirst
+          ? FREE_FIRST_PROVIDER_ORDER
+          : DEFAULT_PROVIDER_ORDER;
+
+  if (person && userImageBase64 && !mvViews) {
+    notes.push(
+      "Face captured from a single photo — the sides and back are estimated, so the likeness is rough. For a much stronger result, use Orbit capture (walk around yourself) so the multi-view reconstructor can run."
+    );
+  }
 
   // Hard overall deadline (under the 300s function cap) so the whole cascade is
   // guaranteed to terminate even if several providers each crawl to timeout.
@@ -1311,7 +1455,7 @@ async function runSpatialGenerator(
         mirror.mirrored || !isAllowedProviderUrl(mirror.url)
           ? mirror.url
           : `/api/3d/proxy?src=${encodeURIComponent(mirror.url)}`;
-      return { glbUrl, tier: entry.tier, attempts, geometry: v.geometry };
+      return { glbUrl, tier: entry.tier, attempts, geometry: v.geometry, notes };
     } else {
       recordCircuit(key, false);
       console.log(`[GENERATOR] ${entry.name} GLB invalid: ${v.reason}`);
@@ -1503,7 +1647,7 @@ export async function* runInterpretPipeline(
 
       yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) — Hunyuan3D / TRELLIS / Tripo / Meshy cascade…`, progress: 0.1 + 0.6 * (i / slots.length) };
 
-      const { glbUrl, tier, attempts, geometry } = await runSpatialGenerator(
+      const { glbUrl, tier, attempts, geometry, notes } = await runSpatialGenerator(
         slotBrief,
         groundingResult,
         body.referenceImage?.base64 ?? null,
@@ -1511,6 +1655,9 @@ export async function* runInterpretPipeline(
         body.userHfToken,
         body.referenceImage?.additionalViews
       );
+      for (const note of notes ?? []) {
+        yield { type: "generating", log: `[CAPTURE] ${note}`, progress: 0.72 };
+      }
       for (const attempt of attempts) {
         if (!attempt.ok && attempt.error) {
           yield { type: "generating", log: `[GENERATOR ERROR] ${attempt.provider}: ${attempt.error}`, progress: 0.75 };
