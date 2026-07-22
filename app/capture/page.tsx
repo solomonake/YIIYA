@@ -6,7 +6,14 @@ import { useYiiyaStore } from "@/lib/store";
 import { segmentAtPoint, type SegmentResult } from "@/lib/vision/segment";
 import { recordClip, clipToMultiViewFrames } from "@/lib/vision/video-frames";
 
-type Status = "starting" | "ready" | "segmenting" | "recording" | "extracting" | "error";
+type Status =
+  | "starting"
+  | "ready"
+  | "segmenting"
+  | "recording"
+  | "extracting"
+  | "sending"
+  | "error";
 
 const ORBIT_MS = 6000;
 
@@ -49,6 +56,14 @@ export default function CapturePage() {
   const [notice, setNotice] = useState<string | null>(null);
   /** True for touch phones/tablets — gates the orbit affordance. */
   const [isMobile, setIsMobile] = useState(false);
+  /**
+   * When present, this phone is acting as an orbit companion for a laptop that
+   * scanned its QR (`/capture?session=<id>`). A successful orbit ships its views
+   * to that session instead of navigating locally.
+   */
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  /** Set once the 3 orbit views have been handed off to the paired laptop. */
+  const [companionSent, setCompanionSent] = useState(false);
   /** 0→1 progress through the orbit recording, for the ring + coaching. */
   const [orbitPct, setOrbitPct] = useState(0);
   /** Set after a partial orbit so we can offer an explicit "record again". */
@@ -68,6 +83,11 @@ export default function CapturePage() {
       (window.matchMedia?.("(pointer: coarse)").matches ||
         /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
     setIsMobile(Boolean(coarse));
+
+    // Companion mode: a laptop showing a QR links its session id here. Read it
+    // client-side (avoids the useSearchParams prerender/Suspense constraint).
+    const linkedSession = new URLSearchParams(window.location.search).get("session");
+    if (linkedSession) setSessionId(linkedSession);
 
     navigator.mediaDevices
       .getUserMedia({
@@ -184,6 +204,39 @@ export default function CapturePage() {
       const { views, usable } = await clipToMultiViewFrames(clip, tap.x, tap.y);
 
       if (usable >= 3) {
+        // Companion mode: ship the 3 views to the paired laptop's session and
+        // stop here — this phone has no workspace to drive.
+        if (sessionId) {
+          setStatus("sending");
+          try {
+            const res = await fetch(`/api/capture-session/${sessionId}`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                images: [views[0], views[1], views[2]].map((v) => ({
+                  base64: v.base64,
+                  mediaType: "image/png"
+                }))
+              })
+            });
+            if (!res.ok) {
+              const body = (await res.json().catch(() => null)) as { error?: string } | null;
+              throw new Error(
+                res.status === 404
+                  ? "This link expired. Ask your laptop to show a fresh QR."
+                  : body?.error ?? "Couldn't reach your laptop."
+              );
+            }
+            setCompanionSent(true);
+            setStatus("ready");
+          } catch (err) {
+            setStatus("ready");
+            setOrbitRetryable(true);
+            setError(err instanceof Error ? err.message : "Couldn't send to your laptop.");
+          }
+          return;
+        }
+
         useYiiyaStore.getState().setReferenceImage({
           base64: views[0].base64,
           mediaType: "image/png",
@@ -210,14 +263,16 @@ export default function CapturePage() {
       setStatus("ready");
       setError(err instanceof Error ? err.message : "Orbit capture failed — the photo still works.");
     }
-  }, [preview, cutouts.length, router]);
+  }, [preview, cutouts.length, router, sessionId]);
 
-  const busy = status === "recording" || status === "extracting";
+  const busy = status === "recording" || status === "extracting" || status === "sending";
 
   return (
     <div className="min-h-screen bg-black text-zinc-300 flex flex-col">
       <div className="px-4 py-3 border-b border-zinc-900 flex items-center justify-between shrink-0">
-        <span className="text-[10px] font-mono text-zinc-500 tracking-widest">YIIYA · CAPTURE</span>
+        <span className="text-[10px] font-mono text-zinc-500 tracking-widest">
+          YIIYA · CAPTURE{sessionId ? " · LINKED TO LAPTOP" : ""}
+        </span>
         <button
           onClick={() => router.push("/app")}
           className="text-[10px] font-mono text-zinc-500 hover:text-zinc-200"
@@ -258,6 +313,32 @@ export default function CapturePage() {
         {status === "extracting" && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[11px] font-mono text-amber-400">
             Extracting front, side &amp; back from your orbit…
+          </div>
+        )}
+        {status === "sending" && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[11px] font-mono text-amber-400">
+            Sending your orbit to your laptop…
+          </div>
+        )}
+        {companionSent && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 text-center px-8">
+            <span className="text-emerald-400 text-2xl">✓</span>
+            <span className="text-emerald-300 text-[13px] font-mono">Sent to your laptop</span>
+            <span className="text-zinc-500 text-[10px] font-mono max-w-[80%]">
+              Check your computer — it&apos;s generating your 3D model from the orbit now.
+            </span>
+            <button
+              onClick={() => {
+                setCompanionSent(false);
+                setCutouts([]);
+                setNotice(null);
+                setOrbitRetryable(false);
+                setError(null);
+              }}
+              className="mt-2 px-4 py-2 border border-zinc-800 rounded-sm text-[10px] font-mono text-zinc-400 hover:text-zinc-100"
+            >
+              Capture another
+            </button>
           </div>
         )}
         {status === "error" && error && (
@@ -326,10 +407,14 @@ export default function CapturePage() {
                 className="w-full py-2.5 bg-amber-400 text-black rounded-sm text-[10px] font-mono hover:bg-amber-300 transition-colors disabled:opacity-50"
               >
                 {busy
-                  ? "Capturing orbit…"
+                  ? status === "sending"
+                    ? "Sending to laptop…"
+                    : "Capturing orbit…"
                   : orbitRetryable
                     ? "Record orbit again — slower this time"
-                    : "Orbit for real 3D (walk around it)"}
+                    : sessionId
+                      ? "Orbit → send to my laptop (walk around it)"
+                      : "Orbit for real 3D (walk around it)"}
               </button>
             )}
             {cutouts.length === 1 && !isMobile && (

@@ -1,11 +1,16 @@
 # Current agent checkpoint
 
-Generated: 2026-07-21 (Claude session — realism phases 1-5, device-aware guided
-orbit, portable COLMAP Docker worker). **Next phase: phone-companion orbit (a).**
+Generated: 2026-07-21 (Claude session — **phone-companion orbit (a) built on
+branch `feat/phone-companion-orbit`, NOT merged**). **Next phase: fast-preview
+tier (b) or `/app` UX overhaul (c) — founder's call.**
 
 > Read this + `git fetch origin` first. The local checkout goes stale silently.
 > Strategy source: `docs/PRODUCT_STRATEGY_2026-07.md`. Merge to `main`
 > auto-deploys to Vercel prod — re-confirm with the founder before each push.
+>
+> **Uncommitted-to-main:** phone-companion orbit lives on branch
+> `feat/phone-companion-orbit` (commit `b037ea8`), awaiting founder review before
+> merge/push. `git checkout feat/phone-companion-orbit` to continue it.
 
 ## State — what shipped this session (all on `main`, deployed)
 
@@ -26,7 +31,47 @@ the trimesh repair (Modal-only), the COLMAP container (needs the built GPU
 image). All are gated/guarded so a wrong assumption degrades, never breaks the
 working single-image path.
 
-## NEXT PHASE — Phone-companion orbit (option a)
+## SHIPPED (on branch, not merged) — Phone-companion orbit (option a)
+
+Branch `feat/phone-companion-orbit`, commit `b037ea8`. Awaiting founder merge.
+
+**What was built (exactly the design below):**
+- `lib/capture-session.ts` — Upstash-backed session store (`createSession`,
+  `getSession`, `putSession`, `submitSessionViews`), 600s TTL, in-memory
+  dev/test fallback. URLs only in KV, never base64. Tests:
+  `lib/capture-session.test.ts` (9) + `lib/capture-session-route.test.ts` (5).
+- `app/api/capture-session/route.ts` (POST create → `{id, captureUrl}`) and
+  `app/api/capture-session/[id]/route.ts` (GET poll → `{status, views}`, 404 on
+  expiry; POST submit accepts hosted URLs OR base64 frames hosted server-side).
+- `lib/vercel-blob.ts` — added reusable `uploadImageToBlob()`.
+- `app/capture/page.tsx` — companion mode: `?session=<id>` diverts a successful
+  orbit to the session ("Sent to your laptop ✓") instead of local navigation;
+  header shows "· LINKED TO LAPTOP".
+- `components/phone-companion-orbit.tsx` + `components/yiiya-workspace.tsx` —
+  laptop-only "📱 Orbit with phone" button (below the ref drop zone) → QR modal
+  (`qrcode.react` dep added) → polls every 2s → hydrates views → sets a
+  multi-view `ReferenceImage` → fires the SAME `?autoGenerate=1` path.
+
+**Acceptance criteria — status:**
+- [x] Laptop shows a scannable QR; phone opens straight into the orbit flow
+      (LINKED banner + companion submit wired).
+- [x] Data path proven end-to-end LIVE (dev server): laptop button → QR modal →
+      simulated phone submit → laptop detected ready → set `orbit-front.png`
+      (+additionalViews) → fired the generation cascade. Stopped at "No 3D
+      provider configured" — expected locally.
+- [x] Session expires cleanly; stale/invalid id → 404 → friendly retry.
+- [x] URLs only in Redis; QR carries only the opaque id.
+- [x] Single-image + mobile-native orbit paths untouched.
+
+**Proof:** `tsc --noEmit` clean; `next lint` clean; **141/141 vitest** (was 127).
+
+**NOT verified (needs founder — device + credits):** real phone-camera orbit
+(camera-gated), the resulting mesh quality on a deployed env, and the
+base64→Blob submit path (needs `BLOB_READ_WRITE_TOKEN`; the hosted-URL submit
+shape is what the live test used). Upstash keys must be set in prod so sessions
+survive across serverless instances (the in-memory fallback is single-process).
+
+## (superseded design notes — Phone-companion orbit)
 
 **Goal (falsifiable):** A laptop user clicks "Orbit with phone", scans a QR with
 their phone, walks around the object on the phone, and within ~10s the laptop
