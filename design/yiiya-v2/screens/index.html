@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YIIYA v2 — screen and state gallery</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin: 0; background: var(--yi-bg-app); color: var(--yi-text-primary); font-family: var(--yi-font-family-sans); font-size: 16px; line-height: 1.5; }
+  header.top { position: sticky; top: 0; z-index: 5; background: var(--yi-bg-panel); border-bottom: 1px solid var(--yi-border-subtle); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  h1 { font-size: 20px; margin: 0 12px 0 0; }
+  .ctrl { display: flex; gap: 8px; align-items: center; font-size: 14px; flex-wrap: wrap; }
+  select, input[type=search] { min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--yi-border-control); background: var(--yi-bg-sunken); color: inherit; font: inherit; font-size: 14px; }
+  label.bp { display: inline-flex; gap: 6px; align-items: center; min-height: 36px; }
+  main { padding: 16px; max-width: 1600px; margin: 0 auto; }
+  .intro { color: var(--yi-text-secondary); font-size: 14px; max-width: 90ch; margin: 0 0 16px; }
+  .intro a, header a { color: var(--yi-accent-text); }
+  h2 { font-size: 18px; margin: 28px 0 12px; padding-top: 8px; border-top: 1px solid var(--yi-border-subtle); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
+  .card { background: var(--yi-bg-panel); border: 1px solid var(--yi-border-subtle); border-radius: 14px; padding: 12px; display: grid; gap: 10px; }
+  .card h3 { font-size: 15px; margin: 0; }
+  .card .meta { font-size: 13px; color: var(--yi-text-secondary); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .shots { display: flex; gap: 8px; align-items: flex-start; overflow-x: auto; }
+  .shot { margin: 0; flex: none; }
+  .shot a { display: block; border-radius: 8px; overflow: hidden; border: 1px solid var(--yi-border-subtle); background: var(--yi-bg-sunken); }
+  .shot img { display: block; height: 220px; width: auto; }
+  .shot figcaption { font-size: 12px; color: var(--yi-text-muted); margin-top: 4px; }
+  .missing { height: 220px; width: 140px; display: grid; place-items: center; font-size: 12px; color: var(--yi-text-muted); text-align: center; padding: 8px; }
+  .links { display: flex; gap: 12px; font-size: 13px; flex-wrap: wrap; }
+  .links a { color: var(--yi-accent-text); }
+  .pill { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--yi-bg-raised); border: 1px solid var(--yi-border-subtle); }
+  .pill.future { background: var(--yi-status-future-bg); color: var(--yi-status-future); border: 0; }
+  .count { font-size: 14px; color: var(--yi-text-secondary); }
+  :focus-visible { outline: 2px solid var(--yi-focus-ring); outline-offset: 2px; }
+  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } .shot img { height: 180px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Screen &amp; state gallery</h1>
+  <div class="ctrl">
+    <label for="f-surface" class="sr">Surface</label>
+    <select id="f-surface"><option value="">All surfaces</option></select>
+    <label for="f-q" class="sr">Search</label>
+    <input id="f-q" type="search" placeholder="Search states">
+    <span>Breakpoints:</span>
+    <label class="bp"><input type="checkbox" value="d" checked> Desktop 1440</label>
+    <label class="bp"><input type="checkbox" value="t" checked> Tablet 768</label>
+    <label class="bp"><input type="checkbox" value="p" checked> Phone 390</label>
+  </div>
+  <span class="count" id="count" role="status"></span>
+</header>
+<main>
+  <p class="intro">Every state below is a live, editable prototype state (HTML/CSS/JS in <code>../prototype/</code>), deep-linked by scenario id. Thumbnails are exact-size headless-Chrome captures (<code>scripts/capture-screens.mjs</code>); open <strong>Live</strong> to interact. Example content and simulated outcomes only. See also: <a href="directions.html">three visual directions</a> · <a href="../README.md">README</a> · current-product screenshots in <a href="current/">current/</a>. A “Proposed” pill marks states that show unbuilt (P1/P2) capability.</p>
+  <div id="out"></div>
+</main>
+<script>window.YI = { STEP_LABELS: { preparing: "Preparing", queued: "Waiting for a free GPU", generating: "Generating 3D model", validating: "Checking the file" }, FAILURES: {}, PART_LABEL: {} };</script>
+<script src="../prototype/scenarios.js"></script>
+<script>
+  const SC = window.YI.SCENARIOS;
+  const BP = { d: "1440×900", t: "768×1024", p: "390×844", n: "320×640" };
+  const surfaces = [...new Set(SC.map((s) => s.surface))];
+  const sel = document.getElementById("f-surface");
+  surfaces.forEach((s) => sel.insertAdjacentHTML("beforeend", `<option>${s}</option>`));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  function render() {
+    const q = document.getElementById("f-q").value.toLowerCase();
+    const bps = [...document.querySelectorAll(".bp input:checked")].map((i) => i.value);
+    const surf = sel.value;
+    let html = "", n = 0;
+    for (const s of surfaces) {
+      if (surf && s !== surf) continue;
+      const items = SC.filter((x) => x.surface === s && (!q || (x.state + " " + x.id).toLowerCase().includes(q)));
+      if (!items.length) continue;
+      html += `<h2 id="${esc(s)}">${esc(s)} <span class="count">(${items.length})</span></h2><div class="grid">`;
+      for (const it of items) {
+        n++;
+        const future = /proposed|P1|P2|future/i.test(it.state + it.id);
+        const shots = it.bp.split("").filter((b) => bps.includes(b)).map((b) => `<figure class="shot"><a href="png/${it.id}--${b}.png" aria-label="${esc(it.state)} at ${BP[b]} (full size)"><img loading="lazy" src="png/${it.id}--${b}.png" alt="${esc(it.surface)}: ${esc(it.state)} at ${BP[b]}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'missing',textContent:'Not captured yet — run scripts/capture-screens.mjs'}))"></a><figcaption>${BP[b]}</figcaption></figure>`).join("");
+        html += `<article class="card"><h3>${esc(it.state)}</h3>
+          <div class="meta"><code>${esc(it.id)}</code>${future ? '<span class="pill future">Proposed</span>' : ""}<span class="pill">${it.route}</span></div>
+          <div class="shots">${shots || '<span class="count">No capture at selected breakpoints</span>'}</div>
+          <div class="links"><a href="../prototype/index.html#/${it.route}?scenario=${it.id}" target="_blank" rel="noopener">Live (interactive)</a><a href="../prototype/index.html#/${it.route}?scenario=${it.id}&theme=light" target="_blank" rel="noopener">Live · light theme</a></div>
+        </article>`;
+      }
+      html += "</div>";
+    }
+    document.getElementById("out").innerHTML = html || "<p>No states match.</p>";
+    document.getElementById("count").textContent = `${n} states`;
+  }
+  document.querySelectorAll("select, input").forEach((el) => el.addEventListener("input", render));
+  render();
+</script>
+<style>.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }</style>
+</body>
+</html>

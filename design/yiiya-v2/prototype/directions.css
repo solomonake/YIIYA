@@ -1,0 +1,72 @@
+/* Visual-direction EXPLORATIONS for screens/directions.html.
+ * The chosen direction ("workshop") is the default token set in ../tokens.css.
+ * These overrides exist only to compare alternatives on the same screen;
+ * they are not part of the shipped token system and are not contrast-validated
+ * beyond spot checks noted in design-system.md. */
+
+/* 2. Light drafting desk — off-white surfaces, precise lines, crisp dark type. */
+html[data-direction="drafting"] {
+  color-scheme: light;
+  --yi-bg-app: #F4F3EF;
+  --yi-bg-panel: #FBFAF7;
+  --yi-bg-raised: #FFFFFF;
+  --yi-bg-sunken: #EEEDE8;
+  --yi-bg-hover: #ECEAE4;
+  --yi-bg-selected: #E4E2DA;
+  --yi-canvas-center: #FFFFFF;
+  --yi-canvas-edge: #E6E4DE;
+  --yi-canvas-overlay-bg: #FFFFFF;
+  --yi-border-subtle: #D6D3CB;
+  --yi-border-control: #6F6A62;
+  --yi-border-strong: #3E3A35;
+  --yi-text-primary: #151413;
+  --yi-text-secondary: #3E3A35;
+  --yi-text-muted: #5A554D;
+  --yi-accent-text: #8F5A08;
+  --yi-focus-ring: #1B4E9E;
+  --yi-selection: #2366D1;
+  --yi-selection-text: #1B4E9E;
+  --yi-selection-subtle-bg: #DCEBFF;
+  --yi-radius-md: 4px;
+  --yi-radius-lg: 6px;
+  --yi-radius-xl: 8px;
+  --yi-button-radius: 4px;
+  --yi-input-radius: 4px;
+  --yi-panel-radius: 6px;
+  --yi-sheet-radius: 8px;
+}
+html[data-direction="drafting"] .canvas-wrap {
+  background:
+    linear-gradient(var(--yi-border-subtle) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, var(--yi-border-subtle) 1px, transparent 1px) 0 0 / 32px 32px,
+    var(--yi-canvas-center);
+}
+html[data-direction="drafting"] .action-title,
+html[data-direction="drafting"] .panel-title { letter-spacing: 0.01em; }
+
+/* 3. Quiet dark studio — cool charcoal, near-monochrome UI, accent reserved for selection. */
+html[data-direction="quiet"] {
+  color-scheme: dark;
+  --yi-bg-app: #121316;
+  --yi-bg-panel: #18191D;
+  --yi-bg-raised: #1F2025;
+  --yi-bg-sunken: #0E0F11;
+  --yi-bg-hover: #26282E;
+  --yi-bg-selected: #2C2E35;
+  --yi-canvas-center: #34363C;
+  --yi-canvas-edge: #191A1E;
+  --yi-canvas-overlay-bg: #18191D;
+  --yi-border-subtle: #2A2C32;
+  --yi-border-control: #7A7E88;
+  --yi-text-primary: #ECEDEF;
+  --yi-text-secondary: #B9BCC4;
+  --yi-text-muted: #9A9EA8;
+  --yi-accent-bg: #ECEDEF;
+  --yi-accent-bg-hover: #FFFFFF;
+  --yi-accent-on: #121316;
+  --yi-accent-text: #ECEDEF;
+  --yi-accent-subtle-bg: #26282E;
+  --yi-focus-ring: #9CC7FF;
+  --yi-action-generative: #D9DBE0;
+  --yi-action-generative-bg: #26282E;
+}
