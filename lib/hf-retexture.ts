@@ -153,7 +153,9 @@ async function defaultFetchMesh(url: string): Promise<Blob | null> {
   const buf = await res.arrayBuffer();
   if (buf.byteLength === 0 || buf.byteLength > RETEXTURE_MAX_BYTES) return null;
   const isObj = /\.obj(\?|$)/i.test(url);
-  return new Blob([buf], { type: isObj ? "model/obj" : "model/gltf-binary" });
+  // Upload as a *named* file: the Space picks its mesh loader from the
+  // extension, and an unnamed Blob arrives without one (smoke test 2026-10-11).
+  return new File([buf], isObj ? "mesh.obj" : "mesh.glb", { type: isObj ? "model/obj" : "model/gltf-binary" });
 }
 
 /**
