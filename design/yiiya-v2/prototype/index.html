@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>YIIYA v2 — clickable prototype</title>
+  <meta name="description" content="YIIYA v2 design prototype. Example content and simulated outcomes only; no AI or provider calls.">
+  <link rel="stylesheet" href="../tokens.css">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="directions.css">
+</head>
+<body>
+  <div id="app"></div>
+  <div id="sheet-root"></div>
+  <div id="toast-root" class="toast-root"></div>
+  <div id="proto-root"></div>
+  <div id="sr-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="sr-alert" class="sr-only" role="alert" aria-atomic="true"></div>
+  <noscript><p style="padding:24px">This prototype needs JavaScript. See ../screens/ for static captures.</p></noscript>
+
+  <script src="lamp-svg.js"></script>
+  <script src="fixtures.js"></script>
+  <script src="core.js"></script>
+  <script src="engine.js"></script>
+  <script src="studio.js"></script>
+  <script src="pages.js"></script>
+  <script src="sheets.js"></script>
+  <script src="scenarios.js"></script>
+  <script src="app.js"></script>
+  <!-- 3D canvas loads after first paint; the SVG fallback renders until then or if WebGL/modules are unavailable. -->
+  <script type="module" src="lamp3d.js"></script>
+</body>
+</html>

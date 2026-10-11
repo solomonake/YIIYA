@@ -1,0 +1,1679 @@
+{
+  "generated": "2026-10-11T02:51:53.114Z",
+  "sizes": {
+    "d": [
+      1440,
+      900
+    ],
+    "t": [
+      768,
+      1024
+    ],
+    "p": [
+      390,
+      844
+    ],
+    "n": [
+      320,
+      640
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "landing",
+      "surface": "Landing",
+      "state": "Default",
+      "route": "landing",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-empty",
+      "surface": "Studio empty / first use",
+      "state": "First visit, no account",
+      "route": "studio",
+      "bp": "dtp",
+      "notes": ""
+    },
+    {
+      "id": "studio-new-sheet",
+      "surface": "New project",
+      "state": "Prompt + progressive options",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-clarify",
+      "surface": "Studio conversation",
+      "state": "Clarifying a consequential ambiguity",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-v1",
+      "surface": "Studio conversation",
+      "state": "First draft ready (journey A)",
+      "route": "studio",
+      "bp": "dtp",
+      "notes": ""
+    },
+    {
+      "id": "studio-local-edit",
+      "surface": "Studio editing",
+      "state": "Instant finish edit applied",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-typing-preview",
+      "surface": "Studio conversation",
+      "state": "Composer previews the action type while typing",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "studio-selected",
+      "surface": "Studio editing",
+      "state": "Part selected (neck) · part controls",
+      "route": "studio",
+      "bp": "dtp",
+      "notes": ""
+    },
+    {
+      "id": "studio-revision-current",
+      "surface": "Studio editing",
+      "state": "“Make this thinner, keep the shade” — current: regenerate with honest limits (journey B)",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-revision-proposed",
+      "surface": "Studio editing",
+      "state": "Same request — proposed P2 exact part edit",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-compare",
+      "surface": "Asset / revisions",
+      "state": "Compare v1 vs regenerated v2 — kept part drifted",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-pending",
+      "surface": "Asset / revisions",
+      "state": "New version ready, not in use (canvas banner)",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-undo-height",
+      "surface": "Studio editing",
+      "state": "“Undo that. Make it 35 cm tall.” — estimated scale + history",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-height-proposed",
+      "surface": "Studio editing",
+      "state": "35 cm as an exact constraint — proposed P2",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "studio-part-finish",
+      "surface": "Studio editing",
+      "state": "Part finish not available (honest limit)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "studio-unsupported",
+      "surface": "Studio conversation",
+      "state": "Unsupported request with next step",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "studio-restored",
+      "surface": "Projects / return",
+      "state": "Reopened project: 10 turns, 3 versions restored (journey F)",
+      "route": "studio",
+      "bp": "dtp",
+      "notes": ""
+    },
+    {
+      "id": "gen-preparing",
+      "surface": "Generation",
+      "state": "preparing",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-queued",
+      "surface": "Generation",
+      "state": "queued",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "gen-generating",
+      "surface": "Generation",
+      "state": "generating",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-validating",
+      "surface": "Generation",
+      "state": "validating",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-draft",
+      "surface": "Generation",
+      "state": "Draft available while finishing — proposed P1",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-finishing",
+      "surface": "Generation",
+      "state": "Finishing materials & exports",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-revision-queued",
+      "surface": "Generation",
+      "state": "Revision queued — keep editing current version",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "gen-completed",
+      "surface": "Generation",
+      "state": "Completed (version 1 ready)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-cancel-requested",
+      "surface": "Generation",
+      "state": "Cancel requested",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-cancelled",
+      "surface": "Generation",
+      "state": "Cancelled",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-failed-quota",
+      "surface": "Generation",
+      "state": "Free GPU capacity unavailable (journey D)",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "gen-daily-limit",
+      "surface": "Generation",
+      "state": "YIIYA daily limit reached (reset time from server)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-missing-setup",
+      "surface": "Generation",
+      "state": "HF not configured on server",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-asleep",
+      "surface": "Generation",
+      "state": "Spaces not responding",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-invalid",
+      "surface": "Generation",
+      "state": "Result failed validation (not added)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "gen-interrupted",
+      "surface": "Generation",
+      "state": "Connection dropped — current: can't resume (journey C)",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "gen-reconnecting",
+      "surface": "Generation",
+      "state": "Connection dropped — proposed durable job reconnecting (P1)",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "gen-restored",
+      "surface": "Generation",
+      "state": "Reconnected — job state restored (P1)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "voice-idle",
+      "surface": "Voice",
+      "state": "Idle",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "voice-listening",
+      "surface": "Voice",
+      "state": "Listening",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "voice-partial",
+      "surface": "Voice",
+      "state": "Partial transcript",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "voice-thinking",
+      "surface": "Voice",
+      "state": "Thinking",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "voice-speaking",
+      "surface": "Voice",
+      "state": "Speaking — future realtime",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "voice-interrupted",
+      "surface": "Voice",
+      "state": "Interruption — future realtime",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "voice-denied",
+      "surface": "Voice",
+      "state": "Mic permission denied",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "voice-unsupported",
+      "surface": "Voice",
+      "state": "Unsupported browser",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "voice-reconnecting",
+      "surface": "Voice",
+      "state": "Reconnect — future realtime",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "capture-upload",
+      "surface": "Capture",
+      "state": "Desktop: upload a reference",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "capture-qr",
+      "surface": "Capture",
+      "state": "Desktop: phone pairing QR",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "capture-received",
+      "surface": "Capture",
+      "state": "Desktop: photo received from phone",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "capture-qr-expired",
+      "surface": "Capture",
+      "state": "Desktop: pairing code expired",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "capture-ref-attached",
+      "surface": "Capture",
+      "state": "Reference attached in composer",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-permission",
+      "surface": "Capture",
+      "state": "Phone: Camera permission ask",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-frame",
+      "surface": "Capture",
+      "state": "Phone: Framing a single photo",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-lowlight",
+      "surface": "Capture",
+      "state": "Phone: Poor lighting warning",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-denied",
+      "surface": "Capture",
+      "state": "Phone: Camera denied → upload fallback",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-review",
+      "surface": "Capture",
+      "state": "Phone: Review photo",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-uploading",
+      "surface": "Capture",
+      "state": "Phone: Uploading to laptop",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-upload-failed",
+      "surface": "Capture",
+      "state": "Phone: Upload failed → retry",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-sent",
+      "surface": "Capture",
+      "state": "Phone: Sent to laptop",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-expired",
+      "surface": "Capture",
+      "state": "Phone: Pairing link expired",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-capture-invalid",
+      "surface": "Capture",
+      "state": "Phone: Invalid pairing link",
+      "route": "capture",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "export-render",
+      "surface": "Readiness / export",
+      "state": "Render & portfolio · instant-edit disclosure",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "export-print",
+      "surface": "Readiness / export",
+      "state": "3D print · unknown checks + STL units",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "export-converting",
+      "surface": "Readiness / export",
+      "state": "OBJ converting",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "export-failed",
+      "surface": "Readiness / export",
+      "state": "Conversion failed · GLB still available",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "export-unavailable",
+      "surface": "Readiness / export",
+      "state": "File unavailable (expired)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "export-proposed",
+      "surface": "Readiness / export",
+      "state": "Proposed: edits baked into exports (P1)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "share-current",
+      "surface": "Shared viewer",
+      "state": "Public-link disclosure before creating",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "share-created",
+      "surface": "Shared viewer",
+      "state": "Link created",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "share-proposed",
+      "surface": "Shared viewer",
+      "state": "Proposed controlled publish (P1)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "viewer-ready",
+      "surface": "Shared viewer",
+      "state": "Read-only orbit/zoom + metadata",
+      "route": "view",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "viewer-loading",
+      "surface": "Shared viewer",
+      "state": "Loading",
+      "route": "view",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "viewer-unavailable",
+      "surface": "Shared viewer",
+      "state": "Unavailable link",
+      "route": "view",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "viewer-nowebgl",
+      "surface": "Shared viewer",
+      "state": "Mobile fallback (no WebGL)",
+      "route": "view",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "account-signin",
+      "surface": "Account",
+      "state": "Sign in (email link)",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "account-error",
+      "surface": "Account",
+      "state": "Invalid email",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "account-sent",
+      "surface": "Account",
+      "state": "Link sent",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "auth-verifying",
+      "surface": "Account",
+      "state": "Opening sign-in link",
+      "route": "auth",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "auth-expired",
+      "surface": "Account",
+      "state": "Expired sign-in link",
+      "route": "auth",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "auth-success",
+      "surface": "Account",
+      "state": "Signed in · move browser projects (P1)",
+      "route": "auth",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "save-expired",
+      "surface": "Account",
+      "state": "Sign-in expired while working (signed-out recovery)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "save-conflict",
+      "surface": "Account",
+      "state": "Save conflict (proposed P1)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "save-details",
+      "surface": "Account",
+      "state": "Save status details (browser-only)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "settings-appearance",
+      "surface": "Settings",
+      "state": "Appearance (new: motion, text size)",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "settings-generation",
+      "surface": "Settings",
+      "state": "Generation status + personal HF token",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "settings-privacy",
+      "surface": "Settings",
+      "state": "Local data · clear confirmation",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "settings-status",
+      "surface": "Settings",
+      "state": "What works today (capability status)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "help",
+      "surface": "Help / recovery",
+      "state": "Tips, shortcuts, troubleshooting, diagnostics",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "help-feedback",
+      "surface": "Help / recovery",
+      "state": "Feedback (never auto-sent)",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "help-tech",
+      "surface": "Help / recovery",
+      "state": "Technical details after a failure",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "projects",
+      "surface": "Projects / library",
+      "state": "Populated, signed in",
+      "route": "projects",
+      "bp": "dtp",
+      "notes": ""
+    },
+    {
+      "id": "projects-signed-out",
+      "surface": "Projects / library",
+      "state": "Signed out · browser-only notice",
+      "route": "projects",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "projects-empty",
+      "surface": "Projects / library",
+      "state": "Empty",
+      "route": "projects",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "projects-loading",
+      "surface": "Projects / library",
+      "state": "Loading",
+      "route": "projects",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "projects-error",
+      "surface": "Projects / library",
+      "state": "Account load error · browser projects shown",
+      "route": "projects",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "projects-rename",
+      "surface": "Projects / library",
+      "state": "Inline rename",
+      "route": "projects",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "projects-delete",
+      "surface": "Projects / library",
+      "state": "Delete confirmation",
+      "route": "projects",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "projects-search-empty",
+      "surface": "Projects / library",
+      "state": "Search with no results",
+      "route": "projects",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "offline",
+      "surface": "Global states",
+      "state": "Offline while editing",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "webgl-off",
+      "surface": "Global states",
+      "state": "WebGL unavailable · static preview",
+      "route": "studio",
+      "bp": "dp",
+      "notes": ""
+    },
+    {
+      "id": "low-memory",
+      "surface": "Global states",
+      "state": "Large asset / low memory · lighter preview",
+      "route": "studio",
+      "bp": "d",
+      "notes": ""
+    },
+    {
+      "id": "phone-full",
+      "surface": "Studio (phone)",
+      "state": "Bottom sheet expanded",
+      "route": "studio",
+      "bp": "p",
+      "notes": ""
+    },
+    {
+      "id": "phone-menu",
+      "surface": "Studio (phone)",
+      "state": "Menu sheet",
+      "route": "studio",
+      "bp": "p",
+      "notes": ""
+    }
+  ],
+  "shots": [
+    {
+      "id": "landing",
+      "bp": "d",
+      "file": "png/landing--d.png",
+      "ok": true
+    },
+    {
+      "id": "landing",
+      "bp": "p",
+      "file": "png/landing--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-empty",
+      "bp": "d",
+      "file": "png/studio-empty--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-empty",
+      "bp": "t",
+      "file": "png/studio-empty--t.png",
+      "ok": true
+    },
+    {
+      "id": "studio-empty",
+      "bp": "p",
+      "file": "png/studio-empty--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-new-sheet",
+      "bp": "d",
+      "file": "png/studio-new-sheet--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-new-sheet",
+      "bp": "p",
+      "file": "png/studio-new-sheet--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-clarify",
+      "bp": "d",
+      "file": "png/studio-clarify--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-clarify",
+      "bp": "p",
+      "file": "png/studio-clarify--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-v1",
+      "bp": "d",
+      "file": "png/studio-v1--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-v1",
+      "bp": "t",
+      "file": "png/studio-v1--t.png",
+      "ok": true
+    },
+    {
+      "id": "studio-v1",
+      "bp": "p",
+      "file": "png/studio-v1--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-local-edit",
+      "bp": "d",
+      "file": "png/studio-local-edit--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-local-edit",
+      "bp": "p",
+      "file": "png/studio-local-edit--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-typing-preview",
+      "bp": "d",
+      "file": "png/studio-typing-preview--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-selected",
+      "bp": "d",
+      "file": "png/studio-selected--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-selected",
+      "bp": "t",
+      "file": "png/studio-selected--t.png",
+      "ok": true
+    },
+    {
+      "id": "studio-selected",
+      "bp": "p",
+      "file": "png/studio-selected--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-revision-current",
+      "bp": "d",
+      "file": "png/studio-revision-current--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-revision-current",
+      "bp": "p",
+      "file": "png/studio-revision-current--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-revision-proposed",
+      "bp": "d",
+      "file": "png/studio-revision-proposed--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-revision-proposed",
+      "bp": "p",
+      "file": "png/studio-revision-proposed--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-compare",
+      "bp": "d",
+      "file": "png/studio-compare--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-compare",
+      "bp": "p",
+      "file": "png/studio-compare--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-pending",
+      "bp": "d",
+      "file": "png/studio-pending--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-pending",
+      "bp": "p",
+      "file": "png/studio-pending--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-undo-height",
+      "bp": "d",
+      "file": "png/studio-undo-height--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-undo-height",
+      "bp": "p",
+      "file": "png/studio-undo-height--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-height-proposed",
+      "bp": "d",
+      "file": "png/studio-height-proposed--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-part-finish",
+      "bp": "d",
+      "file": "png/studio-part-finish--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-unsupported",
+      "bp": "d",
+      "file": "png/studio-unsupported--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-unsupported",
+      "bp": "p",
+      "file": "png/studio-unsupported--p.png",
+      "ok": true
+    },
+    {
+      "id": "studio-restored",
+      "bp": "d",
+      "file": "png/studio-restored--d.png",
+      "ok": true
+    },
+    {
+      "id": "studio-restored",
+      "bp": "t",
+      "file": "png/studio-restored--t.png",
+      "ok": true
+    },
+    {
+      "id": "studio-restored",
+      "bp": "p",
+      "file": "png/studio-restored--p.png",
+      "ok": true
+    },
+    {
+      "id": "gen-preparing",
+      "bp": "d",
+      "file": "png/gen-preparing--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-queued",
+      "bp": "d",
+      "file": "png/gen-queued--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-queued",
+      "bp": "p",
+      "file": "png/gen-queued--p.png",
+      "ok": true
+    },
+    {
+      "id": "gen-generating",
+      "bp": "d",
+      "file": "png/gen-generating--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-validating",
+      "bp": "d",
+      "file": "png/gen-validating--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-draft",
+      "bp": "d",
+      "file": "png/gen-draft--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-finishing",
+      "bp": "d",
+      "file": "png/gen-finishing--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-revision-queued",
+      "bp": "d",
+      "file": "png/gen-revision-queued--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-revision-queued",
+      "bp": "p",
+      "file": "png/gen-revision-queued--p.png",
+      "ok": true
+    },
+    {
+      "id": "gen-completed",
+      "bp": "d",
+      "file": "png/gen-completed--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-cancel-requested",
+      "bp": "d",
+      "file": "png/gen-cancel-requested--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-cancelled",
+      "bp": "d",
+      "file": "png/gen-cancelled--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-failed-quota",
+      "bp": "d",
+      "file": "png/gen-failed-quota--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-failed-quota",
+      "bp": "p",
+      "file": "png/gen-failed-quota--p.png",
+      "ok": true
+    },
+    {
+      "id": "gen-daily-limit",
+      "bp": "d",
+      "file": "png/gen-daily-limit--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-missing-setup",
+      "bp": "d",
+      "file": "png/gen-missing-setup--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-asleep",
+      "bp": "d",
+      "file": "png/gen-asleep--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-invalid",
+      "bp": "d",
+      "file": "png/gen-invalid--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-interrupted",
+      "bp": "d",
+      "file": "png/gen-interrupted--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-interrupted",
+      "bp": "p",
+      "file": "png/gen-interrupted--p.png",
+      "ok": true
+    },
+    {
+      "id": "gen-reconnecting",
+      "bp": "d",
+      "file": "png/gen-reconnecting--d.png",
+      "ok": true
+    },
+    {
+      "id": "gen-reconnecting",
+      "bp": "p",
+      "file": "png/gen-reconnecting--p.png",
+      "ok": true
+    },
+    {
+      "id": "gen-restored",
+      "bp": "d",
+      "file": "png/gen-restored--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-idle",
+      "bp": "d",
+      "file": "png/voice-idle--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-listening",
+      "bp": "d",
+      "file": "png/voice-listening--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-listening",
+      "bp": "p",
+      "file": "png/voice-listening--p.png",
+      "ok": true
+    },
+    {
+      "id": "voice-partial",
+      "bp": "d",
+      "file": "png/voice-partial--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-thinking",
+      "bp": "d",
+      "file": "png/voice-thinking--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-speaking",
+      "bp": "d",
+      "file": "png/voice-speaking--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-interrupted",
+      "bp": "d",
+      "file": "png/voice-interrupted--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-denied",
+      "bp": "d",
+      "file": "png/voice-denied--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-denied",
+      "bp": "p",
+      "file": "png/voice-denied--p.png",
+      "ok": true
+    },
+    {
+      "id": "voice-unsupported",
+      "bp": "d",
+      "file": "png/voice-unsupported--d.png",
+      "ok": true
+    },
+    {
+      "id": "voice-reconnecting",
+      "bp": "d",
+      "file": "png/voice-reconnecting--d.png",
+      "ok": true
+    },
+    {
+      "id": "capture-upload",
+      "bp": "d",
+      "file": "png/capture-upload--d.png",
+      "ok": true
+    },
+    {
+      "id": "capture-qr",
+      "bp": "d",
+      "file": "png/capture-qr--d.png",
+      "ok": true
+    },
+    {
+      "id": "capture-received",
+      "bp": "d",
+      "file": "png/capture-received--d.png",
+      "ok": true
+    },
+    {
+      "id": "capture-qr-expired",
+      "bp": "d",
+      "file": "png/capture-qr-expired--d.png",
+      "ok": true
+    },
+    {
+      "id": "capture-ref-attached",
+      "bp": "d",
+      "file": "png/capture-ref-attached--d.png",
+      "ok": true
+    },
+    {
+      "id": "capture-ref-attached",
+      "bp": "p",
+      "file": "png/capture-ref-attached--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-permission",
+      "bp": "p",
+      "file": "png/phone-capture-permission--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-frame",
+      "bp": "p",
+      "file": "png/phone-capture-frame--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-lowlight",
+      "bp": "p",
+      "file": "png/phone-capture-lowlight--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-denied",
+      "bp": "p",
+      "file": "png/phone-capture-denied--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-review",
+      "bp": "p",
+      "file": "png/phone-capture-review--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-uploading",
+      "bp": "p",
+      "file": "png/phone-capture-uploading--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-upload-failed",
+      "bp": "p",
+      "file": "png/phone-capture-upload-failed--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-sent",
+      "bp": "p",
+      "file": "png/phone-capture-sent--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-expired",
+      "bp": "p",
+      "file": "png/phone-capture-expired--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-capture-invalid",
+      "bp": "p",
+      "file": "png/phone-capture-invalid--p.png",
+      "ok": true
+    },
+    {
+      "id": "export-render",
+      "bp": "d",
+      "file": "png/export-render--d.png",
+      "ok": true
+    },
+    {
+      "id": "export-render",
+      "bp": "p",
+      "file": "png/export-render--p.png",
+      "ok": true
+    },
+    {
+      "id": "export-print",
+      "bp": "d",
+      "file": "png/export-print--d.png",
+      "ok": true
+    },
+    {
+      "id": "export-converting",
+      "bp": "d",
+      "file": "png/export-converting--d.png",
+      "ok": true
+    },
+    {
+      "id": "export-failed",
+      "bp": "d",
+      "file": "png/export-failed--d.png",
+      "ok": true
+    },
+    {
+      "id": "export-unavailable",
+      "bp": "d",
+      "file": "png/export-unavailable--d.png",
+      "ok": true
+    },
+    {
+      "id": "export-proposed",
+      "bp": "d",
+      "file": "png/export-proposed--d.png",
+      "ok": true
+    },
+    {
+      "id": "share-current",
+      "bp": "d",
+      "file": "png/share-current--d.png",
+      "ok": true
+    },
+    {
+      "id": "share-current",
+      "bp": "p",
+      "file": "png/share-current--p.png",
+      "ok": true
+    },
+    {
+      "id": "share-created",
+      "bp": "d",
+      "file": "png/share-created--d.png",
+      "ok": true
+    },
+    {
+      "id": "share-proposed",
+      "bp": "d",
+      "file": "png/share-proposed--d.png",
+      "ok": true
+    },
+    {
+      "id": "viewer-ready",
+      "bp": "d",
+      "file": "png/viewer-ready--d.png",
+      "ok": true
+    },
+    {
+      "id": "viewer-ready",
+      "bp": "p",
+      "file": "png/viewer-ready--p.png",
+      "ok": true
+    },
+    {
+      "id": "viewer-loading",
+      "bp": "d",
+      "file": "png/viewer-loading--d.png",
+      "ok": true
+    },
+    {
+      "id": "viewer-unavailable",
+      "bp": "p",
+      "file": "png/viewer-unavailable--p.png",
+      "ok": true
+    },
+    {
+      "id": "viewer-nowebgl",
+      "bp": "p",
+      "file": "png/viewer-nowebgl--p.png",
+      "ok": true
+    },
+    {
+      "id": "account-signin",
+      "bp": "d",
+      "file": "png/account-signin--d.png",
+      "ok": true
+    },
+    {
+      "id": "account-signin",
+      "bp": "p",
+      "file": "png/account-signin--p.png",
+      "ok": true
+    },
+    {
+      "id": "account-error",
+      "bp": "d",
+      "file": "png/account-error--d.png",
+      "ok": true
+    },
+    {
+      "id": "account-sent",
+      "bp": "d",
+      "file": "png/account-sent--d.png",
+      "ok": true
+    },
+    {
+      "id": "auth-verifying",
+      "bp": "d",
+      "file": "png/auth-verifying--d.png",
+      "ok": true
+    },
+    {
+      "id": "auth-expired",
+      "bp": "d",
+      "file": "png/auth-expired--d.png",
+      "ok": true
+    },
+    {
+      "id": "auth-expired",
+      "bp": "p",
+      "file": "png/auth-expired--p.png",
+      "ok": true
+    },
+    {
+      "id": "auth-success",
+      "bp": "d",
+      "file": "png/auth-success--d.png",
+      "ok": true
+    },
+    {
+      "id": "save-expired",
+      "bp": "d",
+      "file": "png/save-expired--d.png",
+      "ok": true
+    },
+    {
+      "id": "save-conflict",
+      "bp": "d",
+      "file": "png/save-conflict--d.png",
+      "ok": true
+    },
+    {
+      "id": "save-details",
+      "bp": "d",
+      "file": "png/save-details--d.png",
+      "ok": true
+    },
+    {
+      "id": "settings-appearance",
+      "bp": "d",
+      "file": "png/settings-appearance--d.png",
+      "ok": true
+    },
+    {
+      "id": "settings-appearance",
+      "bp": "p",
+      "file": "png/settings-appearance--p.png",
+      "ok": true
+    },
+    {
+      "id": "settings-generation",
+      "bp": "d",
+      "file": "png/settings-generation--d.png",
+      "ok": true
+    },
+    {
+      "id": "settings-privacy",
+      "bp": "d",
+      "file": "png/settings-privacy--d.png",
+      "ok": true
+    },
+    {
+      "id": "settings-status",
+      "bp": "d",
+      "file": "png/settings-status--d.png",
+      "ok": true
+    },
+    {
+      "id": "help",
+      "bp": "d",
+      "file": "png/help--d.png",
+      "ok": true
+    },
+    {
+      "id": "help",
+      "bp": "p",
+      "file": "png/help--p.png",
+      "ok": true
+    },
+    {
+      "id": "help-feedback",
+      "bp": "d",
+      "file": "png/help-feedback--d.png",
+      "ok": true
+    },
+    {
+      "id": "help-tech",
+      "bp": "d",
+      "file": "png/help-tech--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects",
+      "bp": "d",
+      "file": "png/projects--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects",
+      "bp": "t",
+      "file": "png/projects--t.png",
+      "ok": true
+    },
+    {
+      "id": "projects",
+      "bp": "p",
+      "file": "png/projects--p.png",
+      "ok": true
+    },
+    {
+      "id": "projects-signed-out",
+      "bp": "d",
+      "file": "png/projects-signed-out--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects-signed-out",
+      "bp": "p",
+      "file": "png/projects-signed-out--p.png",
+      "ok": true
+    },
+    {
+      "id": "projects-empty",
+      "bp": "d",
+      "file": "png/projects-empty--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects-empty",
+      "bp": "p",
+      "file": "png/projects-empty--p.png",
+      "ok": true
+    },
+    {
+      "id": "projects-loading",
+      "bp": "d",
+      "file": "png/projects-loading--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects-error",
+      "bp": "d",
+      "file": "png/projects-error--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects-rename",
+      "bp": "d",
+      "file": "png/projects-rename--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects-delete",
+      "bp": "d",
+      "file": "png/projects-delete--d.png",
+      "ok": true
+    },
+    {
+      "id": "projects-delete",
+      "bp": "p",
+      "file": "png/projects-delete--p.png",
+      "ok": true
+    },
+    {
+      "id": "projects-search-empty",
+      "bp": "d",
+      "file": "png/projects-search-empty--d.png",
+      "ok": true
+    },
+    {
+      "id": "offline",
+      "bp": "d",
+      "file": "png/offline--d.png",
+      "ok": true
+    },
+    {
+      "id": "offline",
+      "bp": "p",
+      "file": "png/offline--p.png",
+      "ok": true
+    },
+    {
+      "id": "webgl-off",
+      "bp": "d",
+      "file": "png/webgl-off--d.png",
+      "ok": true
+    },
+    {
+      "id": "webgl-off",
+      "bp": "p",
+      "file": "png/webgl-off--p.png",
+      "ok": true
+    },
+    {
+      "id": "low-memory",
+      "bp": "d",
+      "file": "png/low-memory--d.png",
+      "ok": true
+    },
+    {
+      "id": "phone-full",
+      "bp": "p",
+      "file": "png/phone-full--p.png",
+      "ok": true
+    },
+    {
+      "id": "phone-menu",
+      "bp": "p",
+      "file": "png/phone-menu--p.png",
+      "ok": true
+    }
+  ]
+}

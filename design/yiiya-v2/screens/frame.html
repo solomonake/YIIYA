@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Frame</title>
+<!-- Capture helper: renders a prototype URL in an iframe of an exact CSS size,
+     because headless Chrome enforces a minimum window width (~500px). -->
+<style>html,body{margin:0;background:#000;overflow:hidden}body{display:flex;justify-content:center}iframe{border:0;display:block;flex:none}</style>
+</head>
+<body>
+<script>
+  const q = new URLSearchParams(location.search);
+  const f = document.createElement("iframe");
+  f.width = q.get("w") || 390;
+  f.height = q.get("h") || 844;
+  f.title = "Prototype frame";
+  f.src = q.get("src");
+  document.body.appendChild(f);
+</script>
+</body>
+</html>

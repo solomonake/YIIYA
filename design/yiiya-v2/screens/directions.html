@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YIIYA v2 — visual directions</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { margin: 0; background: var(--yi-bg-app); color: var(--yi-text-primary); font-family: var(--yi-font-family-sans); line-height: 1.5; }
+  main { max-width: 1500px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  p { color: var(--yi-text-secondary); max-width: 90ch; }
+  a { color: var(--yi-accent-text); }
+  .dir { margin-top: 28px; border-top: 1px solid var(--yi-border-subtle); padding-top: 16px; }
+  .dir h2 { font-size: 18px; margin: 0 0 4px; display: flex; gap: 10px; align-items: center; }
+  .chosen { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--yi-accent-bg); color: var(--yi-accent-on); }
+  .pair { display: grid; grid-template-columns: 3fr 1fr; gap: 12px; align-items: start; margin-top: 10px; }
+  img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--yi-border-subtle); display: block; }
+  ul { color: var(--yi-text-secondary); font-size: 14px; }
+  @media (max-width: 800px) { .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Three directions, one screen</h1>
+  <p>Same populated studio state (<code>studio-revision-current</code>: lamp v1 with matte shade, neck selected, “thinner, keep the shade” regeneration card) at 1440×900 and 390×844. Only tokens change. Rationale and contrast checks: <a href="../design-system.md">design-system.md §1</a>. <a href="index.html">← Gallery</a></p>
+
+  <section class="dir">
+    <h2>1 · Warm workshop <span class="chosen">Chosen</span></h2>
+    <p>Graphite canvas, warm neutral chrome, restrained amber reserved for commit/generate. Best neutral backdrop for brass and dark green; cheapest migration from today’s dark UI; keeps YIIYA’s identity. Light theme below covers daylight use.</p>
+    <div class="pair"><img src="png/studio-revision-current--d.png" alt="Warm workshop, desktop"><img src="png/studio-revision-current--p.png" alt="Warm workshop, phone"></div>
+    <div class="pair"><img src="png/studio-revision-current--d--light.png" alt="Warm workshop light theme, desktop"><img src="png/studio-revision-current--p--light.png" alt="Warm workshop light theme, phone"></div>
+  </section>
+
+  <section class="dir">
+    <h2>2 · Light drafting desk</h2>
+    <p>Off-white surfaces, 1 px lines, blueprint grid canvas, crisp dark type. Most legible outdoors; flattens light materials and glossy highlights; loses current identity; every surface changes.</p>
+    <div class="pair"><img src="png/studio-revision-current--d--drafting.png" alt="Drafting desk, desktop"><img src="png/studio-revision-current--p--drafting.png" alt="Drafting desk, phone"></div>
+  </section>
+
+  <section class="dir">
+    <h2>3 · Quiet dark studio</h2>
+    <p>Cool charcoal, near-monochrome UI, white primary buttons, colour only for selection and status. Calm and readable, but generic, and the cool cast shifts warm materials.</p>
+    <div class="pair"><img src="png/studio-revision-current--d--quiet.png" alt="Quiet dark studio, desktop"><img src="png/studio-revision-current--p--quiet.png" alt="Quiet dark studio, phone"></div>
+  </section>
+</main>
+</body>
+</html>
