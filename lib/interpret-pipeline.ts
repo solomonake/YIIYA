@@ -14,6 +14,7 @@ import {
   type ReadinessReport
 } from "@/lib/scene/readiness";
 import type { MaterialOverride } from "@/lib/scene/local-edit";
+import { resolveSourceMeshUrl, retextureViaHuggingFace, buildRetexturePrompt, geometryKept } from "@/lib/hf-retexture";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,6 +110,12 @@ export type GeneratedAsset = {
    * instant, and reversible — see lib/scene/local-edit.ts.
    */
   materialOverride?: MaterialOverride;
+  /**
+   * Set when this asset is a restyle of an existing mesh: the GLB whose
+   * geometry it keeps. Scopes the prompt cache to that mesh
+   * (lib/hf-retexture.ts retextureCacheKey).
+   */
+  sourceGlbUrl?: string;
 };
 
 export type ReferenceImageInput = {
@@ -134,6 +141,17 @@ export type InterpretRequestBody = {
   userHfToken?: string;
   /** Skip the ambiguity gate — set when the user answered (or dismissed) a clarify prompt. */
   forceGenerate?: boolean;
+  /**
+   * GLB URL of the asset active in the viewport (Blob mirror, provider CDN,
+   * or our /api/3d/proxy form). Required for a restyle.
+   */
+  activeAssetGlbUrl?: string;
+  /**
+   * "restyle": the user confirmed a surface-only change — keep the geometry,
+   * regenerate textures on Hugging Face. Never silently becomes a full
+   * regeneration.
+   */
+  editMode?: "restyle";
 };
 
 export type PipelineEvent =
@@ -1557,6 +1575,103 @@ async function runPackager(
   };
 }
 
+// ─── Restyle: same geometry, new textures (Hugging Face) ───────────────────────
+
+/**
+ * Restyle the active mesh on the EmbodiedGen texture Space. Always ends the
+ * stream (asset or honest failure): a restyle request never falls through to
+ * a full regeneration, because the user asked to keep the shape.
+ */
+async function* runRestylePath(
+  body: InterpretRequestBody,
+  brief: ThreeDBrief
+): AsyncGenerator<PipelineEvent> {
+  const stop = function* (log: string, qa: string): Generator<PipelineEvent> {
+    yield { type: "error", message: log };
+    const qa_log = [qa];
+    yield { type: "qa", qa_log };
+    yield { type: "done", assets: [], brief, qa_log };
+  };
+
+  const sourceUrl = resolveSourceMeshUrl(body.activeAssetGlbUrl);
+  if (!sourceUrl) {
+    yield* stop(
+      "Restyle needs the current model's file, and it isn't available (it may have expired). Your model is unchanged. Regenerate it to restyle again.",
+      "[QA] Restyle skipped — no usable source mesh. Nothing changed."
+    );
+    return;
+  }
+  if (!(body.userHfToken?.trim() || process.env.HUGGINGFACE_TOKEN?.trim())) {
+    yield* stop(
+      "Restyling uses Hugging Face, which isn't set up on this server. Add your own Hugging Face token in Settings. Your model is unchanged.",
+      "[QA] Restyle skipped — no Hugging Face token. Nothing changed."
+    );
+    return;
+  }
+
+  yield {
+    type: "generating",
+    log: `[RESTYLE] "${brief.primaryObject}" — keeping the shape, regenerating only the surface on Hugging Face's shared GPUs. Wait times vary.`
+  };
+
+  const before = await inspectGlbUrl(sourceUrl, { headers: providerAuthHeaders(sourceUrl) }).catch(() => null);
+  const prompt = buildRetexturePrompt(body.transcript, brief.primaryObject);
+  const out = await withTimeout(
+    retextureViaHuggingFace(sourceUrl, prompt, { token: body.userHfToken?.trim() || undefined }),
+    240_000,
+    "Hugging Face restyle"
+  ).catch((err) => ({ url: null, started: true, error: errMessage(err) }));
+
+  if (!out.url) {
+    yield* stop(
+      `Restyle didn't finish: ${out.error}. Your model is unchanged. Try again later, or add your own Hugging Face token in Settings.`,
+      `[QA] Restyle failed${out.started ? " after the Space started" : " before the Space started"} — original mesh preserved.`
+    );
+    return;
+  }
+
+  const v = await validateGlbUrl(out.url).catch(
+    () => ({ ok: false, reason: "validation error", sizeBytes: 0 } as GlbValidation)
+  );
+  if (!v.ok) {
+    yield* stop(
+      `The restyled file wasn't a usable model (${v.reason}). Your model is unchanged.`,
+      "[QA] Restyle output failed validation — original mesh preserved."
+    );
+    return;
+  }
+
+  const kept = geometryKept(
+    { triangles: before?.geometry?.triangles, maxDimension: before?.geometry?.bounds?.maxDimension },
+    { triangles: v.geometry?.triangles, maxDimension: v.geometry?.bounds?.maxDimension }
+  );
+
+  const mirror = await mirrorGlbToBlob(out.url, `${brief.primaryObject}-restyle`).catch(
+    () => ({ url: out.url as string, mirrored: false, sizeBytes: 0 })
+  );
+  const glbUrl =
+    mirror.mirrored || !isAllowedProviderUrl(mirror.url)
+      ? mirror.url
+      : `/api/3d/proxy?src=${encodeURIComponent(mirror.url)}`;
+
+  const asset = await runPackager(brief, glbUrl, "trellis", undefined, v.triangleCount, v.geometry);
+  asset.sourceGlbUrl = body.activeAssetGlbUrl;
+  // Same object at the same size: keep the scale the user was looking at.
+  if (before?.geometry?.bounds && kept) asset.scaleMeters = Number(before.geometry.bounds.maxDimension.toFixed(2));
+
+  const keptNote =
+    kept === true ? "shape kept (triangle count and size match)"
+    : kept === false ? "the shape changed more than expected — compare before using it"
+    : "shape not verified";
+  yield { type: "asset_ready", asset, log: `[READY] "${asset.name}" — restyled, ${keptNote}` };
+  const qa_log = [
+    `[QA] Restyle: textures regenerated on Hugging Face (${keptNote}).`,
+    "[QA] No commercial provider was used."
+  ];
+  yield { type: "qa", qa_log };
+  yield { type: "done", assets: [asset], brief, qa_log };
+}
+
 // ─── Main Pipeline ─────────────────────────────────────────────────────────────
 
 export async function* runInterpretPipeline(
@@ -1577,6 +1692,14 @@ export async function* runInterpretPipeline(
       !body.forceGenerate && !body.referenceImage && Boolean(brief.clarifyingQuestion) && brief.confidence < 0.6;
     if (brief.clarifyingQuestion && !willGate) {
       yield { type: "generating", log: `[DIRECTOR] ${brief.clarifyingQuestion} (proceeding with best guess: "${brief.primaryObject}")`, progress: 0.05 };
+    }
+
+    // Restyle: the user confirmed a surface-only change on the active mesh.
+    // Only the explicit client flag triggers it, so a confirmed regeneration
+    // is never swapped for a restyle (or vice versa). Never re-rolls geometry.
+    if (body.editMode === "restyle" && !body.referenceImage) {
+      yield* runRestylePath(body, brief);
+      return;
     }
 
     if (body.referenceImage) {

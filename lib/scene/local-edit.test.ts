@@ -99,3 +99,25 @@ describe("classifyEditIntent — paid-regen guard", () => {
     expect(classifyEditIntent("a ceramic coffee mug").kind).toBe("new");
   });
 });
+
+describe("classifyEditIntent — restyle keeps the geometry", () => {
+  it("routes surface-only material/pattern changes to restyle", () => {
+    expect(classifyEditIntent("make it look like walnut wood").kind).toBe("restyle");
+    expect(classifyEditIntent("give it a floral pattern").kind).toBe("restyle");
+    expect(classifyEditIntent("make it marble").kind).toBe("restyle");
+    expect(classifyEditIntent("make it look more realistic").kind).toBe("restyle");
+    expect(classifyEditIntent("retexture it as weathered concrete").kind).toBe("restyle");
+  });
+
+  it("keeps structural requests as regen even with surface words", () => {
+    expect(classifyEditIntent("add a wooden handle").kind).toBe("regen");
+    expect(classifyEditIntent("make it a convertible").kind).toBe("regen");
+    expect(classifyEditIntent("make it cyberpunk style").kind).toBe("regen");
+  });
+
+  it("leaves flat colour/finish edits local and new objects new", () => {
+    expect(classifyEditIntent("make it matte black").kind).toBe("local");
+    expect(classifyEditIntent("a marble statue").kind).toBe("new");
+  });
+});
+

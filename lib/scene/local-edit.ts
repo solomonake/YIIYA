@@ -181,6 +181,10 @@ export type EditIntent =
   /** An edit opener with no substance ("make it", "change this") — almost
    *  always a cut-off voice utterance. Never spend a generation; ask to finish. */
   | { kind: "contentless" }
+  /** A surface-only change we can't do with a flat material ("make it look
+   *  like walnut", "give it a floral pattern") — restyle the textures on
+   *  Hugging Face and keep the geometry. Confirm first (uses GPU quota). */
+  | { kind: "restyle" }
   /** A substantive edit of the current object we can't do locally ("make it a
    *  convertible", "add a handle") — needs a paid regeneration, so confirm first. */
   | { kind: "regen" }
@@ -189,7 +193,12 @@ export type EditIntent =
 
 // Openers that signal "operate on the thing already on screen".
 const ACTIVE_EDIT_OPENER =
-  /^\s*(make|turn|paint|recolou?r|colou?r|give\s+it|render\s+it|add|remove|delete|change|swap|replace|put|now|also|instead)\b/i;
+  /^\s*(make|turn|paint|recolou?r|colou?r|give\s+it|render\s+it|add|remove|delete|change|swap|replace|put|now|also|instead|restyle|retexture)\b/i;
+
+// Surface vocabulary: materials and patterns a flat colour/finish can't fake,
+// but that don't change the shape. Routed to a texture restyle, not a re-roll.
+const SURFACE =
+  /\b(textures?|textured|patterns?|patterned|made (out )?of|wood|wooden|walnut|oak|bamboo|marble|stone|granite|concrete|brick|terrazzo|fabric|linen|denim|velvet|leather|suede|knit|knitted|wicker|rattan|cork|glazed|camo|camouflage|floral|graffiti|painted|hand.painted|weathered|aged|patina|realistic|photorealistic|decals?|logo)\b/;
 
 // Filler that carries no edit content once the opener is removed.
 const FILLER = /\b(it|its|it'?s|this|that|the|a|an|please|now|to|be|into|look|more|less|bit|little|some|kinda|kind\s+of|like)\b/gi;
@@ -217,7 +226,10 @@ export function classifyEditIntent(phrase: string): EditIntent {
       .replace(/[^a-z0-9]+/gi, " ")
       .trim();
     if (residue.length < 2) return { kind: "contentless" };
-    // 3) Substantive edit of the current object → confirm a paid regen.
+    // 3) Surface-only change (no structural words) → texture restyle that
+    //    keeps the geometry. Structural wins when both appear.
+    if (SURFACE.test(text) && !STRUCTURAL.test(text)) return { kind: "restyle" };
+    // 4) Substantive edit of the current object → confirm a regeneration.
     return { kind: "regen" };
   }
 

@@ -168,7 +168,7 @@ export type YiiyaStore = StageSlice & {
   projectName: string;
   pendingClarify: PendingClarify | null;
   /** A substantive edit awaiting the user's OK before spending a paid regen. */
-  pendingEditConfirm: { transcript: string; assetName: string } | null;
+  pendingEditConfirm: { transcript: string; assetName: string; mode?: "regen" | "restyle" } | null;
   /** The free reference photo the current/last generation is building from. */
   groundingPreviewUrl: string | null;
   /** Daily free-generation quota surfaced by the server (null = unknown/exempt). */
@@ -209,7 +209,7 @@ export type YiiyaStore = StageSlice & {
   setSaveStatus: (s: SaveStatus) => void;
   setProjectName: (name: string) => void;
   setPendingClarify: (c: PendingClarify | null) => void;
-  setPendingEditConfirm: (c: { transcript: string; assetName: string } | null) => void;
+  setPendingEditConfirm: (c: { transcript: string; assetName: string; mode?: "regen" | "restyle" } | null) => void;
   setGroundingPreviewUrl: (url: string | null) => void;
   setGenerationQuota: (remaining: number | null, limit: number | null) => void;
   setGlbLoadFailed: (failed: boolean) => void;

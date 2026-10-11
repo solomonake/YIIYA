@@ -3,6 +3,7 @@ import { isInterpretRequest, runInterpretPipeline, type GeneratedAsset, type PBR
 import { guardRequest } from "@/app/api/interpret/guard";
 import { saveGeneratedAsset, findCachedAsset } from "@/lib/assets/persist";
 import { buildExportUrls } from "@/lib/scene/export-urls";
+import { retextureCacheKey } from "@/lib/hf-retexture";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,8 +63,14 @@ export async function POST(request: NextRequest) {
       : {};
   const respHeaders = { ...streamHeaders, ...quotaHeaders };
 
-  if (userId && !body.referenceImage && !body.forceGenerate) {
-    const cached = await findCachedAsset(userId, body.transcript.trim());
+  // Restyles are cached under a mesh-scoped key: "make it walnut" only hits
+  // when it was said about the SAME source mesh.
+  const isRestyle = body.editMode === "restyle" && Boolean(body.activeAssetGlbUrl);
+  if (userId && !body.referenceImage && (isRestyle || !body.forceGenerate)) {
+    const cacheKeys = isRestyle
+      ? [retextureCacheKey(body.transcript, body.activeAssetGlbUrl as string)]
+      : [body.transcript.trim()];
+    const cached = await findCachedAsset(userId, cacheKeys);
     if (cached) {
       const asset: GeneratedAsset = {
         id: `asset-${Date.now()}-cache`,
@@ -109,7 +116,12 @@ export async function POST(request: NextRequest) {
       try {
         for await (const event of runInterpretPipeline(body as Parameters<typeof runInterpretPipeline>[0])) {
           if (event.type === "asset_ready" && userId) {
-            const dbId = await saveGeneratedAsset(userId, body.transcript, null, event.asset).catch(
+            // Restyles save under a mesh-scoped key so the cache never serves
+            // them for the same phrase on a different model.
+            const promptKey = event.asset.sourceGlbUrl
+              ? retextureCacheKey(body.transcript, event.asset.sourceGlbUrl)
+              : body.transcript;
+            const dbId = await saveGeneratedAsset(userId, promptKey, null, event.asset).catch(
               () => null
             );
             if (dbId) {
