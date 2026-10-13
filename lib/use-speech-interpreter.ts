@@ -74,7 +74,7 @@ export function useSpeechInterpreter() {
     referenceImage
   } = useYiiyaStore();
 
-  const runTranscriptThroughPipeline = useCallback(async (transcript: string, opts?: { forceGenerate?: boolean }) => {
+  const runTranscriptThroughPipeline = useCallback(async (transcript: string, opts?: { forceGenerate?: boolean; editMode?: "restyle" }) => {
     if (!transcript.trim()) return;
 
     const store = useYiiyaStore.getState();
@@ -130,6 +130,13 @@ export function useSpeechInterpreter() {
         addLog(`[USER] ${transcript}`);
         addLog(`[SYSTEM] Didn't catch what to change — try "make it red", "bigger", or "add a handle".`);
         store.addConversationMessage({ role: "assistant", content: "Didn't catch that edit — what should I change?" });
+        return;
+      }
+
+      if (intent.kind === "restyle") {
+        addLog(`[USER] ${transcript}`);
+        store.setPendingEditConfirm({ transcript, assetName: activeAsset.name, mode: "restyle" });
+        addLog(`[SYSTEM] "${transcript}" changes the surface only. Restyling keeps "${activeAsset.name}"'s shape and regenerates its textures on Hugging Face's shared GPUs (wait times vary). Confirm to restyle.`);
         return;
       }
 
@@ -191,7 +198,12 @@ export function useSpeechInterpreter() {
           history: store.conversationHistory.slice(-4),
           existingAssets: store.generatedAssets.map(a => ({ id: a.id, name: a.name })),
           userHfToken: getSettings().hfToken || undefined,
-          forceGenerate: opts?.forceGenerate || undefined
+          forceGenerate: opts?.forceGenerate || undefined,
+          // Restyle keeps the active mesh's geometry, so the server needs its
+          // file. The server resolves and allowlists the URL before fetching.
+          ...(opts?.editMode === "restyle" && activeAsset && activeAsset.tier !== "fallback"
+            ? { editMode: "restyle" as const, activeAssetGlbUrl: activeAsset.glbUrl }
+            : {})
         }),
         signal: abortController.signal
       });
@@ -407,7 +419,7 @@ export function useSpeechInterpreter() {
     }
   }, [isListening, startListening, stopListening]);
 
-  const submitManualTranscript = useCallback((text: string, opts?: { forceGenerate?: boolean }) => {
+  const submitManualTranscript = useCallback((text: string, opts?: { forceGenerate?: boolean; editMode?: "restyle" }) => {
     if (text.trim()) void runTranscriptThroughPipeline(text.trim(), opts);
   }, [runTranscriptThroughPipeline]);
 

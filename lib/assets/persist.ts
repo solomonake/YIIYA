@@ -68,17 +68,17 @@ export type CachedAssetRow = {
 
 export async function findCachedAsset(
   userId: string,
-  prompt: string
+  prompts: string[]
 ): Promise<CachedAssetRow | null> {
   const client = serviceClient();
-  if (!client) return null;
+  if (!client || prompts.length === 0) return null;
 
   try {
     const { data, error } = await client
       .from("assets")
       .select("id, object_name, tier, glb_url, triangle_count, scale_meters, brief_json")
       .eq("owner_id", userId)
-      .eq("prompt", prompt)
+      .in("prompt", prompts)
       .neq("tier", "fallback")
       .order("created_at", { ascending: false })
       .limit(1)

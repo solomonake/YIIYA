@@ -469,20 +469,30 @@ function LeftPanel({ open }: { open: boolean }) {
       {pendingEditConfirm && !isInterpreting ? (
         <div className="mx-3 mb-2 border border-amber-900/60 bg-amber-950/20 rounded-sm p-2.5">
           <div className="text-[9px] font-mono text-amber-400 leading-4 mb-2">
-            Regenerate <span className="text-amber-200">{pendingEditConfirm.assetName}</span> as
-            &ldquo;{pendingEditConfirm.transcript}&rdquo;? This spends one generation (1–4 min).
-            Your current mesh stays in the tray.
+            {pendingEditConfirm.mode === "restyle" ? (
+              <>
+                Restyle <span className="text-amber-200">{pendingEditConfirm.assetName}</span> as
+                &ldquo;{pendingEditConfirm.transcript}&rdquo;? Keeps the shape and regenerates only the
+                surface on Hugging Face&apos;s shared GPUs. Wait times vary. Your current mesh stays in the tray.
+              </>
+            ) : (
+              <>
+                Regenerate <span className="text-amber-200">{pendingEditConfirm.assetName}</span> as
+                &ldquo;{pendingEditConfirm.transcript}&rdquo;? This spends one generation (1–4 min).
+                Your current mesh stays in the tray.
+              </>
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             <button
               onClick={() => {
-                const t = pendingEditConfirm.transcript;
+                const { transcript: t, mode } = pendingEditConfirm;
                 useYiiyaStore.getState().setPendingEditConfirm(null);
-                submitManualTranscript(t, { forceGenerate: true });
+                submitManualTranscript(t, { forceGenerate: true, ...(mode === "restyle" ? { editMode: "restyle" as const } : {}) });
               }}
               className="text-[8px] font-mono px-2 py-1 border border-amber-700 bg-amber-500 text-black rounded-sm hover:bg-amber-400 transition-colors"
             >
-              Yes — regenerate (1 gen)
+              {pendingEditConfirm.mode === "restyle" ? "Yes — restyle (keeps shape)" : "Yes — regenerate (1 gen)"}
             </button>
             <button
               onClick={() => useYiiyaStore.getState().setPendingEditConfirm(null)}
