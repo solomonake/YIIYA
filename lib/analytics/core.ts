@@ -1,5 +1,6 @@
 export const CONSENT_KEY = "yiiya.analytics-consent.v1";
 export type Consent = "granted" | "denied" | "unset";
+export type DeliveryStatus = "disabled" | "not_configured" | "privacy_blocked" | "no_consent" | "idle" | "sending" | "accepted" | "rejected" | "network_error";
 export type AnalyticsEvent = "$pageview" | "studio_generation_requested" | "export_requested";
 const FORMATS = new Set(["glb", "obj", "usd", "usdz", "stl", "fbx"]);
 export function allowedRoute(path: string): string | null {
@@ -19,6 +20,15 @@ export function createAnalytics(options: {
   let visitId: string | null = null;
   let lastPage: string | null = null;
   let sent = 0;
+  let delivery: DeliveryStatus = "idle";
+  let revision = 0;
+  function status(): DeliveryStatus {
+    if (!options.enabled) return "disabled";
+    if (!configured) return "not_configured";
+    if (options.privacyBlocked()) return "privacy_blocked";
+    if (consent() !== "granted") return "no_consent";
+    return delivery;
+  }
   const pending = new Map<AbortController, ReturnType<typeof setTimeout>>();
   function consent(): Consent {
     if (locallyDenied) return "denied";
@@ -28,6 +38,7 @@ export function createAnalytics(options: {
     } catch { return "unset"; }
   }
   function stop() {
+    revision++; delivery = "idle";
     pending.forEach((timeout, controller) => { clearTimeout(timeout); controller.abort(); }); pending.clear();
     visitId = null; lastPage = null;
   }
@@ -61,12 +72,18 @@ export function createAnalytics(options: {
       pending.set(controller, timeout);
       if (event === "$pageview") lastPage = route;
       sent++;
+      const requestRevision = ++revision;
+      delivery = "sending";
       // No SDK, automatic properties, retry queue, cookies, referrer or redirects.
       void options.fetch(endpoint!, { method: "POST", credentials: "omit", referrerPolicy: "no-referrer",
         redirect: "error", signal: controller.signal, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_key: options.token, distinct_id: visitId, event, properties })
-      }).catch(() => undefined).finally(() => { clearTimeout(timeout); pending.delete(controller); });
+      }).then(response => {
+        if (requestRevision === revision) delivery = response.ok ? "accepted" : "rejected";
+      }).catch(() => {
+        if (requestRevision === revision) delivery = "network_error";
+      }).finally(() => { clearTimeout(timeout); pending.delete(controller); });
     } catch { stop(); /* Optional telemetry must never break a Studio action. */ }
   }
-  return { consent, setConsent, syncConsent, capture, stop };
+  return { consent, setConsent, syncConsent, capture, stop, status };
 }

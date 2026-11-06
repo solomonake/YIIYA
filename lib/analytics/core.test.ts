@@ -73,3 +73,46 @@ describe("consent-only minimal capture", () => {
   });
 });
 it("never accepts a full URL as a route", () => { expect(allowedRoute("https://yiiya.vercel.app/app?secret")).toBeNull(); });
+
+describe("local delivery diagnosis", () => {
+  it("distinguishes guards without sending any data", () => {
+    expect(client({ enabled: false }).status()).toBe("disabled");
+    expect(client({ token: "" }).status()).toBe("not_configured");
+    expect(client({ privacyBlocked: () => true }).status()).toBe("privacy_blocked");
+    expect(client().status()).toBe("no_consent");
+    expect(send).not.toHaveBeenCalled();
+  });
+  it.each([200, 400, 429, 500])("reports HTTP %s independently of caller success", async code => {
+    send.mockResolvedValue(new Response("unused response body", { status: code }));
+    const analytics = client(); analytics.setConsent("granted");
+    expect(analytics.status()).toBe("idle");
+    analytics.capture("$pageview", "/");
+    expect(analytics.status()).toBe("sending");
+    await vi.waitFor(() => expect(analytics.status()).toBe(code === 200 ? "accepted" : "rejected"));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("reports network failure without retries or response content", async () => {
+    send.mockRejectedValue(new Error("private transport detail"));
+    const analytics = client(); analytics.setConsent("granted"); analytics.capture("$pageview", "/");
+    await vi.waitFor(() => expect(analytics.status()).toBe("network_error"));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("ignores an old completion after revocation and re-consent", async () => {
+    let complete!: (response: Response) => void;
+    send.mockImplementation(() => new Promise<Response>(resolve => { complete = resolve; }));
+    const analytics = client(); analytics.setConsent("granted"); analytics.capture("$pageview", "/");
+    analytics.setConsent("denied"); expect(analytics.status()).toBe("no_consent");
+    analytics.setConsent("granted"); complete(new Response("ok"));
+    await Promise.resolve(); await Promise.resolve();
+    expect(analytics.status()).toBe("idle");
+  });
+  it("a late earlier failure cannot override the latest acceptance", async () => {
+    let fail!: (error: Error) => void;
+    send.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+    const analytics = client(); analytics.setConsent("granted"); analytics.capture("$pageview", "/");
+    analytics.capture("$pageview", "/app");
+    await vi.waitFor(() => expect(analytics.status()).toBe("accepted"));
+    fail(new Error("offline")); await Promise.resolve(); await Promise.resolve();
+    expect(analytics.status()).toBe("accepted");
+  });
+});

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { browserAnalytics } from "@/lib/analytics/browser";
-import { CONSENT_KEY, type Consent } from "@/lib/analytics/core";
+import { CONSENT_KEY, type Consent, type DeliveryStatus } from "@/lib/analytics/core";
 
 export function AnalyticsConsent() {
   const path = usePathname();
@@ -10,6 +10,14 @@ export function AnalyticsConsent() {
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
+  const [delivery, setDelivery] = useState<DeliveryStatus>("idle");
+  useEffect(() => {
+    if (!open) return;
+    const refresh = () => setDelivery(browserAnalytics()?.status() ?? "disabled");
+    refresh();
+    const timer = setInterval(refresh, 500);
+    return () => clearInterval(timer);
+  }, [open, consent]);
   useEffect(() => {
     const analytics = browserAnalytics();
     const current = analytics?.consent() ?? "unset";
@@ -33,6 +41,13 @@ export function AnalyticsConsent() {
       <h2 id="analytics-title" className="font-semibold">Optional usage analytics</h2>
       <p className="mt-2 text-zinc-300">Allow anonymous page, Studio request and export counts through PostHog? We exclude your prompts, photos, voice, email and link tokens.</p>
       <p className="mt-2 text-xs text-zinc-400">No recordings. You can turn this off anytime. Browser privacy signals are respected.</p>
+      <p className="mt-2 text-xs text-zinc-300" role="status" data-analytics-status={delivery}>
+        {delivery === "privacy_blocked" ? "Your browser privacy preference keeps analytics off."
+          : delivery === "disabled" || delivery === "not_configured" ? "Usage analytics is currently unavailable."
+          : delivery === "rejected" || delivery === "network_error" ? "Usage analytics could not connect. You can keep using the Studio."
+          : consent === "granted" ? "Usage analytics is allowed."
+          : "Usage analytics is off."}
+      </p>
       {error && <p role="alert" className="mt-2 text-amber">{error}</p>}
       <div className="mt-3 flex gap-2">
         <button type="button" onClick={() => choose("denied")} className="min-h-11 flex-1 rounded border border-zinc-500 px-3">{consent === "granted" ? "Turn off" : "No thanks"}</button>
