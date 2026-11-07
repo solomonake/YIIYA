@@ -77,7 +77,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
                 huggingface.co/settings/tokens
               </a>
               . Stored in this browser and sent to YIIYA&apos;s server for Hugging Face
-              generation requests. Your Hugging Face account&apos;s quota and billing settings apply.
+              token checks, model generation and model downloads. Your Hugging Face account&apos;s quota and billing settings apply.
             </p>
             <input
               id="hf-token"

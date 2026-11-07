@@ -6,6 +6,9 @@ import { readBoundedResponse } from "@/lib/bounded-response";
 import { resolveArtifactUpstream } from "@/lib/scene/viewer-source";
 import { openGlbStream } from "@/lib/scene/glb-stream";
 
+import { HF_ARTIFACT_HEADER } from "@/lib/hf-artifact-request";
+import { normalizeHfToken } from "@/lib/huggingface-access";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -43,10 +46,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Source host not allowed" }, { status: 400 });
   }
 
+  const supplied = request.headers.get(HF_ARTIFACT_HEADER);
+  const personalKey = normalizeHfToken(supplied);
+  if (supplied !== null && !personalKey) {
+    return NextResponse.json({ error: "Invalid Hugging Face credential" }, { status: 400 });
+  }
+  const headers = providerAuthHeaders(sourceUrl, personalKey);
   let glb: Buffer;
   try {
     const res = await fetch(sourceUrl, {
-      headers: providerAuthHeaders(sourceUrl),
+      headers,
+      cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(60_000)
     });
@@ -67,23 +77,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Model download failed or the GLB was incomplete. Try generating it again." }, { status: 502 });
   }
 
+  const cache = headers.Authorization ? "private, no-store" : "public, max-age=3600";
   try {
     if (to === "obj") {
       const { obj, triangles } = await glbToObj(new Uint8Array(glb));
-      return fileResponse(Buffer.from(obj, "utf-8"), "model.obj", "model/obj", {
+      return fileResponse(Buffer.from(obj, "utf-8"), "model.obj", "model/obj", cache, {
         "X-Yiiya-Triangles": String(triangles)
       });
     }
 
     if (to === "stl") {
       const { stl, triangles } = await glbToStl(new Uint8Array(glb));
-      return fileResponse(stl, "model.stl", "model/stl", {
+      return fileResponse(stl, "model.stl", "model/stl", cache, {
         "X-Yiiya-Triangles": String(triangles)
       });
     }
 
     if (to === "glb" || to === "gltf") {
-      return fileResponse(glb, "model.glb", "model/gltf-binary");
+      return fileResponse(glb, "model.glb", "model/gltf-binary", cache);
     }
 
     if (to === "usdz" || to === "usd") {
@@ -100,7 +111,7 @@ export async function GET(request: NextRequest) {
       }
       const { convertGlbToUsdz } = await import("@/lib/scene/usdz-export");
       const { usdz } = await convertGlbToUsdz(glb);
-      return fileResponse(usdz, "model.usdz", "model/vnd.usdz+zip");
+      return fileResponse(usdz, "model.usdz", "model/vnd.usdz+zip", cache);
     }
 
     return NextResponse.json({ error: `Unsupported format: ${to}` }, { status: 400 });
@@ -114,6 +125,7 @@ function fileResponse(
   body: Buffer,
   filename: string,
   mime: string,
+  cache: string,
   extraHeaders: Record<string, string> = {}
 ) {
   return new Response(new Uint8Array(body), {
@@ -121,7 +133,8 @@ function fileResponse(
     headers: {
       "Content-Type": mime,
       "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": cache,
+      Vary: HF_ARTIFACT_HEADER,
       ...extraHeaders
     }
   });

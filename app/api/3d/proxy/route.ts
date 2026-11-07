@@ -3,6 +3,9 @@ import { type NextRequest, NextResponse } from "next/server";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 import { openGlbStream } from "@/lib/scene/glb-stream";
 
+import { HF_ARTIFACT_HEADER } from "@/lib/hf-artifact-request";
+import { normalizeHfToken } from "@/lib/huggingface-access";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -28,10 +31,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Source host not allowed" }, { status: 400 });
   }
 
+  const supplied = request.headers.get(HF_ARTIFACT_HEADER);
+  const personalKey = normalizeHfToken(supplied);
+  if (supplied !== null && !personalKey) {
+    return NextResponse.json({ error: "Invalid Hugging Face credential" }, { status: 400 });
+  }
+  const headers = providerAuthHeaders(src, personalKey);
   let upstream: Response;
   try {
     upstream = await fetch(src, {
-      headers: providerAuthHeaders(src),
+      headers,
+      cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(90_000)
     });
@@ -64,8 +74,9 @@ export async function GET(request: NextRequest) {
     headers: {
       "Content-Type": "model/gltf-binary",
       "X-Content-Type-Options": "nosniff",
-      // Provider temp URLs are unique per generation, so aggressive caching is safe.
-      "Cache-Control": "public, max-age=31536000, immutable",
+      // A private download must never populate a shared cache.
+      "Cache-Control": headers.Authorization ? "private, no-store" : "public, max-age=31536000, immutable",
+      Vary: HF_ARTIFACT_HEADER,
       "Access-Control-Allow-Origin": "*"
     }
   });

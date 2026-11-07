@@ -1,5 +1,7 @@
 "use client";
 
+import { ArtifactDownload } from "@/components/artifact-download";
+
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -158,7 +160,7 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
         {hasExports ? (
           Object.entries(asset.exportUrls).map(([fmt, url]) =>
             url ? (
-              <a
+              <ArtifactDownload
                 key={fmt}
                 href={url}
                 download={`${asset.name}.${fmt}`}
@@ -166,7 +168,7 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
                 className="text-[8px] font-mono px-1.5 py-0.5 border border-zinc-700 rounded-sm text-zinc-400 hover:text-zinc-100 hover:border-zinc-500 transition-colors"
               >
                 .{fmt.toUpperCase()}
-              </a>
+              </ArtifactDownload>
             ) : null
           )
         ) : (

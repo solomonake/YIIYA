@@ -23,13 +23,14 @@ const ALLOWED_EXACT_HOSTS = new Set([
 ]);
 
 // Fetch permission is not permission to receive a user's private HF credential.
-// These are the five Space endpoints actually used by the generator.
+// The studio uses these exact Space endpoints for generation and texture edits.
 const AUTHENTICATED_HF_HOSTS = new Set([
   "tencent-hunyuan3d-2.hf.space",
   "trellis-community-trellis.hf.space",
   "microsoft-trellis-2.hf.space",
   "tencentarc-instantmesh.hf.space",
-  "stabilityai-stable-fast-3d.hf.space"
+  "stabilityai-stable-fast-3d.hf.space",
+  "horizonrobotics-embodiedgen-texture-gen.hf.space"
 ]);
 
 export function isAllowedProviderUrl(raw: string): boolean {
@@ -47,21 +48,13 @@ export function isAllowedProviderUrl(raw: string): boolean {
   );
 }
 
-/**
- * HuggingFace Space file endpoints often require the same token the gradio
- * client used to start the job — an anonymous browser GET returns 403.
- * Attach the server's HF token whenever we proxy a Space URL.
- */
+export function isAuthenticatedHfUrl(raw: string): boolean {
+  return isAllowedProviderUrl(raw) && AUTHENTICATED_HF_HOSTS.has(new URL(raw).hostname.toLowerCase());
+}
+
+/** Forward credentials only to the exact Spaces used by the studio. */
 export function providerAuthHeaders(raw: string, userHfToken?: string): Record<string, string> {
-  try {
-    if (!isAllowedProviderUrl(raw)) return {};
-    const host = new URL(raw).hostname.toLowerCase();
-    const token = userHfToken?.trim() || process.env.HUGGINGFACE_TOKEN;
-    if (token && !token.includes("your_") && AUTHENTICATED_HF_HOSTS.has(host)) {
-      return { Authorization: `Bearer ${token}` };
-    }
-  } catch {
-    // fall through
-  }
-  return {};
+  if (!isAuthenticatedHfUrl(raw)) return {};
+  const token = userHfToken?.trim() || process.env.HUGGINGFACE_TOKEN;
+  return token && !token.includes("your_") ? { Authorization: `Bearer ${token}` } : {};
 }

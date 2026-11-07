@@ -9,6 +9,8 @@
  * pure client + Google's <model-viewer> web component.
  */
 import { Suspense, useEffect, useState, useRef, createElement } from "react";
+import { ArtifactDownload } from "@/components/artifact-download";
+import { useArtifactSource } from "@/lib/use-artifact-source";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { resolveViewerSource } from "@/lib/scene/viewer-source";
@@ -27,7 +29,8 @@ function Viewer() {
   const [viewerError, setViewerError] = useState(false);
   const [modelError, setModelError] = useState(false);
   const modelRef = useRef<HTMLElement | null>(null);
-  const src = resolveViewerSource(rawSrc);
+  const source = resolveViewerSource(rawSrc);
+  const { src, failed } = useArtifactSource(source);
 
   // Load model-viewer as a module and only render the custom element once it's
   // actually defined — more reliable than next/script for ESM custom elements.
@@ -90,7 +93,7 @@ function Viewer() {
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4">
-        {!src ? (
+        {!source ? (
           <div className="text-center text-[11px] font-mono text-zinc-600 leading-6 max-w-sm">
             No model to show — this link is missing or points somewhere we don&apos;t serve.
             <br />
@@ -98,13 +101,13 @@ function Viewer() {
               Generate one in the studio →
             </Link>
           </div>
-        ) : viewerError || modelError ? (
+        ) : viewerError || modelError || failed ? (
           <div role="alert" className="max-w-sm text-center text-sm text-zinc-300 space-y-3">
-            <p>{modelError ? "This model could not load. Its temporary link may have expired." : "The 3D viewer could not load. Check your connection and reload this page."}</p>
-            <a href={src} className="text-[#EF9F27] underline">Try downloading the GLB</a>
+            <p>{modelError || failed ? "This model could not load. Its temporary link may have expired." : "The 3D viewer could not load. Check your connection and reload this page."}</p>
+            <ArtifactDownload href={source} download="model.glb" className="text-[#EF9F27] underline">Try downloading the GLB</ArtifactDownload>
             <p className="text-xs text-zinc-400">AR is unavailable until the model loads.</p>
           </div>
-        ) : ready ? (
+        ) : ready && src ? (
           createElement("model-viewer", {
             ref: modelRef,
             src,
@@ -132,7 +135,7 @@ function Viewer() {
 
       <footer className="px-5 py-3 text-center border-t border-zinc-900">
         <p className="text-xs text-zinc-400 mb-2">AR requires a supported device and browser; otherwise use the 3D preview.</p>
-        {assetStorageStatus(src) === "temporary" && <p className="text-xs text-amber-300 mb-2">This model uses temporary storage. Download a copy before the link expires.</p>}
+        {assetStorageStatus(source) === "temporary" && <p className="text-xs text-amber-300 mb-2">This model uses temporary storage. Download a copy before the link expires.</p>}
         <span className="text-[10px] font-mono text-zinc-700">
           {name} · built with <span className="text-zinc-500">YIIYA</span> — say it, get a 3D asset
         </span>
