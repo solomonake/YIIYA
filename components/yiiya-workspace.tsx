@@ -264,6 +264,34 @@ function LeftPanel({ open }: { open: boolean }) {
   const activeBrief = useYiiyaStore(s => s.activeBrief);
   const referenceImage = useYiiyaStore(s => s.referenceImage);
   const setReferenceImage = useYiiyaStore(s => s.setReferenceImage);
+  const [preparingCutout, setPreparingCutout] = useState(false);
+  const [cutoutError, setCutoutError] = useState("");
+  const undoCutout = useRef<{original: ReferenceImage; prepared: ReferenceImage} | null>(null);
+  useEffect(() => {
+    setCutoutError("");
+    if (undoCutout.current?.prepared !== referenceImage) undoCutout.current = null;
+  }, [referenceImage]);
+
+  async function toggleCutout() {
+    if (!referenceImage) return;
+    if (undoCutout.current?.prepared === referenceImage) {
+      setReferenceImage(undoCutout.current.original);
+      return;
+    }
+    const original = referenceImage;
+    setPreparingCutout(true);
+    setCutoutError("");
+    try {
+      const { prepareCutout } = await import("@/lib/srl-cutout/prepare");
+      const prepared = await prepareCutout(original);
+      if (useYiiyaStore.getState().referenceImage !== original) return;
+      undoCutout.current = { original, prepared };
+      setReferenceImage(prepared);
+    } catch (e) {
+      if (useYiiyaStore.getState().referenceImage === original)
+        setCutoutError(e instanceof Error ? e.message : "Couldn’t isolate this object.");
+    } finally { setPreparingCutout(false); }
+  }
   const pendingClarify = useYiiyaStore(s => s.pendingClarify);
   const pendingEditConfirm = useYiiyaStore(s => s.pendingEditConfirm);
   const groundingPreviewUrl = useYiiyaStore(s => s.groundingPreviewUrl);
@@ -605,9 +633,17 @@ function LeftPanel({ open }: { open: boolean }) {
             <div className="flex-1 min-w-0">
               <div className="text-[9px] font-mono text-amber-500 truncate">{referenceImage.name}</div>
               <div className="flex items-center gap-2 mt-0.5">
+                {!referenceImage.additionalViews?.length && (
+                  <button type="button" disabled={isInterpreting || preparingCutout}
+                    onClick={e => { e.stopPropagation(); void toggleCutout(); }}
+                    className="text-[10px] font-mono text-zinc-300 underline disabled:opacity-40">
+                    {preparingCutout ? "Isolating…" : undoCutout.current?.prepared === referenceImage ? "Use original" : "Isolate object"}
+                  </button>
+                )}
+                {cutoutError && <span role="alert" className="text-xs text-amber-400">{cutoutError}</span>}
                 <button
                   onClick={(e) => { e.stopPropagation(); if (!isInterpreting) generateFromImage(); }}
-                  disabled={isInterpreting}
+                  disabled={isInterpreting || preparingCutout}
                   className="text-[10px] font-mono px-1.5 py-1 rounded-sm text-zinc-300 underline hover:text-white disabled:opacity-40"
                 >
                   Try hosted single-photo generation
