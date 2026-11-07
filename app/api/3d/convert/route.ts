@@ -1,7 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
+import { providerAuthHeaders } from "@/lib/provider-hosts";
 import { glbToObj, glbToStl } from "@/lib/scene/mesh-export";
+import { readBoundedResponse } from "@/lib/bounded-response";
+import { resolveArtifactUpstream } from "@/lib/scene/viewer-source";
+import { openGlbStream } from "@/lib/scene/glb-stream";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,34 +32,39 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing ?from= parameter" }, { status: 400 });
   }
 
-  // SSRF guard: only our own /api artifacts or allowlisted provider hosts.
-  const isOwnRoute = from.startsWith("/api/");
-  if (!isOwnRoute && !isAllowedProviderUrl(from)) {
-    return NextResponse.json({ error: "Source host not allowed" }, { status: 400 });
+  if (!["glb", "gltf", "obj", "stl", "usd", "usdz"].includes(to)) {
+    return NextResponse.json({ error: `Unsupported format: ${to}` }, { status: 400 });
   }
 
-  const sourceUrl = isOwnRoute ? `${request.nextUrl.origin}${from}` : from;
+  // The exact artifact proxy is the only local source. Do not let conversion
+  // recursively request itself or fetch unrelated application routes.
+  const sourceUrl = resolveArtifactUpstream(from);
+  if (!sourceUrl) {
+    return NextResponse.json({ error: "Source host not allowed" }, { status: 400 });
+  }
 
   let glb: Buffer;
   try {
     const res = await fetch(sourceUrl, {
       headers: providerAuthHeaders(sourceUrl),
+      redirect: "error",
       signal: AbortSignal.timeout(60_000)
     });
     if (!res.ok) {
+      await res.body?.cancel();
       return NextResponse.json({ error: `Source fetch failed: ${res.status}` }, { status: 502 });
     }
     const declared = Number(res.headers.get("content-length") ?? 0);
     if (declared > MAX_BYTES) {
+      await res.body?.cancel();
       return NextResponse.json({ error: "Source too large" }, { status: 413 });
     }
-    glb = Buffer.from(await res.arrayBuffer());
-    if (glb.byteLength > MAX_BYTES) {
-      return NextResponse.json({ error: "Source too large" }, { status: 413 });
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "fetch failed";
-    return NextResponse.json({ error: `Source fetch failed: ${msg}` }, { status: 502 });
+    // Complete validation before returning an attachment; HTTP 200 from an
+    // upstream does not establish GLB identity or transport completeness.
+    const validated = new Response(await openGlbStream(res, MAX_BYTES));
+    glb = Buffer.from(await readBoundedResponse(validated, MAX_BYTES));
+  } catch {
+    return NextResponse.json({ error: "Model download failed or the GLB was incomplete. Try generating it again." }, { status: 502 });
   }
 
   try {

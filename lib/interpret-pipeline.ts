@@ -3,11 +3,16 @@
  * 5 agents: Director → Reference Grounder → Spatial Generator → Material Artist → Packager
  */
 import { Client } from "@gradio/client";
+import { generateStableFast3d } from "@/lib/providers/stable-fast-3d";
+import { predictGradio, withProviderDeadline, ProviderDeadlineError } from "@/lib/provider-deadline";
+import { resolveHfToken, hfFailureMessage } from "@/lib/huggingface-access";
+import { generationMode, providerOrder } from "@/lib/generation-policy";
 import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 import { buildExportUrls } from "@/lib/scene/export-urls";
 import { inspectGlbUrl, type GlbGeometry } from "@/lib/scene/glb-inspect";
+import { evaluateQualityReward, type QualityReward } from "@/lib/scene/quality-reward";
 import {
   destinationForTargetPlatform,
   evaluateReadiness,
@@ -104,6 +109,8 @@ export type GeneratedAsset = {
   isWatertight?: boolean;
   /** Destination-aware handoff readiness, when the mesh could be inspected. */
   readiness?: ReadinessReport;
+  /** Versioned metadata reward; photo fidelity remains explicitly unmeasured. */
+  qualityReward?: QualityReward;
   /**
    * Client-side material/scale tweaks applied on top of the generated GLB
    * (color, finish, glow, scale). Kept off the mesh itself so they're free,
@@ -568,28 +575,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Hard timeout wrapper. Guarantees a provider call can never hang the request:
- * `@gradio/client` connect/predict and `fal.subscribe` have no built-in
- * timeout, so a sleeping HF Space or stuck queue would otherwise block until
- * Vercel kills the whole function. On timeout we reject and the caller advances
- * to the next provider; the underlying promise is abandoned (harmless).
- */
-async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
-      ms
-    );
-  });
-  try {
-    return await Promise.race([p, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-/**
  * Upload raw image bytes to Vercel Blob and return a public https URL. Tripo and
  * Meshy accept an image *URL* only (not inline base64), so a user-uploaded photo
  * must be hosted first. Returns null when Blob isn't configured.
@@ -658,8 +643,11 @@ type GeneratorOutcome = {
  * layer. Kept as a thin wrapper so existing callers and the GlbValidation
  * shape are unchanged.
  */
-async function validateGlbUrl(url: string): Promise<GlbValidation> {
-  const inspection = await inspectGlbUrl(url, { headers: providerAuthHeaders(url) });
+async function validateGlbUrl(url: string, userHfToken?: string): Promise<GlbValidation> {
+  if (!isAllowedProviderUrl(url)) {
+    return { ok: false, reason: "Source host not allowed", sizeBytes: 0 };
+  }
+  const inspection = await inspectGlbUrl(url, { headers: providerAuthHeaders(url, userHfToken) });
 
   return {
     ok: inspection.ok,
@@ -673,10 +661,11 @@ async function validateGlbUrl(url: string): Promise<GlbValidation> {
 async function generateViaHunyuan3D(
   refUrl: string,
   brief: ThreeDBrief,
-  userToken?: string
+  userToken?: string,
+  signal?: AbortSignal
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = resolveHfToken(userToken, process.env.HUGGINGFACE_TOKEN);
     if (!HF_TOKEN) {
       return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
     }
@@ -684,11 +673,12 @@ async function generateViaHunyuan3D(
     void warmupHunyuan3D();
     const client = await Client.connect(HUNYUAN3D_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
 
+    signal?.throwIfAborted();
     const imgData = await fetchImageAsBase64(refUrl);
     if (!imgData) return { url: null, error: "Reference image fetch failed (timeout or 4xx)" };
 
     const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
-    const result = await client.predict("/generation_all", {
+    const result = await predictGradio(client, signal, "/generation_all", {
       caption: brief.description.slice(0, 200),
       image: blob,
       mv_image_front: null,
@@ -720,7 +710,7 @@ async function generateViaHunyuan3D(
     }
     return { url: null, error: "Hunyuan3D returned no GLB in response" };
   } catch (err) {
-    const msg = errMessage(err);
+    const msg = hfFailureMessage(err);
     console.error("[HUNYUAN3D]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -743,26 +733,28 @@ function extractGlbFromGradio(data: unknown): string | null {
 
 async function generateViaTrellis2HF(
   refUrl: string,
-  userToken?: string
+  userToken?: string,
+  signal?: AbortSignal
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = resolveHfToken(userToken, process.env.HUGGINGFACE_TOKEN);
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupTrellis();
     const client = await Client.connect(TRELLIS_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
 
+    signal?.throwIfAborted();
     const imgData = await fetchImageAsBase64(refUrl);
     if (!imgData) return { url: null, error: "Reference image fetch failed" };
 
     const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
 
     // TRELLIS pipeline: preprocess → generate_and_extract_glb.
-    const pre = (await client.predict("/preprocess_image", { image: blob })) as { data: unknown[] };
+    const pre = (await predictGradio(client, signal, "/preprocess_image", { image: blob })) as { data: unknown[] };
     const preprocessed = pre.data?.[0];
     if (!preprocessed) return { url: null, error: "TRELLIS preprocess returned no image" };
 
-    const result = (await client.predict("/generate_and_extract_glb", {
+    const result = (await predictGradio(client, signal, "/generate_and_extract_glb", {
       image: preprocessed,
       multiimages: [],
       seed: 42,
@@ -779,7 +771,7 @@ async function generateViaTrellis2HF(
     if (!url) return { url: null, error: "TRELLIS returned no GLB in response" };
     return { url, error: null };
   } catch (err) {
-    const msg = errMessage(err);
+    const msg = hfFailureMessage(err);
     console.error("[TRELLIS-2 HF]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -794,25 +786,27 @@ async function generateViaTrellis2HF(
 async function generateViaTrellis2Official(
   refUrl: string,
   brief: ThreeDBrief,
-  userToken?: string
+  userToken?: string,
+  signal?: AbortSignal
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = resolveHfToken(userToken, process.env.HUGGINGFACE_TOKEN);
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupTrellis2();
     const client = await Client.connect(TRELLIS2_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
 
+    signal?.throwIfAborted();
     const imgData = await fetchImageAsBase64(refUrl);
     if (!imgData) return { url: null, error: "Reference image fetch failed" };
     const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
 
-    await client.predict("/start_session", {});
-    const pre = (await client.predict("/preprocess_image", { input: blob })) as { data: unknown[] };
+    await predictGradio(client, signal, "/start_session", {});
+    const pre = (await predictGradio(client, signal, "/preprocess_image", { input: blob })) as { data: unknown[] };
     const preprocessed = pre.data?.[0];
     if (!preprocessed) return { url: null, error: "TRELLIS.2 preprocess returned no image" };
 
-    await client.predict("/image_to_3d", {
+    await predictGradio(client, signal, "/image_to_3d", {
       image: preprocessed,
       seed: 42,
       resolution: brief.polygonBudget === "high" ? "1536" : "1024",
@@ -830,7 +824,7 @@ async function generateViaTrellis2Official(
       tex_slat_rescale_t: 3.0
     });
 
-    const result = (await client.predict("/extract_glb", {
+    const result = (await predictGradio(client, signal, "/extract_glb", {
       decimation_target: brief.polygonBudget === "high" ? 300000 : 100000,
       texture_size: brief.polygonBudget === "high" ? 2048 : 1024
     })) as { data: unknown };
@@ -839,7 +833,7 @@ async function generateViaTrellis2Official(
     if (!url) return { url: null, error: "TRELLIS.2 returned no GLB" };
     return { url, error: null };
   } catch (err) {
-    const msg = errMessage(err);
+    const msg = hfFailureMessage(err);
     console.error("[TRELLIS.2]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -847,40 +841,42 @@ async function generateViaTrellis2Official(
 
 async function generateViaInstantMesh(
   refUrl: string,
-  userToken?: string
+  userToken?: string,
+  signal?: AbortSignal
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = resolveHfToken(userToken, process.env.HUGGINGFACE_TOKEN);
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupInstantMesh();
     const client = await Client.connect(INSTANTMESH_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
 
+    signal?.throwIfAborted();
     const imgData = await fetchImageAsBase64(refUrl);
     if (!imgData) return { url: null, error: "Reference image fetch failed" };
 
     const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
 
     // InstantMesh pipeline: preprocess → generate_mvs → make3d
-    const pre = (await client.predict("/preprocess", {
+    const pre = (await predictGradio(client, signal, "/preprocess", {
       input_image: blob,
       do_remove_background: true
     })) as { data: unknown[] };
     const processed = pre.data?.[0];
     if (!processed) return { url: null, error: "InstantMesh preprocess returned no image" };
 
-    await client.predict("/generate_mvs", {
+    await predictGradio(client, signal, "/generate_mvs", {
       input_image: processed,
       sample_steps: 75,
       sample_seed: 42
     });
 
-    const result = (await client.predict("/make3d", {})) as { data: unknown };
+    const result = (await predictGradio(client, signal, "/make3d", {})) as { data: unknown };
     const url = extractGlbFromGradio(result.data);
     if (!url) return { url: null, error: "InstantMesh returned no GLB" };
     return { url, error: null };
   } catch (err) {
-    const msg = errMessage(err);
+    const msg = hfFailureMessage(err);
     console.error("[INSTANTMESH]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -888,27 +884,25 @@ async function generateViaInstantMesh(
 
 async function generateViaStableFast3D(
   refUrl: string,
-  userToken?: string
+  userToken?: string,
+  signal?: AbortSignal
 ): Promise<{ url: string | null; error: string | null }> {
   try {
-    const HF_TOKEN = userToken || process.env.HUGGINGFACE_TOKEN;
+    const HF_TOKEN = resolveHfToken(userToken, process.env.HUGGINGFACE_TOKEN);
     if (!HF_TOKEN) return { url: null, error: "HUGGINGFACE_TOKEN not set on server" };
 
     void warmupStableFast3D();
     const client = await Client.connect(STABLE_FAST_3D_SPACE, { hf_token: HF_TOKEN as `hf_${string}` });
 
+    signal?.throwIfAborted();
     const imgData = await fetchImageAsBase64(refUrl);
     if (!imgData) return { url: null, error: "Reference image fetch failed" };
 
     const blob = new Blob([Buffer.from(imgData.base64, "base64")], { type: imgData.mediaType });
 
-    // /requires_bg_remove is the single-shot endpoint: image + foreground ratio →
-    // [state, state, preview, button, litmodel3d, column]. The 3D model
-    // is at index 4 (litmodel3d component).
-    const result = (await client.predict("/requires_bg_remove", {
-      image: blob,
-      fr: 0.85
-    })) as { data: unknown };
+    const result = await generateStableFast3d(
+      (endpoint, payload) => predictGradio(client, signal, endpoint, payload), blob
+    );
 
     const data = result.data as unknown;
     if (Array.isArray(data)) {
@@ -928,7 +922,7 @@ async function generateViaStableFast3D(
     }
     return { url: null, error: "Stable Fast 3D returned no GLB" };
   } catch (err) {
-    const msg = errMessage(err);
+    const msg = hfFailureMessage(err);
     console.error("[STABLE-FAST-3D]", msg);
     return { url: null, error: msg.slice(0, 200) };
   }
@@ -1225,7 +1219,7 @@ async function generateViaMeshy(publicUrl: string): Promise<{ url: string | null
 type ProviderDescriptor = {
   name: string;
   tier: GeneratedAsset["tier"];
-  run: () => Promise<{ url: string | null; error: string | null }>;
+  run: (signal: AbortSignal) => Promise<{ url: string | null; error: string | null }>;
 };
 
 /**
@@ -1266,58 +1260,6 @@ function recordCircuit(key: string, ok: boolean): void {
   }
   _circuitState.set(key, s);
 }
-
-// Default order: most reliable + fastest first, free fallbacks last. Each entry
-// is skipped instantly when its key is absent, so a deploy with only some keys
-// just uses what it has. Override with YIIYA_PROVIDER_ORDER (comma-separated
-// keys) to e.g. prefer free monthly tiers (tripo,meshy) over fal credits.
-const DEFAULT_PROVIDER_ORDER = [
-  "fal-hunyuan-mv",
-  "fal-hunyuan",
-  "fal-trellis",
-  "fal-rodin",
-  "tripo",
-  "meshy",
-  "hf-trellis2",
-  "hf-trellis",
-  "hf-hunyuan",
-  "hf-stablefast",
-  "hf-instantmesh"
-];
-
-// Free-first order (set YIIYA_FREE_FIRST=1): HF ZeroGPU Spaces — free with a
-// HuggingFace token — and the free monthly Tripo/Meshy tiers BEFORE any paid fal
-// credit. Slower and less reliable (ZeroGPU cold-starts), but $0 per generation.
-// MV stays first: it only fires when a walk-around supplied extra views, and is
-// harmless (skipped) otherwise.
-const FREE_FIRST_PROVIDER_ORDER = [
-  "fal-hunyuan-mv",
-  "hf-trellis2",
-  "hf-hunyuan",
-  "tripo",
-  "meshy",
-  "hf-trellis",
-  "hf-stablefast",
-  "hf-instantmesh",
-  "fal-hunyuan",
-  "fal-trellis",
-  "fal-rodin"
-];
-
-// Person/face subjects: multi-view first (best geometry when available), then
-// the face-tuned Rodin and photoreal-texture TRELLIS tiers before the general
-// object models. TRELLIS' Gaussian-splat textures read as the most photoreal
-// skin in the 2026 field, which is what "looks like me" hinges on.
-const PERSON_PROVIDER_ORDER = [
-  "fal-hunyuan-mv",
-  "fal-rodin",
-  "fal-trellis",
-  "hf-trellis2",
-  "fal-hunyuan",
-  "tripo",
-  "meshy",
-  "hf-hunyuan"
-];
 
 async function runSpatialGenerator(
   brief: ThreeDBrief,
@@ -1373,7 +1315,7 @@ async function runSpatialGenerator(
   // unlocks that user's own free ZeroGPU quota instead of the shared
   // server-side one, so HF providers stay enabled even without a server
   // token as long as the request brought its own.
-  const hasHf = Boolean(userHfToken || process.env.HUGGINGFACE_TOKEN);
+  const hasHf = Boolean(resolveHfToken(userHfToken, process.env.HUGGINGFACE_TOKEN));
   // Multi-view runs only when the video capture produced BOTH extra views —
   // fal's multi-view schema requires front+left+back, no partial input.
   const mvViews =
@@ -1397,29 +1339,22 @@ async function runSpatialGenerator(
     "fal-rodin": { name: "rodin (fal)", tier: "hunyuan3d", enabled: hasFal && rodinEnabled, timeoutMs: 120_000, run: () => generateViaFalRodin(inputRef, brief) },
     "tripo": { name: "tripo", tier: "trellis", enabled: Boolean(process.env.TRIPO_API_KEY), timeoutMs: 95_000, run: () => needsUrl(generateViaTripo) },
     "meshy": { name: "meshy", tier: "hunyuan3d", enabled: Boolean(process.env.MESHY_API_KEY), timeoutMs: 125_000, run: () => needsUrl(generateViaMeshy) },
-    "hf-trellis2": { name: "trellis-2 (hf official)", tier: "trellis", enabled: hasHf, timeoutMs: 120_000, run: () => generateViaTrellis2Official(inputRef, brief, userHfToken) },
-    "hf-trellis": { name: "trellis (hf)", tier: "trellis", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaTrellis2HF(inputRef, userHfToken) },
-    "hf-hunyuan": { name: "hunyuan3d (hf)", tier: "hunyuan3d", enabled: hasHf, timeoutMs: 90_000, run: () => generateViaHunyuan3D(inputRef, brief, userHfToken) },
-    "hf-stablefast": { name: "stable-fast-3d (hf)", tier: "library", enabled: hasHf, timeoutMs: 45_000, run: () => generateViaStableFast3D(inputRef, userHfToken) },
-    "hf-instantmesh": { name: "instantmesh (hf)", tier: "library", enabled: hasHf, timeoutMs: 60_000, run: () => generateViaInstantMesh(inputRef, userHfToken) }
+    "hf-trellis2": { name: "trellis-2 (hf official)", tier: "trellis", enabled: hasHf, timeoutMs: 120_000, run: (signal) => generateViaTrellis2Official(inputRef, brief, userHfToken, signal) },
+    "hf-trellis": { name: "trellis (hf)", tier: "trellis", enabled: hasHf, timeoutMs: 60_000, run: (signal) => generateViaTrellis2HF(inputRef, userHfToken, signal) },
+    "hf-hunyuan": { name: "hunyuan3d (hf)", tier: "hunyuan3d", enabled: hasHf, timeoutMs: 90_000, run: (signal) => generateViaHunyuan3D(inputRef, brief, userHfToken, signal) },
+    "hf-stablefast": { name: "stable-fast-3d (hf)", tier: "library", enabled: hasHf, timeoutMs: 45_000, run: (signal) => generateViaStableFast3D(inputRef, userHfToken, signal) },
+    "hf-instantmesh": { name: "instantmesh (hf)", tier: "library", enabled: hasHf, timeoutMs: 60_000, run: (signal) => generateViaInstantMesh(inputRef, userHfToken, signal) }
   };
 
-  // Order precedence: explicit env override > person/face tuning > free-first
-  // cost mode > default. A person captured from a single photo also gets a
-  // capture tip, since Orbit is what unlocks the far better multi-view path.
-  const explicitOrder = process.env.YIIYA_PROVIDER_ORDER?.split(",").map((s) => s.trim()).filter(Boolean);
-  const freeFirst = process.env.YIIYA_FREE_FIRST === "1" || process.env.YIIYA_FREE_FIRST === "true";
   const person = isPersonSubject(brief);
-  const order =
-    explicitOrder && explicitOrder.length > 0
-      ? explicitOrder
-      : person
-        ? PERSON_PROVIDER_ORDER
-        : freeFirst
-          ? FREE_FIRST_PROVIDER_ORDER
-          : DEFAULT_PROVIDER_ORDER;
+  const freeOnly = generationMode() === "free-only";
+  const order = providerOrder(person);
 
-  if (person && userImageBase64 && !mvViews) {
+  if (freeOnly && additionalViews?.length) {
+    notes.push("Free-only mode uses the first photo. Additional orbit views are not used by this route; sides and back are estimated.");
+  }
+
+  if (person && userImageBase64 && !mvViews && !freeOnly) {
     notes.push(
       "Face captured from a single photo — the sides and back are estimated, so the likeness is rough. For a much stronger result, use Orbit capture (walk around yourself) so the multi-view reconstructor can run."
     );
@@ -1442,8 +1377,14 @@ async function runSpatialGenerator(
     console.log(`[GENERATOR] Trying ${entry.name}…`);
     let out: { url: string | null; error: string | null };
     try {
-      out = await withTimeout(entry.run(), Math.min(entry.timeoutMs, remaining), entry.name);
+      out = await withProviderDeadline(entry.run, Math.min(entry.timeoutMs, remaining), entry.name);
     } catch (err) {
+      if (err instanceof ProviderDeadlineError) {
+        recordCircuit(key, false);
+        attempts.push({ provider: entry.name, ok: false, error: err.message });
+        notes.push("Generation timed out. No further provider was started because remote completion is unknown.");
+        break;
+      }
       out = { url: null, error: err instanceof Error ? err.message : "provider error" };
     }
 
@@ -1454,7 +1395,7 @@ async function runSpatialGenerator(
       continue;
     }
 
-    const v = await validateGlbUrl(out.url).catch(
+    const v = await validateGlbUrl(out.url, userHfToken).catch(
       () => ({ ok: false, reason: "validation error", sizeBytes: 0 } as GlbValidation)
     );
     attempts.push({
@@ -1466,7 +1407,7 @@ async function runSpatialGenerator(
     });
     if (v.ok) {
       recordCircuit(key, true);
-      const mirror = await mirrorGlbToBlob(out.url, brief.primaryObject).catch(
+      const mirror = await mirrorGlbToBlob(out.url, brief.primaryObject, userHfToken).catch(
         () => ({ url: out.url as string, mirrored: false, sizeBytes: 0 })
       );
       const glbUrl =
@@ -1484,7 +1425,9 @@ async function runSpatialGenerator(
     attempts.push({
       provider: "none",
       ok: false,
-      error: "No 3D provider configured. Set FAL_KEY, TRIPO_API_KEY, MESHY_API_KEY, or HUGGINGFACE_TOKEN."
+      error: freeOnly
+        ? "No Hugging Face provider is available in the configured order. Check the HF token and YIIYA_PROVIDER_ORDER; paid providers are disabled."
+        : "No 3D provider configured. Check provider credentials."
     });
   }
   return placeholder();
@@ -1571,7 +1514,8 @@ async function runPackager(
     // which surfaced a literal "watertight" label in the asset tray for meshes
     // nothing had ever checked — a claim that fails silently in a slicer.
     isWatertight: undefined,
-    readiness
+    readiness,
+    qualityReward: evaluateQualityReward(geometry, tier !== "fallback")
   };
 }
 
@@ -1614,10 +1558,10 @@ async function* runRestylePath(
     log: `[RESTYLE] "${brief.primaryObject}" — keeping the shape, regenerating only the surface on Hugging Face's shared GPUs. Wait times vary.`
   };
 
-  const before = await inspectGlbUrl(sourceUrl, { headers: providerAuthHeaders(sourceUrl) }).catch(() => null);
+  const before = await inspectGlbUrl(sourceUrl, { headers: providerAuthHeaders(sourceUrl, body.userHfToken) }).catch(() => null);
   const prompt = buildRetexturePrompt(body.transcript, brief.primaryObject);
-  const out = await withTimeout(
-    retextureViaHuggingFace(sourceUrl, prompt, { token: body.userHfToken?.trim() || undefined }),
+  const out = await withProviderDeadline(
+    (signal) => retextureViaHuggingFace(sourceUrl, prompt, { token: body.userHfToken, signal }),
     240_000,
     "Hugging Face restyle"
   ).catch((err) => ({ url: null, started: true, error: errMessage(err) }));
@@ -1630,7 +1574,7 @@ async function* runRestylePath(
     return;
   }
 
-  const v = await validateGlbUrl(out.url).catch(
+  const v = await validateGlbUrl(out.url, body.userHfToken).catch(
     () => ({ ok: false, reason: "validation error", sizeBytes: 0 } as GlbValidation)
   );
   if (!v.ok) {
@@ -1646,7 +1590,7 @@ async function* runRestylePath(
     { triangles: v.geometry?.triangles, maxDimension: v.geometry?.bounds?.maxDimension }
   );
 
-  const mirror = await mirrorGlbToBlob(out.url, `${brief.primaryObject}-restyle`).catch(
+  const mirror = await mirrorGlbToBlob(out.url, `${brief.primaryObject}-restyle`, body.userHfToken).catch(
     () => ({ url: out.url as string, mirrored: false, sizeBytes: 0 })
   );
   const glbUrl =
@@ -1678,6 +1622,18 @@ export async function* runInterpretPipeline(
   body: InterpretRequestBody
 ): AsyncGenerator<PipelineEvent> {
   try {
+    const freeOnly = generationMode() === "free-only";
+    if (freeOnly && !resolveHfToken(body.userHfToken, process.env.HUGGINGFACE_TOKEN)) {
+      yield { type: "error", message: "Free-only 3D needs a correctly formatted Hugging Face token. Add yours in Settings or configure HUGGINGFACE_TOKEN on the server. Paid 3D providers are disabled." };
+      return;
+    }
+    if (freeOnly && providerOrder(false).length === 0) {
+      yield { type: "error", message: "Free-only 3D has no allowed Hugging Face providers in YIIYA_PROVIDER_ORDER. Remove the override or choose HF providers. Paid providers are disabled." };
+      return;
+    }
+    if (freeOnly) {
+      yield { type: "generating", log: "[PROVIDERS] Hugging Face only. Shared GPU queues and quotas apply; no commercial 3D fallback will run.", progress: 0.01 };
+    }
     let brief: ThreeDBrief;
     let directorNote = "";
     try {
@@ -1768,7 +1724,7 @@ export async function* runInterpretPipeline(
       const slot = slots[i];
       const slotBrief: ThreeDBrief = { ...brief, primaryObject: slot.name, description: slot.description, materialBrief: slot.materialBrief };
 
-      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) — Hunyuan3D / TRELLIS / Tripo / Meshy cascade…`, progress: 0.1 + 0.6 * (i / slots.length) };
+      yield { type: "generating", log: `[GENERATOR] "${slot.name}" (${i + 1}/${slots.length}) — ${freeOnly ? "Hugging Face Spaces" : "configured provider cascade"}…`, progress: 0.1 + 0.6 * (i / slots.length) };
 
       const { glbUrl, tier, attempts, geometry, notes } = await runSpatialGenerator(
         slotBrief,
@@ -1791,7 +1747,8 @@ export async function* runInterpretPipeline(
       const triNote = winning?.triangleCount ? `~${winning.triangleCount.toLocaleString()} tris` : null;
       const sizeNote = [sizeMb ? `${sizeMb}MB` : null, triNote].filter(Boolean).join(", ");
       if (tier === "fallback") {
-        yield { type: "generating", log: `[FAILED] No model returned for "${slot.name}".`, progress: 0.8 };
+        const hint = freeOnly ? " Check Hugging Face quota, token, or Space availability; no paid fallback was used." : "";
+        yield { type: "generating", log: `[FAILED] No model returned for "${slot.name}".${hint}`, progress: 0.8 };
         continue;
       }
       const details = sizeNote ? `, ${sizeNote}` : "";
@@ -1824,9 +1781,9 @@ export async function* runInterpretPipeline(
     // embedding actually exists, so they must never appear as QA claims. Log
     // only capabilities the pipeline genuinely delivers.
     const qa_log = [
-      `[QA] ${generatedAssets.length} asset(s) generated.`,
+      `[QA] ${generatedAssets.filter(asset => asset.tier !== "fallback").length} usable asset(s) generated; ${generatedAssets.filter(asset => asset.tier === "fallback").length} failed.`,
       `[QA] Scale: 1 unit = 1 meter (Blender/UE5/Unity standard).`,
-      `[QA] Pipeline: Director → Grounder → Hunyuan3D / TRELLIS / Tripo / Meshy → PBR → Packager`
+      `[QA] Pipeline: Director → Grounder → ${freeOnly ? "Hugging Face Spaces" : "configured providers"} → PBR → Packager`
     ];
 
     yield { type: "qa", qa_log };

@@ -1,3 +1,5 @@
+import { readScanUpload, reserveScanUpload, scanUploadFailure } from "@/lib/security/scan-upload";
+import { authorizeScanAccess } from "@/lib/security/scan-access";
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { attachScanUpload, getScanJob } from "@/lib/scan-job-store";
@@ -14,6 +16,9 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  const denied = await authorizeScanAccess(request, params.id);
+  if (denied) return denied;
+
   const job = await getScanJob(params.id, false);
 
   if (!job) {
@@ -27,15 +32,19 @@ export async function POST(
     );
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
+  let validated: Awaited<ReturnType<typeof readScanUpload>>;
+  try {
+    validated = await readScanUpload(request, "image");
+    await reserveScanUpload(params.id, validated.file.size);
+  } catch (error) {
+    return scanUploadFailure(error);
+  }
+  const { form: formData, file } = validated;
   const uploadKind = formData.get("uploadKind");
   const metadataRaw = formData.get("metadata");
   const kind = uploadKind === "preview" ? "preview" : "keyframe";
 
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Expected an image frame file." }, { status: 400 });
-  }
+
 
   const blob = await put(
     `scan-jobs/${params.id}/frames/${Date.now()}-${sanitizeFileName(file.name || "frame.jpg")}`,
@@ -63,8 +72,8 @@ export async function POST(
     sizeBytes: file.size,
     sourceDevice: "mobile",
     metadata: {
-      pathname: blob.pathname,
-      ...metadata
+      ...metadata,
+      pathname: blob.pathname
     }
   });
 

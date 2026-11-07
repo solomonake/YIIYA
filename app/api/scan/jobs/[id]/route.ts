@@ -1,3 +1,4 @@
+import { authorizeScanAccess } from "@/lib/security/scan-access";
 import { NextResponse } from "next/server";
 import { getScanJob } from "@/lib/scan-job-store";
 import { syncAssetJobFromScan } from "@/lib/asset-jobs";
@@ -5,9 +6,12 @@ import { syncAssetJobFromScan } from "@/lib/asset-jobs";
 export const maxDuration = 30;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
+  const denied = await authorizeScanAccess(request, params.id);
+  if (denied) return denied;
+
   const job = await getScanJob(params.id);
 
   if (!job) {
@@ -15,5 +19,5 @@ export async function GET(
   }
 
   syncAssetJobFromScan(job);
-  return NextResponse.json(job);
+  return NextResponse.json(job, { headers: { "Cache-Control": "no-store" } });
 }

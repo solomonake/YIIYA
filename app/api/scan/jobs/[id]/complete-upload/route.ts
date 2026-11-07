@@ -1,3 +1,4 @@
+import { authorizeScanAccess } from "@/lib/security/scan-access";
 import { NextResponse } from "next/server";
 import { completeScanUpload } from "@/lib/scan-job-store";
 import { syncAssetJobFromScan } from "@/lib/asset-jobs";
@@ -8,6 +9,9 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  const denied = await authorizeScanAccess(request, params.id);
+  if (denied) return denied;
+
   const payload = (await request.json().catch(() => null)) as
     | {
         objectHint?: string;

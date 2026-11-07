@@ -172,7 +172,7 @@ export function PhoneCompanionOrbit({
             <div className="text-center">
               <p className="text-[11px] font-mono text-zinc-300">Scan with your phone</p>
               <p className="mt-1 text-[9px] font-mono text-zinc-600">
-                Walk around the object once — your laptop generates the moment the phone finishes.
+                Walk around the object once to send the capture to your laptop. Free-only generation uses the first photo and estimates unseen sides.
               </p>
             </div>
           </>

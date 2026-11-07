@@ -351,8 +351,8 @@ export default function CapturePage() {
             Tap the objects you want in 3D — up to {MAX_OBJECTS}
             <span className="block text-[8px] text-zinc-600 mt-0.5">
               {isMobile
-                ? "matte, opaque objects work best · with one object, Orbit (walk around it) captures real geometry — a single photo guesses the unseen sides"
-                : "matte, opaque objects work best · a single webcam photo guesses the unseen sides — open this page on your phone to Orbit and walk around the object"}
+                ? "matte, opaque objects work best · free-only mode uses one photo, including after Orbit; unseen sides are estimated"
+                : "matte, opaque objects work best · a single webcam photo estimates unseen sides; free-only mode does not reconstruct orbit views"}
             </span>
             <span className="block text-[8px] text-zinc-700 mt-0.5">
               people &amp; faces are the hardest case — expect a rough result
@@ -414,13 +414,13 @@ export default function CapturePage() {
                     ? "Record orbit again — slower this time"
                     : sessionId
                       ? "Orbit → send to my laptop (walk around it)"
-                      : "Orbit for real 3D (walk around it)"}
+                      : "Record orbit (walk around it)"}
               </button>
             )}
             {cutouts.length === 1 && !isMobile && (
               <div className="text-[9px] font-mono text-zinc-600 text-center px-2 py-1.5 border border-zinc-900 rounded-sm">
-                Want real geometry (not a guessed backside)? Open{" "}
-                <span className="text-zinc-400">yiiya.app/capture</span> on your phone and Orbit.
+                To capture with your phone, open{" "}
+                <span className="text-zinc-400">yiiya.app/capture</span> on your phone. Free-only mode uses the first photo.
               </div>
             )}
             <div className="flex gap-2">

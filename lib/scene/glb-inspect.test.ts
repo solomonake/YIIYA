@@ -72,6 +72,19 @@ function meshGltf(
 const REAL_SIZE = MIN_GLB_BYTES * 10;
 
 describe("inspectGlbBuffer", () => {
+  it.each([null, [], { meshes: "invalid" }, { accessors: [{ count: -1 }] },
+    { nodes: [{ matrix: [1] }] }])("rejects malformed provider metadata without throwing", metadata => {
+    expect(inspectGlbBuffer(makeGlb(metadata), REAL_SIZE)).toMatchObject({ ok: false, geometry: null });
+  });
+  it("rejects unsupported binary versions", () => {
+    const bytes = makeGlb(meshGltf(1000));
+    new DataView(bytes.buffer).setUint32(4, 1, true);
+    expect(inspectGlbBuffer(bytes, REAL_SIZE).reason).toBe("Unsupported GLB version");
+  });
+  it("does not exponentially traverse a cyclic provider graph", () => {
+    const model = meshGltf(1000, { nodes: [{ mesh: 0, children: [0, 0] }] });
+    expect(inspectGlbBuffer(makeGlb(model), REAL_SIZE).geometry?.triangles).toBe(1000);
+  });
   it("rejects a buffer without the glTF magic header", () => {
     const bytes = new Uint8Array(64);
     const result = inspectGlbBuffer(bytes, REAL_SIZE);

@@ -174,9 +174,10 @@ function walkTriangles(doc: Document, sink: TriangleSink): number {
 export async function glbToObj(glb: Uint8Array): Promise<{ obj: string; triangles: number }> {
   const doc = await readGlb(glb);
   const lines: string[] = ["# Exported by YIIYA — https://yiiya.app", "# Units: meters"];
-  let hasNormals = false;
-  let hasUvs = false;
-  const faces: string[] = [];
+  let normalCount = 0;
+  let uvCount = 0;
+  // OBJ maintains independent position, UV and normal index streams.
+  const references: string[] = [];
 
   const triangles = walkTriangles(doc, {
     begin(name) {
@@ -184,29 +185,29 @@ export async function glbToObj(glb: Uint8Array): Promise<{ obj: string; triangle
     },
     vertex(p, n, uv) {
       lines.push(`v ${p[0]} ${p[1]} ${p[2]}`);
+      const positionIndex = references.length + 1;
+      let uvIndex: number | null = null;
+      let normalIndex: number | null = null;
       if (uv) {
-        hasUvs = true;
+        uvIndex = ++uvCount;
         lines.push(`vt ${uv[0]} ${uv[1]}`);
       }
       if (n) {
-        hasNormals = true;
+        normalIndex = ++normalCount;
         lines.push(`vn ${n[0]} ${n[1]} ${n[2]}`);
       }
+      references.push(normalIndex !== null
+        ? `${positionIndex}/${uvIndex ?? ""}/${normalIndex}`
+        : uvIndex !== null ? `${positionIndex}/${uvIndex}` : `${positionIndex}`);
     },
     face(a, b, c) {
-      const f = (i: number) => {
-        const v = i + 1; // OBJ is 1-based
-        if (hasUvs && hasNormals) return `${v}/${v}/${v}`;
-        if (hasUvs) return `${v}/${v}`;
-        if (hasNormals) return `${v}//${v}`;
-        return `${v}`;
-      };
-      faces.push(`f ${f(a)} ${f(b)} ${f(c)}`);
+      // Emit before the next `o` declaration so ownership survives reimport.
+      lines.push(`f ${references[a]} ${references[b]} ${references[c]}`);
     }
   });
 
   if (triangles === 0) throw new Error("GLB contains no triangle geometry");
-  return { obj: [...lines, ...faces].join("\n") + "\n", triangles };
+  return { obj: lines.join("\n") + "\n", triangles };
 }
 
 // ─── Binary STL ───────────────────────────────────────────────────────────────

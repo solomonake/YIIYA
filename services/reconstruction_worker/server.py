@@ -8,15 +8,16 @@ immediately (Cloud Run request timeouts do not bound the reconstruction).
 
 Run locally for a smoke test:
     uvicorn server:app --port 8080
-    curl -X POST localhost:8080/reconstruct -d @payload.json -H 'content-type: application/json'
+    Configure matching SCAN_RECONSTRUCTION_API_KEY through secret management;
+    send its Bearer header with the JSON request. Never paste real keys into logs.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, Request
 
-from modal_app import DispatchPayload, run_worker_pipeline
+from modal_app import DispatchPayload, run_worker_pipeline, read_dispatch_payload
 
 app = FastAPI(title="yiiya-reconstruction")
 
@@ -27,7 +28,8 @@ def health() -> dict[str, bool]:
 
 
 @app.post("/reconstruct")
-def reconstruct(payload: dict[str, Any], background: BackgroundTasks) -> dict[str, Any]:
+async def reconstruct(background: BackgroundTasks, request: Request) -> dict[str, Any]:
+    payload = await read_dispatch_payload(request)
     job = DispatchPayload.from_payload(payload)
     # Fire-and-forget: progress + final assets are delivered via the webhook the
     # pipeline already emits, exactly like the Modal `dispatch` spawn.

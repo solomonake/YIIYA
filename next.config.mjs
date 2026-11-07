@@ -86,11 +86,9 @@ const nextConfig = {
   },
   async headers() {
     return [
-      { source: "/:path*", headers: securityHeaders },
-      {
-        source: "/_next/static/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }]
-      }
+      // Next owns hashed production asset caching. Do not cache mutable dev
+      // chunks as immutable, which can mix old client code with new server HTML.
+      { source: "/:path*", headers: securityHeaders }
     ];
   },
   webpack(config) {

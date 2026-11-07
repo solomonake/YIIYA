@@ -1,3 +1,4 @@
+import { authorizeScanWorker } from "@/lib/security/scan-worker-auth";
 import { NextResponse } from "next/server";
 import { applyReconstructionWebhook } from "@/lib/scan-job-store";
 import { syncAssetJobFromScan } from "@/lib/asset-jobs";
@@ -13,20 +14,10 @@ import type {
 
 export const maxDuration = 60;
 
-function isAuthorized(request: Request) {
-  const secret = process.env.SCAN_RECONSTRUCTION_WEBHOOK_SECRET;
-
-  if (!secret) {
-    return true;
-  }
-
-  return request.headers.get("x-yiiya-webhook-secret") === secret;
-}
 
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const denied = authorizeScanWorker(request, "SCAN_RECONSTRUCTION_WEBHOOK_SECRET", "x-yiiya-webhook-secret");
+  if (denied) return denied;
 
   const payload = (await request.json().catch(() => null)) as
     | {

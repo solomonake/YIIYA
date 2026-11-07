@@ -21,6 +21,10 @@
 import { Client } from "@gradio/client";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 
+import { readBoundedResponse } from "@/lib/bounded-response";
+import { hfFailureMessage } from "@/lib/huggingface-access";
+import { predictGradio } from "@/lib/provider-deadline";
+
 export const RETEXTURE_SPACE = "HorizonRobotics/EmbodiedGen-Texture-Gen";
 
 /** Keep prompts short and plain; the Space accepts English or Chinese. */
@@ -120,22 +124,6 @@ export function extractMeshUrl(data: unknown): string | null {
   return null;
 }
 
-function message(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  if (err && typeof err === "object") {
-    const rec = err as Record<string, unknown>;
-    const known = rec.message ?? rec.detail ?? rec.error ?? rec.title;
-    if (typeof known === "string" && known) return known;
-    try {
-      return JSON.stringify(err).slice(0, 200);
-    } catch {
-      return "provider error";
-    }
-  }
-  return String(err);
-}
-
 type GradioClient = {
   predict: (endpoint: string, payload: Record<string, unknown>) => Promise<{ data: unknown }>;
 };
@@ -145,12 +133,14 @@ export type RetextureDeps = {
   fetchMesh?: (url: string) => Promise<Blob | null>;
 };
 
-async function defaultFetchMesh(url: string): Promise<Blob | null> {
-  const res = await fetch(url, { headers: providerAuthHeaders(url), signal: AbortSignal.timeout(60_000) });
-  if (!res.ok) return null;
+async function defaultFetchMesh(url: string, token: string, signal?: AbortSignal): Promise<Blob | null> {
+  const timeout = AbortSignal.timeout(60_000);
+  const res = await fetch(url, { headers: providerAuthHeaders(url, token), redirect: "error",
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  if (!res.ok) { await res.body?.cancel(); return null; }
   const declared = Number(res.headers.get("content-length") ?? 0);
-  if (declared > RETEXTURE_MAX_BYTES) return null;
-  const buf = await res.arrayBuffer();
+  if (declared > RETEXTURE_MAX_BYTES) { await res.body?.cancel(); return null; }
+  const buf = new Uint8Array(await readBoundedResponse(res, RETEXTURE_MAX_BYTES));
   if (buf.byteLength === 0 || buf.byteLength > RETEXTURE_MAX_BYTES) return null;
   const isObj = /\.obj(\?|$)/i.test(url);
   // Upload as a *named* file: the Space picks its mesh loader from the
@@ -166,7 +156,7 @@ async function defaultFetchMesh(url: string): Promise<Blob | null> {
 export async function retextureViaHuggingFace(
   sourceUrl: string,
   prompt: string,
-  opts: { token?: string; textureSize?: 1024 | 2048; seed?: number } = {},
+  opts: { token?: string; signal?: AbortSignal; textureSize?: 1024 | 2048; seed?: number } = {},
   deps: RetextureDeps = {}
 ): Promise<RetextureResult> {
   const fail = (error: string, started = false): RetextureResult => ({ url: null, started, error });
@@ -174,14 +164,18 @@ export async function retextureViaHuggingFace(
   const token = opts.token || process.env.HUGGINGFACE_TOKEN;
   if (!token) return fail("Hugging Face token not configured");
 
-  const mesh = await (deps.fetchMesh ?? defaultFetchMesh)(sourceUrl).catch(() => null);
+  const mesh = await (deps.fetchMesh ? deps.fetchMesh(sourceUrl) : defaultFetchMesh(sourceUrl, token, opts.signal)).catch(() => null);
   if (!mesh) return fail("Couldn't read the current mesh (missing, too large, or expired)");
 
   let started = false;
   try {
-    const client = deps.connect
-      ? await deps.connect(RETEXTURE_SPACE, token)
-      : ((await Client.connect(RETEXTURE_SPACE, { hf_token: token as `hf_${string}` })) as unknown as GradioClient);
+    opts.signal?.throwIfAborted();
+    let client: GradioClient;
+    if (deps.connect) client = await deps.connect(RETEXTURE_SPACE, token);
+    else {
+      const session = await Client.connect(RETEXTURE_SPACE, { hf_token: token as `hf_${string}` });
+      client = { predict: (endpoint, payload) => predictGradio(session, opts.signal, endpoint, payload) };
+    }
 
     await client.predict("/start_session", {});
     started = true;
@@ -221,7 +215,7 @@ export async function retextureViaHuggingFace(
     if (!/\.glb(\?|$)/i.test(url)) return fail("The Space returned a non-GLB mesh", true);
     return { url, started: true, error: null };
   } catch (err) {
-    const msg = message(err);
+    const msg = hfFailureMessage(err);
     console.error("[RETEXTURE]", msg);
     return fail(msg.slice(0, 200), started);
   }

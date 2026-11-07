@@ -1,3 +1,4 @@
+import { generationMode, providerOrder } from "@/lib/generation-policy";
 import { NextResponse } from "next/server";
 import {
   evaluateProductionReadiness,
@@ -34,6 +35,12 @@ export function GET() {
       deploy: readiness.missingDeploy
     },
     required: productionReadinessManifest.required,
+    generation: {
+      mode: generationMode(),
+      allowedProviders: providerOrder(false),
+      hfTokenConfigured: env.HUGGINGFACE_TOKEN,
+      liveVerified: false
+    },
     ai: {
       conductor: {
         model: process.env.GEMINI_FLASH_MODEL ?? "gemini-2.5-flash",
@@ -65,7 +72,7 @@ export function GET() {
       },
       trellis: {
         model: process.env.FAL_TRELLIS_MODEL ?? "fal-ai/trellis-2",
-        configured: env.FAL_KEY
+        configured: generationMode() === "mixed" && env.FAL_KEY
       },
       unsplashConfigured: env.UNSPLASH_ACCESS_KEY
     },

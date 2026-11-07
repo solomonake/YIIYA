@@ -1,3 +1,5 @@
+import { readScanUpload, reserveScanUpload, scanUploadFailure } from "@/lib/security/scan-upload";
+import { authorizeScanAccess } from "@/lib/security/scan-access";
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { attachScanUpload, getScanJob } from "@/lib/scan-job-store";
@@ -14,6 +16,9 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  const denied = await authorizeScanAccess(request, params.id);
+  if (denied) return denied;
+
   const job = await getScanJob(params.id, false);
 
   if (!job) {
@@ -27,12 +32,16 @@ export async function POST(
     );
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
-
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Expected a video file." }, { status: 400 });
+  let validated: Awaited<ReturnType<typeof readScanUpload>>;
+  try {
+    validated = await readScanUpload(request, "video");
+    await reserveScanUpload(params.id, validated.file.size);
+  } catch (error) {
+    return scanUploadFailure(error);
   }
+  const { form: formData, file } = validated;
+
+
 
   const blob = await put(
     `scan-jobs/${params.id}/video/${Date.now()}-${sanitizeFileName(file.name || "capture.webm")}`,

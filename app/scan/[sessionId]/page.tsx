@@ -9,6 +9,8 @@ import {
   type CoverageCell,
   type CoverageSilhouette
 } from "@/lib/scan-coverage";
+import { MAX_SCAN_FILE_BYTES } from "@/lib/scan-upload-limits";
+import { scanAccessHeaders } from "@/lib/scan-client-access";
 import type { ScanJobSummary } from "@/lib/scan-types";
 
 type CapturedKeyframe = {
@@ -309,7 +311,7 @@ export default function ScanPage({
   const [keyframes, setKeyframes] = useState<CapturedKeyframe[]>([]);
 
   const loadJob = useCallback(async () => {
-    const response = await fetch(`/api/scan/jobs/${scanId}`);
+    const response = await fetch(`/api/scan/jobs/${scanId}`, { headers: scanAccessHeaders(scanId) });
     const payload = (await response.json().catch(() => null)) as
       | ScanJobSummary
       | { error?: string }
@@ -438,7 +440,7 @@ export default function ScanPage({
     ) => {
       const response = await fetch(`/api/scan/jobs/${scanId}/capture`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...scanAccessHeaders(scanId) },
         body: JSON.stringify({
           objectHint: "captured-object",
           captureStatus,
@@ -582,6 +584,7 @@ export default function ScanPage({
 
       const response = await fetch(`/api/scan/jobs/${scanId}/upload/frame`, {
         method: "POST",
+        headers: scanAccessHeaders(scanId),
         body: formData
       });
 
@@ -627,7 +630,13 @@ export default function ScanPage({
       const recorderMimeType = videoBlob?.type || chooseRecorderMimeType() || "video/webm";
       const videoExtension = recorderMimeType.includes("mp4") ? "mp4" : "webm";
 
-      if (videoBlob && videoBlob.size > 0) {
+      if (videoBlob && videoBlob.size > MAX_SCAN_FILE_BYTES) {
+        if (!keyframesRef.current.length && !previewDataUrl) {
+          throw new Error("The video is too large and no frames were captured. Retake a shorter scan.");
+        }
+        setGuidance("Video is too large for direct upload. Uploading the selected photos instead.");
+      }
+      if (videoBlob && videoBlob.size > 0 && videoBlob.size <= MAX_SCAN_FILE_BYTES) {
         const formData = new FormData();
         formData.append(
           "file",
@@ -638,6 +647,7 @@ export default function ScanPage({
 
         const response = await fetch(`/api/scan/jobs/${scanId}/upload/video`, {
           method: "POST",
+          headers: scanAccessHeaders(scanId),
           body: formData
         });
 
@@ -678,7 +688,7 @@ export default function ScanPage({
 
       const response = await fetch(`/api/scan/jobs/${scanId}/complete-upload`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...scanAccessHeaders(scanId) },
         body: JSON.stringify({
           objectHint: "captured-object",
           durationMs,

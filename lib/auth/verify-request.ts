@@ -1,4 +1,3 @@
-import type { NextRequest } from "next/server";
 import { userScopedClient } from "@/lib/supabase-server";
 
 /**
@@ -7,7 +6,7 @@ import { userScopedClient } from "@/lib/supabase-server";
  * still works; it just isn't saved to /library) or invalid/expired tokens —
  * never throws, since auth is optional on the generation path.
  */
-export async function getUserIdFromAuthHeader(req: NextRequest): Promise<string | null> {
+export async function getUserIdFromAuthHeader(req: Request): Promise<string | null> {
   const header = req.headers.get("authorization");
   if (!header?.startsWith("Bearer ")) return null;
   const token = header.slice(7).trim();

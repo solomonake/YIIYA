@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useYiiyaStore, type ReferenceImage } from "@/lib/store";
 import { useSpeechInterpreter } from "@/lib/use-speech-interpreter";
 import { PhoneCompanionOrbit } from "@/components/phone-companion-orbit";
+import { AssetQualitySummary } from "@/components/asset-quality-summary";
 import type { GeneratedAsset } from "@/lib/interpret-pipeline";
 import { useSupabaseSession } from "@/lib/auth/use-session";
 import { useOpenAssetFromLibrary } from "@/lib/assets/open-from-library";
@@ -152,6 +153,7 @@ function AssetCard({ asset, isActive, onClick }: { asset: GeneratedAsset; isActi
           </>
         ) : null}
       </div>
+      <AssetQualitySummary report={asset.qualityReward} glbUrl={asset.glbUrl} />
       <div className="flex flex-wrap gap-1">
         {hasExports ? (
           Object.entries(asset.exportUrls).map(([fmt, url]) =>
@@ -382,9 +384,9 @@ function LeftPanel({ open }: { open: boolean }) {
       ) : null}
 
       {/* Log feed */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[9px] leading-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 font-mono text-xs sm:text-[10px] leading-5">
         {logs.length === 0 && (
-          <div className="text-zinc-800 mt-6 leading-6">
+          <div className="text-zinc-400 mt-6 leading-6">
             Speak or type to generate 3D assets.<br />
             Hold SPACE for voice input.<br />
             Drop a reference image below.
@@ -398,8 +400,7 @@ function LeftPanel({ open }: { open: boolean }) {
             entry.label.startsWith("[DIRECTOR]") ? "text-amber-400" :
             entry.label.startsWith("[GENERATOR]") ? "text-blue-400" :
             entry.label.startsWith("[USER]") ? "text-zinc-300" :
-            entry.label.startsWith("[QA]") ? "text-zinc-500" :
-            "text-zinc-700";
+            "text-zinc-400";
           return <div key={entry.id} className={`${c} mb-0.5 break-words`}>{entry.label}</div>;
         })}
         <div ref={logsEndRef} />
@@ -478,7 +479,7 @@ function LeftPanel({ open }: { open: boolean }) {
             ) : (
               <>
                 Regenerate <span className="text-amber-200">{pendingEditConfirm.assetName}</span> as
-                &ldquo;{pendingEditConfirm.transcript}&rdquo;? This spends one generation (1–4 min).
+                &ldquo;{pendingEditConfirm.transcript}&rdquo;? This uses generation quota. Queue times vary.
                 Your current mesh stays in the tray.
               </>
             )}
@@ -640,6 +641,7 @@ function LeftPanel({ open }: { open: boolean }) {
           className="mx-3 mb-2 w-[calc(100%-1.5rem)] rounded-sm border border-zinc-900 py-1.5 text-[9px] font-mono text-zinc-500 hover:border-zinc-700 hover:text-zinc-300 transition-colors"
         >
           Capture more views with your phone
+          <span className="block mt-1">Free-only mode uses the first photo; unseen sides are estimated.</span>
         </button>
       )}
       {showPhoneOrbit && (
@@ -651,7 +653,7 @@ function LeftPanel({ open }: { open: boolean }) {
 
       {/* Hint / cancel bar */}
       <div className="px-3 pb-1 flex items-center justify-between">
-        <span className="text-[8px] font-mono text-zinc-700">
+        <span className="text-xs font-mono text-zinc-400">
           {isListening ? "Listening — release to send" : isInterpreting ? "Generating…" : "Hold SPACE to talk · or type"}
         </span>
         {isInterpreting && (
@@ -674,7 +676,7 @@ function LeftPanel({ open }: { open: boolean }) {
           onClick={toggleListening}
           title="Hold SPACE or click to talk"
           aria-label="Voice input"
-          className={`shrink-0 w-8 h-8 rounded-sm border flex items-center justify-center transition-all ${
+          className={`shrink-0 w-11 h-11 sm:w-8 sm:h-8 rounded-sm border flex items-center justify-center transition-all ${
             isListening ? "border-emerald-600 bg-emerald-950/60 text-emerald-400 animate-pulse" :
             isInterpreting ? "border-amber-700 bg-amber-950/40 text-amber-400" :
             "border-zinc-800 bg-zinc-900 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400"
@@ -689,18 +691,20 @@ function LeftPanel({ open }: { open: boolean }) {
           value={manualText}
           onChange={e => setManualText(e.target.value)}
           placeholder={referenceImage ? "describe it, or press → to use photo" : "describe a 3D asset…"}
-          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1.5 text-[10px] font-mono text-zinc-300 placeholder:text-zinc-800 focus:outline-none focus:border-zinc-600"
+          aria-label="Describe a 3D asset"
+          className="min-w-0 flex-1 bg-zinc-900 border border-zinc-700 rounded-sm px-2 py-1.5 text-base sm:text-xs font-mono text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-400"
         />
         <button
           type="submit"
+          aria-label="Generate 3D model"
           disabled={isInterpreting || (!manualText.trim() && !referenceImage)}
-          className="shrink-0 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded-sm text-[10px] font-mono text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:hover:bg-zinc-900"
+          className="shrink-0 min-w-11 min-h-11 sm:min-w-8 sm:min-h-8 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded-sm text-sm sm:text-xs font-mono text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:hover:bg-zinc-900"
         >
           →
         </button>
       </form>
       {/* Cost transparency: what a submission actually costs, before committing. */}
-      <div className="px-3 pb-2 -mt-1 text-[8px] font-mono text-zinc-800">
+      <div className="px-3 pb-2 -mt-1 text-[11px] font-mono text-zinc-400">
         Hosted generation uses a provider quota. Color, finish and size edits run locally.
         <span className="block">click a part of the model, then say &quot;make this red&quot;</span>
       </div>
@@ -853,9 +857,10 @@ function Toolbar() {
       )}
       <button
         onClick={() => setLeft(!leftOpen)}
-        className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"
+        className="min-h-11 sm:min-h-0 px-3 py-1 text-xs font-mono border border-zinc-700 rounded-sm bg-black/60 text-zinc-300 hover:text-white hover:border-zinc-500 backdrop-blur-sm transition-colors"
+        aria-label={leftOpen ? "Hide creation panel" : "Open creation panel"}
       >
-        {leftOpen ? "HIDE LOG" : "LOG"}
+        {leftOpen ? "HIDE PANEL" : "CREATE"}
       </button>
       <button
         onClick={() => setRight(!rightOpen)}
@@ -924,21 +929,18 @@ export function YiiyaWorkspace() {
   // hydration-matching render. See the skipHydration comment in lib/store.ts
   // for why this can't just happen automatically on store creation.
   useEffect(() => {
-    void useYiiyaStore.persist.rehydrate();
+    let mounted = true;
+    void Promise.resolve(useYiiyaStore.persist.rehydrate()).then(() => {
+      if (mounted && window.innerWidth < 640) {
+        // A new visitor needs the composer; a returning model needs the canvas.
+        const store = useYiiyaStore.getState();
+        store.setLeftPanelOpen(store.generatedAssets.length === 0);
+      }
+    });
+    return () => { mounted = false; };
   }, []);
 
   useOpenAssetFromLibrary();
-
-  // Mobile-first load: the log panel defaults open for desktop parity, but
-  // on a narrow viewport it would cover the entire 3D canvas on first paint.
-  // One-time check on mount (not a resize listener — the user's own
-  // LOG/ASSETS toggles take over from here).
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 640) {
-      useYiiyaStore.getState().setLeftPanelOpen(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Orbit capture flow: /capture sets referenceImage (with additionalViews)
   // in the store then navigates here with ?autoGenerate=1. Fire the
@@ -1020,7 +1022,7 @@ export function YiiyaWorkspace() {
     try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch { /* ignore */ }
     addLog("[SYSTEM] YIIYA 3D Studio ready.");
     addLog("[SYSTEM] Hold SPACE to speak · Drop image for photo-to-3D");
-    addLog("[SYSTEM] Pipeline: Gemini director → studio photo → TRELLIS.2 / Hunyuan3D / Tripo cascade → validated GLB");
+    addLog("[SYSTEM] Pipeline: intent → reference → configured 3D providers → validated GLB");
   }, [addLog]);
 
   const activeAsset =
