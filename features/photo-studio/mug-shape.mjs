@@ -24,7 +24,7 @@ export function buildMug(landmarks, camera, color, closed = false) {
     let solid=Math.min(radius-radial,v-top,base-v);
     if(!closed){
       // Floor depth is a declared prior; the top frame constrains the opening diameter.
-      const innerRadius=THREE.MathUtils.lerp(outerRadius-wall,baseRadius-wall,frac);
+      const innerRadius=radius-wall;
       solid=Math.min(solid,Math.max(radial-innerRadius,v-(top+height*landmarks.assumedDepthFraction)));
     }
     if(u>=handleBounds.left&&u<=handleBounds.right&&v>=handleBounds.top&&v<=handleBounds.bottom&&Math.abs(z)<handleRadius*1.35){
