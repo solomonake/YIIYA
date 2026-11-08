@@ -1,0 +1,82 @@
+:root {
+  color-scheme: dark;
+  --base: #050505;
+  --panel: #0b0b0c;
+  --tile: #141416;
+  --line: #303034;
+  --text: #f4f4f5;
+  --muted: #b0b0b8;
+  --accent: #ef9f27;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box }
+body { margin: 0; color: var(--text); background: var(--base); font: 14px/1.5 system-ui, sans-serif }
+header, .top, .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px }
+header { padding: 0 20px; min-height: 54px; border-bottom: 1px solid var(--line); background: #060606; font: 11px var(--mono) }
+.brand { font: 800 20px/1 system-ui, sans-serif; letter-spacing: -.06em }
+header span { margin-right: auto; border-left: 1px solid var(--line); padding-left: 12px; letter-spacing: .1em; color: var(--muted) }
+header a, button, select { border: 1px solid #414148; border-radius: 3px; background: var(--tile); color: var(--text); font: 12px/1.3 var(--mono) }
+header a, button { cursor: pointer; padding: 9px 12px }
+header a { text-decoration: none }
+button:disabled { opacity: .45; cursor: default }
+button:enabled:hover, header a:hover, .pair label:hover { border-color: var(--accent) }
+:focus-visible, .pair label:focus-within { outline: 2px solid var(--accent); outline-offset: 3px }
+main { display: grid; grid-template-columns: minmax(290px, 340px) minmax(0, 1fr); min-height: calc(100dvh - 54px) }
+.inputs { min-width: 0; padding: 24px 18px; background: #090909; border-right: 1px solid var(--line) }
+h1, h2, p { margin: 0 }
+h1 { font-size: 25px; line-height: 1.15; letter-spacing: -.04em }
+.inputs > p { margin: 9px 0 16px; color: var(--muted) }
+.pair, .edit-actions, .edit-tools { display: flex; gap: 8px }
+.pair label { flex: 1; min-width: 0; position: relative; cursor: pointer; padding: 10px; border: 1px dashed #55555d; border-radius: 3px; background: var(--tile); font: 12px var(--mono) }
+.pair img { display: block; width: 100%; height: 74px; object-fit: contain; margin: 6px 0 }
+.pair span { display: block; color: var(--accent) }
+.pair input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer }
+.angle-input { margin: 14px 0; color: var(--muted) }
+.angle-input summary { cursor: pointer; color: var(--text); font-size: 13px }
+.angle-input p { margin: 8px 0 }
+.angle-input input { max-width: 100% }
+.angle-input img { display: block; height: 70px; margin: 5px }
+.edit-actions { margin-bottom: 18px }
+.edit-actions button { flex: 1 }
+.profile { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600 }
+select { max-width: 100%; padding: 8px }
+#profile-tip, .note, #feedback p, #feedback-status { font-size: 12px; color: var(--muted) }
+#profile-tip { display: block; margin: 5px 0 16px }
+.primary { width: 100%; display: flex; justify-content: space-between; align-items: center; font-weight: 700 }
+.primary, #edit-apply { background: var(--accent); color: #171006; border-color: var(--accent) }
+.quiet { margin-top: 4px; padding-left: 0; text-decoration: underline; background: transparent; border-color: transparent; color: var(--muted) }
+.output { min-width: 0; display: flex; flex-direction: column }
+.top, .bar, #feedback { background: var(--panel); padding: 12px 18px }
+.top { border-bottom: 1px solid var(--line) }
+.top small, #fallback-label { color: var(--muted); font: 10px var(--mono); letter-spacing: .1em }
+.top h2 { margin-top: 4px; font: 600 18px/1.3 system-ui, sans-serif }
+#wire[aria-pressed=true], #save:enabled { color: var(--accent); border-color: #906520 }
+#viewport { position: relative; flex: 1; min-height: 350px; background: var(--base) }
+#viewport canvas, #fallback { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain }
+#viewport canvas, #edit-canvas { touch-action: none }
+#fallback-label { position: absolute; bottom: 12px; left: 18px; background: var(--base); padding: 5px }
+.bar, #feedback { border-top: 1px solid var(--line) }
+.bar { flex-wrap: wrap; font: 12px/1.5 var(--mono); color: var(--muted) }
+#feedback p { margin: 4px 0 8px }
+#feedback button { margin: 2px 0 }
+#cutout-editor { width: min(460px, 94vw); max-height: 92dvh; overflow: auto; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 16px }
+#cutout-editor::backdrop { background: #000c }
+#cutout-editor p { margin: 5px 0 10px; color: var(--muted) }
+#edit-canvas { display: block; max-width: 100%; max-height: 50dvh; margin: auto; cursor: crosshair }
+.edit-tools { flex-wrap: wrap; align-items: center; margin: 12px 0 }
+[hidden] { display: none !important }
+@media (max-width: 720px) {
+  header { padding: 0 14px }
+  main { display: block }
+  .inputs { padding: 18px 14px; border: 0; border-bottom: 1px solid var(--line) }
+  .inputs > p { margin-bottom: 12px }
+  .top, .bar, #feedback { padding: 12px 14px }
+  #viewport { min-height: clamp(295px, 50dvh, 480px) }
+  button, select, header a, .angle-input summary { min-height: 44px }
+  header a, .angle-input summary { align-content: center }
+  .angle-input { margin: 4px 0 }
+}
+
+.research{max-width:1200px;margin:2rem auto;padding:0 1.5rem}.research a{color:inherit}
+.inputs h1{font-size:clamp(1.8rem,4vw,2.4rem)}.inputs .mug-link{font-size:.87rem;margin:1rem 0}.mug-link a{color:#ffc278;text-underline-offset:.2em}.pair label{line-height:1.5}.pair img{height:92px}.bar{gap:12px}.primary:enabled{color:#181308;background:#efae5e;border-color:#efae5e;font-weight:650}.primary:disabled{opacity:.48}header a,.edit-actions button,.bar button{min-height:44px}.mug section>h1,.mug section>h2{margin-bottom:.6rem}.mug section>p,.mug section>label{color:#cdcdca;margin:.7rem 0}.mug button:enabled{border-color:#888}.mug #download{display:inline-block;padding:.65rem 1rem;background:#efae5e;color:#181308;border-radius:5px;font-weight:600}.mug #download[hidden]{display:none}.mug label input[type=range]{vertical-align:middle}
+@media(max-width:640px){.mug{display:block}.mug section{padding:1.1rem}.mug section+section{border-top:1px solid #454545}.mug #pickers input{display:block;margin:.5rem 0}.bar{flex-wrap:wrap}.edit-tools{flex-wrap:wrap}}

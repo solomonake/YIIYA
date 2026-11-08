@@ -261,6 +261,8 @@ export default function LandingPage() {
             Open Studio
           </button>
 
+          <a href="/photo-studio" className="mb-8 inline-block font-mono text-sm text-amber-400 underline underline-offset-4">Build from two photos</a>
+
           {/* Example prompts */}
           <div className="mb-12">
             <p className="text-[10px] font-mono text-zinc-600 tracking-widest uppercase mb-3">

@@ -624,13 +624,11 @@ function LeftPanel({ open }: { open: boolean }) {
       </div>
 
       <a
-        href="https://yiiya-photo-studio.solomonake.chatgpt.site/"
-        target="_blank"
-        rel="noopener noreferrer"
+        href="/photo-studio" onClick={carryFrontPhoto}
         className="mx-3 mb-2 block rounded-sm border border-zinc-800 px-3 py-2 font-mono hover:border-amber-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
       >
-        <span className="block text-xs text-amber-400">Build from two photos ↗</span>
-        <span className="block text-[10px] text-zinc-400">On-device Photo Studio · opens in a new tab</span>
+        <span className="block text-xs text-amber-400">Build from two photos</span>
+        <span className="block text-[10px] text-zinc-400">On this device · no GPU queue</span>
       </a>
 
       {/* Orbit-with-phone: real geometry on a fixed-camera laptop. A single
@@ -799,6 +797,19 @@ function stepAssetHistory(direction: 1 | -1) {
 
 // ─── Toolbar ─────────────────────────────────────────────────────────────────
 
+// Carry a reduced front photo through a same-tab, same-origin navigation.
+function carryFrontPhoto() {
+  const photo = useYiiyaStore.getState().referenceImage;
+  try {
+    sessionStorage.removeItem("yiiya-photo-handoff");
+    if (photo && /^image\/(jpeg|png|webp)$/.test(photo.mediaType) && photo.base64.length < 4_000_000) {
+      sessionStorage.setItem("yiiya-photo-handoff", JSON.stringify({
+        at: Date.now(), src: `data:${photo.mediaType};base64,${photo.base64}`
+      }));
+    }
+  } catch { /* Photo Studio also accepts a fresh selection when storage is full. */ }
+}
+
 function Toolbar() {
   const leftOpen = useYiiyaStore(s => s.leftPanelOpen);
   const rightOpen = useYiiyaStore(s => s.rightPanelOpen);
@@ -888,6 +899,7 @@ function Toolbar() {
 // ─── Main Workspace ───────────────────────────────────────────────────────────
 
 export function YiiyaWorkspace() {
+  const generationFailed = useYiiyaStore(s => s.generationFailed);
   const leftOpen = useYiiyaStore(s => s.leftPanelOpen);
   const rightOpen = useYiiyaStore(s => s.rightPanelOpen);
   const generatedAssets = useYiiyaStore(s => s.generatedAssets);
@@ -1018,6 +1030,13 @@ export function YiiyaWorkspace() {
             activeMaterialOverride={activeAsset?.materialOverride}
           />
         </Suspense>
+        {generationFailed && (
+          <section role="status" className="absolute inset-x-3 bottom-5 z-10 mx-auto max-w-sm rounded-md border border-zinc-700 bg-zinc-950 p-4 text-sm text-zinc-200 shadow-xl">
+            <h2 className="font-semibold text-white">No model was generated</h2>
+            <p className="my-2 text-zinc-300">Try YIIYA on this device with a front and a right-side photo of the same subject.</p>
+            <a href="/photo-studio" onClick={carryFrontPhoto} className="inline-block rounded bg-amber-300 px-3 py-2 font-medium text-black">Build from two photos</a>
+          </section>
+        )}
         <GeneratingOverlay />
       </div>
 

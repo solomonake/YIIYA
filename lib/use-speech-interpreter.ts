@@ -323,6 +323,7 @@ export function useSpeechInterpreter() {
         }
         break;
       case "error":
+        if (event.code === "no_mesh") useYiiyaStore.setState({ generationFailed: true });
         addLog(`[ERROR] ${event.message}`);
         break;
     }
