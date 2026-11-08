@@ -598,16 +598,16 @@ function LeftPanel({ open }: { open: boolean }) {
         {referenceImage ? (
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={referenceImage.previewUrl} alt="ref" className="h-9 w-9 object-cover rounded-sm" />
+            <img src={referenceImage.previewUrl} alt="Selected reference photo" className="h-9 w-9 object-cover rounded-sm" />
             <div className="flex-1 min-w-0">
               <div className="text-[9px] font-mono text-amber-500 truncate">{referenceImage.name}</div>
               <div className="flex items-center gap-2 mt-0.5">
                 <button
                   onClick={(e) => { e.stopPropagation(); if (!isInterpreting) generateFromImage(); }}
                   disabled={isInterpreting}
-                  className="text-[8px] font-mono px-1.5 py-0.5 rounded-sm border border-emerald-800 bg-emerald-950/40 text-emerald-400 hover:border-emerald-600 disabled:opacity-40"
+                  className="text-[10px] font-mono px-1.5 py-1 rounded-sm text-zinc-300 underline hover:text-white disabled:opacity-40"
                 >
-                  Generate 3D →
+                  Try hosted single-photo generation
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); setReferenceImage(null); }}
@@ -619,15 +619,15 @@ function LeftPanel({ open }: { open: boolean }) {
             </div>
           </div>
         ) : (
-          <div className="text-[9px] font-mono text-zinc-800 text-center">Drop or click — photo → 3D</div>
+          <div className="text-xs font-mono text-zinc-400 text-center">Choose a reference photo</div>
         )}
       </div>
 
       <a
         href="/photo-studio" onClick={carryFrontPhoto}
-        className="mx-3 mb-2 block rounded-sm border border-zinc-800 px-3 py-2 font-mono hover:border-amber-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+        className="mx-3 mb-2 block rounded border border-amber-400/60 bg-amber-400/10 px-3 py-3 font-mono hover:border-amber-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
       >
-        <span className="block text-xs text-amber-400">Build from two photos</span>
+        <span className="block text-sm text-amber-300">{referenceImage ? "Add a side photo" : "Build from two photos"}</span>
         <span className="block text-[10px] text-zinc-400">On this device · no GPU queue</span>
       </a>
 
@@ -797,17 +797,28 @@ function stepAssetHistory(direction: 1 | -1) {
 
 // ─── Toolbar ─────────────────────────────────────────────────────────────────
 
-// Carry a reduced front photo through a same-tab, same-origin navigation.
-function carryFrontPhoto() {
+// Transfer only the preview needed by the 224px outline estimator.
+async function carryFrontPhoto(event: React.MouseEvent<HTMLAnchorElement>) {
   const photo = useYiiyaStore.getState().referenceImage;
+  if (!photo || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const destination = event.currentTarget.href;
   try {
     sessionStorage.removeItem("yiiya-photo-handoff");
-    if (photo && /^image\/(jpeg|png|webp)$/.test(photo.mediaType) && photo.base64.length < 4_000_000) {
-      sessionStorage.setItem("yiiya-photo-handoff", JSON.stringify({
-        at: Date.now(), src: `data:${photo.mediaType};base64,${photo.base64}`
-      }));
+    const img = new Image();
+    img.src = photo.previewUrl || `data:${photo.mediaType};base64,${photo.base64}`;
+    await img.decode();
+    const scale = Math.min(1, 448 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      sessionStorage.setItem("yiiya-photo-handoff", JSON.stringify({ at: Date.now(), src: canvas.toDataURL("image/png") }));
     }
-  } catch { /* Photo Studio also accepts a fresh selection when storage is full. */ }
+  } catch { /* The picker works when temporary storage is unavailable. */ }
+  window.location.assign(destination);
 }
 
 function Toolbar() {
@@ -900,6 +911,7 @@ function Toolbar() {
 
 export function YiiyaWorkspace() {
   const generationFailed = useYiiyaStore(s => s.generationFailed);
+  const building = useYiiyaStore(s => s.isInterpreting);
   const leftOpen = useYiiyaStore(s => s.leftPanelOpen);
   const rightOpen = useYiiyaStore(s => s.rightPanelOpen);
   const generatedAssets = useYiiyaStore(s => s.generatedAssets);
@@ -1030,7 +1042,12 @@ export function YiiyaWorkspace() {
             activeMaterialOverride={activeAsset?.materialOverride}
           />
         </Suspense>
-        {generationFailed && (
+        {!generationFailed && !building && !activeAsset && !leftOpen && (
+          <a href="/photo-studio" onClick={carryFrontPhoto} className="absolute inset-x-4 bottom-6 z-10 mx-auto max-w-xs rounded bg-amber-300 px-4 py-3 text-center text-sm font-semibold text-black">
+            {referenceImage ? "Add a side photo" : "Build from two photos"}
+          </a>
+        )}
+        {generationFailed && !building && (
           <section role="status" className="absolute inset-x-3 bottom-5 z-10 mx-auto max-w-sm rounded-md border border-zinc-700 bg-zinc-950 p-4 text-sm text-zinc-200 shadow-xl">
             <h2 className="font-semibold text-white">No model was generated</h2>
             <p className="my-2 text-zinc-300">Try YIIYA on this device with a front and a right-side photo of the same subject.</p>

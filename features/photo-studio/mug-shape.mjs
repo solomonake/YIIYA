@@ -3,16 +3,16 @@ import {MarchingCubes} from "three/examples/jsm/objects/MarchingCubes.js";
 
 export function buildMug(landmarks, camera, color, closed = false) {
   const {cx,cy,scale}=camera;
-  
+
   const {centerX,top,base,outerRadius,baseRadius,handle,handleRadius}=landmarks.front;
   const {outerDiameter,innerDiameter}=landmarks.overhead;
   const wall=outerRadius*(1-innerDiameter/outerDiameter);
-  
+
   const material=new THREE.MeshStandardMaterial({color,roughness:.43});
   const curve=new THREE.CatmullRomCurve3(handle.map(([x,y])=>new THREE.Vector3(x,y,0)));
   const path=curve.getPoints(36);
   const handleBounds={left:Math.min(...path.map(p=>p.x))-handleRadius,right:Math.max(...path.map(p=>p.x))+handleRadius,top:Math.min(...path.map(p=>p.y))-handleRadius,bottom:Math.max(...path.map(p=>p.y))+handleRadius};
-  
+
   const rimFlare=outerRadius*(3.4/49);
   const n=104, field=new MarchingCubes(n,material,false,false,100000);
   field.isolation=0;
