@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
+import { traceHandle, handleColorMask } from "./handle-profile.mjs";
+import { isolateSubject } from "./isolation.mjs";
 import { buildMug } from "./mug-shape.mjs";
 
 const byId = id => document.getElementById(id);
@@ -95,6 +97,16 @@ byId("make").onclick=async()=>{
     landmarks.assumedDepthFraction=Number(byId("depth").value)/100;
     const p=photos.front,canvas=document.createElement("canvas");canvas.width=canvas.height=224;
     const ctx=canvas.getContext("2d");ctx.drawImage(p.img,...p.rect);
+    if(!demo){
+      // Exclude letterboxing before learning the photo's background palette.
+      const [x,y,w,h]=p.rect.map(Math.round);
+      const crop=ctx.getImageData(x,y,Math.min(w,224-x),Math.min(h,224-y));
+      const cutout=isolateSubject(crop), mask=new Uint8Array(224*224);
+      for(let j=0;j<crop.height;j++)mask.set(cutout.subarray(j*crop.width,(j+1)*crop.width),(y+j)*224+x);
+      const hue=handleColorMask(ctx.getImageData(0,0,224,224),landmarks.front.handle[2]);
+      const profile=(hue && traceHandle(hue,224,224,landmarks.front)) || traceHandle(mask,224,224,landmarks.front);
+      if(profile){landmarks.front.handle=profile.points;landmarks.front.handleRadii=profile.radii;}
+    }
     const rgb=ctx.getImageData(Math.round(landmarks.front.centerX),Math.round((landmarks.front.base+landmarks.front.top)/2),1,1).data;
     const color=new THREE.Color().setRGB(rgb[0]/255,rgb[1]/255,rgb[2]/255,THREE.SRGBColorSpace);
     const start=performance.now();mesh=buildMug(landmarks,fitCamera,color);const ms=performance.now()-start;
