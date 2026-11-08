@@ -151,6 +151,7 @@ export type YiiyaStore = StageSlice & {
 
   // UI state
   isListening: boolean;
+  generationFailed: boolean;
   isInterpreting: boolean;
   interimTranscript: string;
   latestQuestion: string | null;
@@ -259,6 +260,7 @@ export const useYiiyaStore = create<YiiyaStore>()(
 
   // UI
   isListening: false,
+  generationFailed: false,
   isInterpreting: false,
   interimTranscript: "",
   latestQuestion: null,
@@ -301,10 +303,11 @@ export const useYiiyaStore = create<YiiyaStore>()(
   // Generated assets
   addGeneratedAsset: (asset) => set(s => ({
     generatedAssets: [...s.generatedAssets, asset],
-    activeAssetId: asset.id
+    activeAssetId: asset.id,
+    generationFailed: false
   })),
 
-  setActiveAsset: (id) => set({ activeAssetId: id }),
+  setActiveAsset: (id) => set({ activeAssetId: id, generationFailed: false }),
 
   // Fold a local material/scale tweak into the active asset. Merges onto any
   // prior override (successive edits stack) and multiplies relative scale.
@@ -342,7 +345,7 @@ export const useYiiyaStore = create<YiiyaStore>()(
 
   // UI
   setIsListening: (v) => set({ isListening: v }),
-  setIsInterpreting: (v) => set({ isInterpreting: v }),
+  setIsInterpreting: (v) => set(v ? { isInterpreting: true, generationFailed: false } : { isInterpreting: false }),
   setInterimTranscript: (v) => set({ interimTranscript: v }),
   setLatestQuestion: (v) => set({ latestQuestion: v }),
 
@@ -486,6 +489,16 @@ export const useYiiyaStore = create<YiiyaStore>()(
       // cursorTarget, saveStatus) is deliberately excluded — a stale
       // "listening" or "processing" flag surviving a refresh would just be
       // confusing, and referenceImage as base64 could bloat localStorage.
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<typeof current> | undefined;
+        const restored = { ...current, ...saved };
+        const usable = restored.generatedAssets.filter(asset => asset.tier !== "fallback" && !asset.glbUrl?.startsWith("/api/3d/placeholder"));
+        if (usable.length === restored.generatedAssets.length) return restored;
+        const failedSelection = !usable.some(asset => asset.id === restored.activeAssetId);
+        return { ...restored, generatedAssets: usable,
+          activeAssetId: failedSelection ? usable[usable.length - 1]?.id ?? null : restored.activeAssetId,
+          generationFailed: failedSelection };
+      },
       partialize: (state) => ({
         generatedAssets: state.generatedAssets,
         activeAssetId: state.activeAssetId,

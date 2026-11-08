@@ -29,3 +29,6 @@ pnpm-debug.log*
 
 # typescript
 *.tsbuildinfo
+
+/public/photo-lab/studio.js
+/public/photo-lab/mug.js

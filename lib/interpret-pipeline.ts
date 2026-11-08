@@ -163,7 +163,7 @@ export type PipelineEvent =
   | { type: "asset_ready"; asset: GeneratedAsset; log: string }
   | { type: "qa"; qa_log: string[] }
   | { type: "done"; assets: GeneratedAsset[]; brief: ThreeDBrief; qa_log: string[] }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: "no_mesh" };
 
 export function isInterpretRequest(value: unknown): value is InterpretRequestBody {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -1790,15 +1790,13 @@ export async function* runInterpretPipeline(
       const sizeMb = winning?.sizeBytes ? (winning.sizeBytes / 1_048_576).toFixed(2) : null;
       const triNote = winning?.triangleCount ? `~${winning.triangleCount.toLocaleString()} tris` : null;
       const sizeNote = [sizeMb ? `${sizeMb}MB` : null, triNote].filter(Boolean).join(", ");
-      const meshReadyLog =
-        tier === "fallback"
-          ? `[GENERATOR] All generators busy right now — try again in a minute. Showing placeholder for "${slot.name}".`
-          : sizeNote
-            ? `[GENERATOR] Mesh ready (${tier}, ${sizeNote}), packaging exports...`
-            : `[GENERATOR] Mesh ready (${tier}), packaging exports...`;
-      yield { type: "generating", log: meshReadyLog, progress: 0.8 };
-
-      const textureUrls = tier === "fallback" ? undefined : await generatePBRTextures(slotBrief);
+      if (tier === "fallback") {
+        yield { type: "generating", log: `[FAILED] No model returned for "${slot.name}".`, progress: 0.8 };
+        continue;
+      }
+      const details = sizeNote ? `, ${sizeNote}` : "";
+      yield { type: "generating", log: `[GENERATOR] Mesh ready (${tier}${details}), packaging exports...`, progress: 0.8 };
+      const textureUrls = await generatePBRTextures(slotBrief);
       const asset = await runPackager(
         slotBrief,
         glbUrl,
@@ -1812,11 +1810,13 @@ export async function* runInterpretPipeline(
       yield {
         type: "asset_ready",
         asset,
-        log:
-          asset.tier === "fallback"
-            ? `[FAILED] "${asset.name}" — no usable mesh from any provider. Placeholder shown; no exports.`
-            : `[READY] "${asset.name}" — ${asset.tier}, ${asset.scaleMeters}m, ${Object.keys(asset.exportUrls).join("/")}`
+        log: `[READY] "${asset.name}" — ${asset.tier}, ${asset.scaleMeters}m, ${Object.keys(asset.exportUrls).join("/")}`
       };
+    }
+
+    if (!generatedAssets.length) {
+      yield { type: "error", code: "no_mesh", message: "The generators returned no usable model." };
+      return;
     }
 
     // needsLODChain / needsPhysicsMetadata are Director-classified intent flags
