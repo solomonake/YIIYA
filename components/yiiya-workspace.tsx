@@ -623,6 +623,16 @@ function LeftPanel({ open }: { open: boolean }) {
         )}
       </div>
 
+      <a
+        href="https://yiiya-photo-studio.solomonake.chatgpt.site/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mx-3 mb-2 block rounded-sm border border-zinc-800 px-3 py-2 font-mono hover:border-amber-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+      >
+        <span className="block text-xs text-amber-400">Build from two photos ↗</span>
+        <span className="block text-[10px] text-zinc-400">On-device Photo Studio · opens in a new tab</span>
+      </a>
+
       {/* Orbit-with-phone: real geometry on a fixed-camera laptop. A single
           webcam photo guesses the unseen sides; scanning a QR lets the phone do
           the walk-around and ship 3 views back. */}
@@ -631,7 +641,7 @@ function LeftPanel({ open }: { open: boolean }) {
           onClick={() => setShowPhoneOrbit(true)}
           className="mx-3 mb-2 w-[calc(100%-1.5rem)] rounded-sm border border-zinc-900 py-1.5 text-[9px] font-mono text-zinc-500 hover:border-zinc-700 hover:text-zinc-300 transition-colors"
         >
-          📱 Orbit with phone — real 3D, not a guessed backside
+          Capture more views with your phone
         </button>
       )}
       {showPhoneOrbit && (
@@ -693,7 +703,7 @@ function LeftPanel({ open }: { open: boolean }) {
       </form>
       {/* Cost transparency: what a submission actually costs, before committing. */}
       <div className="px-3 pb-2 -mt-1 text-[8px] font-mono text-zinc-800">
-        new object ≈ 1 paid generation · color/finish/size edits: free &amp; instant
+        Hosted generation uses a provider quota. Color, finish and size edits run locally.
         <span className="block">click a part of the model, then say &quot;make this red&quot;</span>
       </div>
     </div>
