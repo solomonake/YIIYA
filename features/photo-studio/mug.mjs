@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { traceHandle, handleColorMask } from "./handle-profile.mjs";
-import { isolateSubject } from "./isolation.mjs";
+import { isolateSubject } from "./isolation-classic.mjs";
 import { buildMug } from "./mug-shape.mjs";
 
 const byId = id => document.getElementById(id);

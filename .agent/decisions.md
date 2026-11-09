@@ -60,3 +60,14 @@ Record accepted tradeoffs here. Keep entries short, dated, and evidence-backed.
   provider credentials were missing, which could make a broken production
   deployment look healthy.
 - Value: risk_reduced, engineering_leverage.
+
+## 2026-11-09: A cutout stage ships only if both benchmarks agree
+
+- Decision: A Photo Studio cutout stage is kept when it improves the YCB
+  turntable benchmark (`scripts/evaluate-foreground.mjs`) and does not lower
+  the SRL Labs 001 held-back generated scenes. The mug builder stays on
+  `isolation-classic.mjs` until its Blender checks are rerun.
+- Evidence: Shadow removal raised the YCB cutout score and erased grey and
+  low-contrast subjects in the generated scenes. Neither benchmark alone
+  showed both effects. See `docs/PHOTO_CUTOUT_BENCHMARK.md`.
+- Value: risk_reduced, engineering_leverage.
