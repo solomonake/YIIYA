@@ -4,7 +4,7 @@
 // publisher's masks, then carves the two-photo mesh from the 0° and 90° cutouts
 // and scores its outline at the 21° and 69° views neither cutout saw.
 //
-//   node scripts/evaluate-foreground.mjs [data-root] [--baseline origin/main] [--out report.json] [--sheet sheet.png]
+//   node scripts/evaluate-foreground.mjs [data-root] [--objects crops.json] [--baseline origin/main] [--out report.json] [--sheet sheet.png]
 //
 // The data root holds the YCB files as delivery round 16 stored them:
 //   <root>/<object>/rgb_highres/N1_<deg>.jpg   photograph
@@ -26,13 +26,14 @@ import {refineMesh} from "../features/photo-studio/refine.mjs";
 
 const args = process.argv.slice(2);
 const flag = name => { const i = args.indexOf(name); return i < 0 ? null : args.splice(i, 2)[1]; };
-const out = flag("--out"), sheet = flag("--sheet"), baseline = flag("--baseline") || "origin/main";
+const out = flag("--out"), sheet = flag("--sheet"), baseline = flag("--baseline") || "origin/main", crops = flag("--objects");
 const root = args[0] || "/tmp/yiiya-r16-ycb";
 const repo = new URL("..", import.meta.url).pathname;
 const weights = JSON.parse(readFileSync(new URL("../features/photo-studio/support/model.json", import.meta.url)));
 const S = 224;
-// Fixed square crops from round 16.
-const objects = {
+// Square crops that frame each object: {object: {left, top, width, height}} in
+// photo pixels. The default is round 16's three objects.
+const objects = crops ? JSON.parse(readFileSync(crops)) : {
   "003_cracker_box": {left: 1330, top: 100, width: 2500, height: 2500},
   "025_mug": {left: 1650, top: 1320, width: 1060, height: 1060},
   "035_power_drill": {left: 1380, top: 680, width: 1700, height: 1700},
@@ -58,6 +59,8 @@ const variants = {
   "without open": {isolate: without("open")},
   "without holes": {isolate: without("holes")},
   "without mask choice": {isolate: isolateSubject, plain: true},
+  // The publisher's own masks as cutouts: what the two-photo carve reaches with a perfect cutout.
+  "publisher masks": {truth: true},
 };
 
 // A preview of `region` (raw pixels) no larger than 224 on a side, as the studio draws it.
@@ -70,6 +73,7 @@ async function preview(obj, deg, region) {
   return {pixels: {data, width: info.width, height: info.height}, toRaw: region.width/info.width, left: region.left, top: region.top};
 }
 async function cutout(obj, deg, mode, variant, size) {
+  if (variant.truth) return {...await preview(obj, deg, objects[obj]), mask: Uint8Array.from(truth(obj, deg), v => Number(v > 0)), ms: 0};
   const cut = image => variant.plain ? variant.isolate(image) : chooseMask(image, variant.isolate, variant.weights || weights).mask;
   const whole = mode === "crop" ? objects[obj] : {left: 0, top: 0, width: size.width, height: size.height, whole: true};
   let view = await preview(obj, deg, whole), ms = 0;
