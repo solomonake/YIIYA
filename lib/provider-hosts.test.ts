@@ -31,14 +31,21 @@ describe("isAllowedProviderUrl", () => {
 });
 
 describe("providerAuthHeaders", () => {
+  it("rejects insecure URLs and explicit credentials/ports before attaching credentials", () => {
+    for (const url of ["http://x.hf.space/a", "https://user:pass@x.hf.space/a", "https://x.hf.space:444/a"]) {
+      expect(isAllowedProviderUrl(url)).toBe(false);
+      expect(providerAuthHeaders(url, "hf_personal")).toEqual({});
+    }
+  });
   it("attaches the HF token only for hf.space hosts", () => {
     const prev = process.env.HUGGINGFACE_TOKEN;
     process.env.HUGGINGFACE_TOKEN = "hf_test_token";
     try {
-      expect(providerAuthHeaders("https://x-y.hf.space/file=/tmp/a.glb")).toEqual({
+      expect(providerAuthHeaders("https://microsoft-trellis-2.hf.space/file=/tmp/a.glb")).toEqual({
         Authorization: "Bearer hf_test_token"
       });
       expect(providerAuthHeaders("https://assets.meshy.ai/a.glb")).toEqual({});
+      expect(providerAuthHeaders("https://attacker.hf.space/collect")).toEqual({});
     } finally {
       if (prev === undefined) delete process.env.HUGGINGFACE_TOKEN;
       else process.env.HUGGINGFACE_TOKEN = prev;

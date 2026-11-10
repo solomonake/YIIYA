@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
+import math
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -14,6 +18,7 @@ from urllib.parse import urlparse
 
 import modal
 import requests
+from fastapi import HTTPException, Request
 
 
 APP_NAME = "yiiya-scan-reconstruction"
@@ -193,32 +198,112 @@ def run_cmd(command: list[str], cwd: Path | None = None) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 
-def download_file(url: str, destination: Path) -> None:
-    response = requests.get(url, stream=True, timeout=90)
-    response.raise_for_status()
+def allowed_download_url(url: str, *, upload_only: bool = False) -> bool:
+    if not isinstance(url, str) or len(url) > 4096 or any(ord(c) < 33 for c in url) or "\\" in url:
+        return False
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        suffixes = (".public.blob.vercel-storage.com",)
+        if not upload_only:
+            suffixes += (".fal.media", ".fal.run")
+        return (parsed.scheme == "https" and re.fullmatch(r"[a-z0-9.-]+", host) is not None and not parsed.username and not parsed.password
+                and parsed.port in (None, 443) and not parsed.fragment
+                and any(host.endswith(suffix) and len(host) > len(suffix) for suffix in suffixes))
+    except ValueError:
+        return False
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("wb") as handle:
-        for chunk in response.iter_content(chunk_size=1024 * 1024):
-            if chunk:
-                handle.write(chunk)
+
+def download_file(url: str, destination: Path, *, upload_only: bool = False) -> None:
+    if not allowed_download_url(url, upload_only=upload_only):
+        raise ValueError("Unsupported download source")
+    limit = 3 * 1024 * 1024 if upload_only else 64 * 1024 * 1024
+    started = time.monotonic()
+    with requests.get(url, stream=True, timeout=(10, 30), allow_redirects=False) as response:
+        if 300 <= response.status_code < 400:
+            raise ValueError("Download redirects are not allowed")
+        response.raise_for_status()
+        length = response.headers.get("Content-Length")
+        if length is not None and (not length.isdigit() or int(length) > limit):
+            raise ValueError("Download exceeds byte allowance")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            size = 0
+            with destination.open("xb") as handle:
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    size += len(chunk)
+                    if size > limit or time.monotonic() - started > 90:
+                        raise ValueError("Download exceeds byte or time allowance")
+                    handle.write(chunk)
+            if size == 0:
+                raise ValueError("Empty download")
+        except FileExistsError:
+            raise  # Never remove or overwrite an existing artifact.
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
 
 
-def extract_ffmpeg_keyframes(video_path: Path, frames_dir: Path) -> list[Path]:
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    output_pattern = frames_dir / "frame-%04d.jpg"
-    run_cmd(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video_path),
-            "-vf",
-            "fps=3",
-            str(output_pattern),
-        ]
+def extract_ffmpeg_keyframes(video_path: Path, frames_dir: Path, *, _allow_remux: bool = True, _expected_packets: int | None = None) -> list[Path]:
+    video_path = video_path.resolve(strict=True)
+    if not video_path.is_file() or not 0 < video_path.stat().st_size <= 3 * 1024 * 1024:
+        raise ValueError("Video exceeds input byte allowance")
+    input_options = ["-protocol_whitelist", "file", "-format_whitelist", "mov,matroska,webm"]
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", *input_options, "-select_streams", "v:0",
+         "-count_packets", "-show_entries", "stream=width,height,nb_read_packets:format=duration", "-of", "json", str(video_path)],
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10,
     )
-    return sorted(frames_dir.glob("frame-*.jpg"))
+    try:
+        info = json.loads(probe.stdout)
+        raw_duration = info.get("format", {}).get("duration")
+        stream = info["streams"][0]
+        width, height = stream["width"], stream["height"]
+        if _expected_packets is not None and int(stream.get("nb_read_packets", -1)) != _expected_packets:
+            raise ValueError("Normalization did not preserve the complete video stream")
+        if (type(width) is not int or type(height) is not int
+                or not 0 < width <= 4096 or not 0 < height <= 4096
+                or width * height > 8_388_608):
+            raise ValueError("Video exceeds dimension allowance")
+        if raw_duration is None and _allow_remux:
+            # Browser live-WebM often omits container duration. Copy the complete
+            # video stream: truncation here would hide an overlong recording.
+            packet_count = int(stream.get("nb_read_packets", 0))
+            if packet_count <= 0:
+                raise ValueError("Cannot verify complete video stream")
+            with tempfile.TemporaryDirectory(prefix="yiiya-video-normalize-") as temporary:
+                normalized = Path(temporary) / "normalized.mkv"
+                subprocess.run(
+                    ["ffmpeg", "-nostdin", "-v", "error", "-n", *input_options,
+                     "-i", str(video_path), "-map", "0:v:0", "-an", "-sn", "-dn",
+                     "-c:v", "copy", "-fs", str(3 * 1024 * 1024), str(normalized)],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15,
+                )
+                if normalized.stat().st_size >= 3 * 1024 * 1024:
+                    raise ValueError("Normalized video reached byte limit")
+                return extract_ffmpeg_keyframes(normalized, frames_dir, _allow_remux=False, _expected_packets=packet_count)
+        duration = float(raw_duration)
+        if not math.isfinite(duration) or not 0 < duration <= 30:
+            raise ValueError("Video exceeds duration allowance")
+    except (KeyError, IndexError, TypeError, ValueError) as error:
+        raise ValueError("Video must have valid dimensions and duration at most30 seconds") from error
+    frames_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-n", *input_options,
+             "-threads", "2", "-i", str(video_path), "-map", "0:v:0", "-an", "-sn", "-dn",
+             "-t", "30", "-filter_threads", "1", "-vf",
+             "fps=3,scale=w='min(1024,iw)':h='min(1024,ih)':force_original_aspect_ratio=decrease",
+             "-frames:v", "90", "-threads", "2", "-q:v", "3", str(frames_dir / "frame-%04d.jpg")],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=45,
+        )
+        frames = sorted(frames_dir.glob("frame-*.jpg"))
+        if not 1 <= len(frames) <= 90 or any(p.stat().st_size == 0 for p in frames):
+            raise ValueError("Video did not produce valid bounded frames")
+        return frames
+    except Exception:
+        shutil.rmtree(frames_dir)  # Created exclusively by this call; no prior files.
+        raise
 
 
 def stage_payload(
@@ -270,7 +355,6 @@ def prepare_workspace(job: DispatchPayload, workspace: Path) -> dict[str, Any]:
     uploads_dir = workspace / "uploads"
     frames_dir = workspace / "frames"
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    frames_dir.mkdir(parents=True, exist_ok=True)
 
     downloaded_uploads: list[dict[str, str]] = []
     video_path: Path | None = None
@@ -280,7 +364,7 @@ def prepare_workspace(job: DispatchPayload, workspace: Path) -> dict[str, Any]:
             continue
 
         destination = uploads_dir / upload.file_name
-        download_file(upload.url, destination)
+        download_file(upload.url, destination, upload_only=True)
         downloaded_uploads.append(
             {
                 "kind": upload.kind,
@@ -297,6 +381,8 @@ def prepare_workspace(job: DispatchPayload, workspace: Path) -> dict[str, Any]:
         extracted_frames = [
             str(path) for path in extract_ffmpeg_keyframes(video_path, frames_dir)
         ]
+    else:
+        frames_dir.mkdir(parents=True, exist_ok=False)
 
     manifest = {
         "scan_id": job.scan_id,
@@ -1039,6 +1125,56 @@ def run_worker_pipeline(job: DispatchPayload) -> dict[str, Any]:
         shutil.rmtree(workspace, ignore_errors=True)
 
 
+def require_dispatch_auth(request: Request) -> None:
+    """Authenticate the HTTP caller before allocating GPU/background work."""
+    secret = os.getenv("SCAN_RECONSTRUCTION_API_KEY", "")
+    if not secret.strip() or len(secret) > 1024:
+        raise HTTPException(status_code=503, detail="Worker dispatch authentication is not configured")
+    headers = request.headers.getlist("authorization")
+    supplied = headers[0] if len(headers) == 1 else ""
+    expected = "Bearer " + secret
+    if len(supplied) > 2048 or not hmac.compare_digest(
+        hashlib.sha256(supplied.encode("utf-8")).digest(),
+        hashlib.sha256(expected.encode("utf-8")).digest(),
+    ):
+        raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
+
+
+async def read_dispatch_payload(request: Request) -> dict[str, Any]:
+    require_dispatch_auth(request)
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 256 * 1024:
+            raise HTTPException(status_code=413, detail="Dispatch request is too large")
+        body.extend(chunk)
+    try:
+        payload = json.loads(body)
+    except (ValueError, UnicodeError, RecursionError):
+        raise HTTPException(status_code=400, detail="Invalid dispatch JSON")
+    if not isinstance(payload, dict) or not isinstance(payload.get("scanId"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", payload["scanId"]):
+        raise HTTPException(status_code=422, detail="Invalid scan ID")
+    for hint in ("promptHint", "objectHint"):
+        if payload.get(hint) is not None and (not isinstance(payload[hint], str) or len(payload[hint]) > 4000):
+            raise HTTPException(status_code=422, detail="Invalid object hint")
+    warnings = payload.get("warnings", [])
+    if not isinstance(warnings, list) or len(warnings) > 50 or any(not isinstance(w, dict) for w in warnings):
+        raise HTTPException(status_code=422, detail="Invalid warnings")
+    uploads = payload.get("uploads")
+    if not isinstance(uploads, list) or not 1 <= len(uploads) <= 12:
+        raise HTTPException(status_code=422, detail="Dispatch requires 1–12 uploads")
+    names = set()
+    for item in uploads:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=422, detail="Invalid upload")
+        name = item.get("fileName")
+        if (item.get("kind") not in ("video", "keyframe", "preview", "mask", "metadata")
+                or not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,159}", name)
+                or name in names or not allowed_download_url(item.get("url"), upload_only=True)):
+            raise HTTPException(status_code=422, detail="Unsupported upload name, kind or source")
+        names.add(name)
+    return payload
+
+
 @app.function(
     image=image,
     gpu=GPU_TYPE,
@@ -1059,7 +1195,8 @@ def reconstruct_job(payload: dict[str, Any]) -> dict[str, Any]:
     secrets=[modal.Secret.from_name("yiiya-scan-worker")],
 )
 @modal.fastapi_endpoint(method="POST")
-def dispatch(payload: dict[str, Any]) -> dict[str, Any]:
+async def dispatch(request: Request) -> dict[str, Any]:
+    payload = await read_dispatch_payload(request)
     call = reconstruct_job.spawn(payload)
     return {
         "accepted": True,

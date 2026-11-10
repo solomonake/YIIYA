@@ -143,7 +143,7 @@ export function useSpeechInterpreter() {
       if (intent.kind === "regen") {
         addLog(`[USER] ${transcript}`);
         store.setPendingEditConfirm({ transcript, assetName: activeAsset.name });
-        addLog(`[SYSTEM] "${transcript}" needs a fresh generation (≈1 paid gen, 1–4 min). Confirm to spend it, or keep editing "${activeAsset.name}" for free.`);
+        addLog(`[SYSTEM] "${transcript}" needs a fresh generation and available provider quota. Queue times vary. Confirm to regenerate, or keep editing "${activeAsset.name}" for free.`);
         return;
       }
       // intent.kind === "new" → fall through to the normal pipeline below.
@@ -369,7 +369,8 @@ export function useSpeechInterpreter() {
       // "aborted" (quick release / restart) and "no-speech" (silence) are
       // benign and were the source of the error flood — don't log them.
       if (event.error !== "aborted" && event.error !== "no-speech") {
-        addLog(`[VOICE] ${event.error === "not-allowed" ? "Mic permission denied" : `Error: ${event.error}`}`);
+        transcriptAccumRef.current = "";
+        addLog(`[VOICE] ${event.error === "not-allowed" ? "Microphone permission denied. Allow microphone access in your browser or type your prompt." : `Speech recognition failed (${event.error}). Type your prompt or try the microphone again.`}`);
       }
     };
 
@@ -383,15 +384,22 @@ export function useSpeechInterpreter() {
     };
 
     recRef.current = rec;
-    rec.start();
-    setIsListening(true);
-    addLog("[VOICE] Listening...");
+    try {
+      rec.start();
+      setIsListening(true);
+      addLog("[VOICE] Listening...");
+    } catch {
+      listeningRef.current = false;
+      recRef.current = null;
+      setIsListening(false);
+      addLog("[VOICE] Microphone could not start. Type your prompt or try again.");
+    }
   }, [addLog, setIsListening, setInterimTranscript, runTranscriptThroughPipeline]);
 
   const stopListening = useCallback(() => {
     listeningRef.current = false;
-    recRef.current?.stop();
-    setIsListening(false);
+    try { recRef.current?.stop(); } catch { /* Recognition may already have ended. */ }
+    finally { setIsListening(false); }
   }, [setIsListening]);
 
   // Generate directly from a dropped/uploaded image with no typed prompt.

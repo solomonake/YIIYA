@@ -1,7 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
+import { providerAuthHeaders } from "@/lib/provider-hosts";
 import { glbToObj, glbToStl } from "@/lib/scene/mesh-export";
+import { readBoundedResponse } from "@/lib/bounded-response";
+import { resolveArtifactUpstream } from "@/lib/scene/viewer-source";
+import { openGlbStream } from "@/lib/scene/glb-stream";
+
+import { HF_ARTIFACT_HEADER } from "@/lib/hf-artifact-request";
+import { normalizeHfToken } from "@/lib/huggingface-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,53 +35,66 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing ?from= parameter" }, { status: 400 });
   }
 
-  // SSRF guard: only our own /api artifacts or allowlisted provider hosts.
-  const isOwnRoute = from.startsWith("/api/");
-  if (!isOwnRoute && !isAllowedProviderUrl(from)) {
+  if (!["glb", "gltf", "obj", "stl", "usd", "usdz"].includes(to)) {
+    return NextResponse.json({ error: `Unsupported format: ${to}` }, { status: 400 });
+  }
+
+  // The exact artifact proxy is the only local source. Do not let conversion
+  // recursively request itself or fetch unrelated application routes.
+  const sourceUrl = resolveArtifactUpstream(from);
+  if (!sourceUrl) {
     return NextResponse.json({ error: "Source host not allowed" }, { status: 400 });
   }
 
-  const sourceUrl = isOwnRoute ? `${request.nextUrl.origin}${from}` : from;
-
+  const supplied = request.headers.get(HF_ARTIFACT_HEADER);
+  const personalKey = normalizeHfToken(supplied);
+  if (supplied !== null && !personalKey) {
+    return NextResponse.json({ error: "Invalid Hugging Face credential" }, { status: 400 });
+  }
+  const headers = providerAuthHeaders(sourceUrl, personalKey);
   let glb: Buffer;
   try {
     const res = await fetch(sourceUrl, {
-      headers: providerAuthHeaders(sourceUrl),
+      headers,
+      cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(60_000)
     });
     if (!res.ok) {
+      await res.body?.cancel();
       return NextResponse.json({ error: `Source fetch failed: ${res.status}` }, { status: 502 });
     }
     const declared = Number(res.headers.get("content-length") ?? 0);
     if (declared > MAX_BYTES) {
+      await res.body?.cancel();
       return NextResponse.json({ error: "Source too large" }, { status: 413 });
     }
-    glb = Buffer.from(await res.arrayBuffer());
-    if (glb.byteLength > MAX_BYTES) {
-      return NextResponse.json({ error: "Source too large" }, { status: 413 });
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "fetch failed";
-    return NextResponse.json({ error: `Source fetch failed: ${msg}` }, { status: 502 });
+    // Complete validation before returning an attachment; HTTP 200 from an
+    // upstream does not establish GLB identity or transport completeness.
+    const validated = new Response(await openGlbStream(res, MAX_BYTES));
+    glb = Buffer.from(await readBoundedResponse(validated, MAX_BYTES));
+  } catch {
+    return NextResponse.json({ error: "Model download failed or the GLB was incomplete. Try generating it again." }, { status: 502 });
   }
 
+  const cache = headers.Authorization ? "private, no-store" : "public, max-age=3600";
   try {
     if (to === "obj") {
       const { obj, triangles } = await glbToObj(new Uint8Array(glb));
-      return fileResponse(Buffer.from(obj, "utf-8"), "model.obj", "model/obj", {
+      return fileResponse(Buffer.from(obj, "utf-8"), "model.obj", "model/obj", cache, {
         "X-Yiiya-Triangles": String(triangles)
       });
     }
 
     if (to === "stl") {
       const { stl, triangles } = await glbToStl(new Uint8Array(glb));
-      return fileResponse(stl, "model.stl", "model/stl", {
+      return fileResponse(stl, "model.stl", "model/stl", cache, {
         "X-Yiiya-Triangles": String(triangles)
       });
     }
 
     if (to === "glb" || to === "gltf") {
-      return fileResponse(glb, "model.glb", "model/gltf-binary");
+      return fileResponse(glb, "model.glb", "model/gltf-binary", cache);
     }
 
     if (to === "usdz" || to === "usd") {
@@ -92,7 +111,7 @@ export async function GET(request: NextRequest) {
       }
       const { convertGlbToUsdz } = await import("@/lib/scene/usdz-export");
       const { usdz } = await convertGlbToUsdz(glb);
-      return fileResponse(usdz, "model.usdz", "model/vnd.usdz+zip");
+      return fileResponse(usdz, "model.usdz", "model/vnd.usdz+zip", cache);
     }
 
     return NextResponse.json({ error: `Unsupported format: ${to}` }, { status: 400 });
@@ -106,6 +125,7 @@ function fileResponse(
   body: Buffer,
   filename: string,
   mime: string,
+  cache: string,
   extraHeaders: Record<string, string> = {}
 ) {
   return new Response(new Uint8Array(body), {
@@ -113,7 +133,8 @@ function fileResponse(
     headers: {
       "Content-Type": mime,
       "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": cache,
+      Vary: HF_ARTIFACT_HEADER,
       ...extraHeaders
     }
   });

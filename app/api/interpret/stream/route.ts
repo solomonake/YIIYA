@@ -3,7 +3,9 @@ import { isInterpretRequest, runInterpretPipeline, type GeneratedAsset, type PBR
 import { guardRequest } from "@/app/api/interpret/guard";
 import { saveGeneratedAsset, findCachedAsset } from "@/lib/assets/persist";
 import { buildExportUrls } from "@/lib/scene/export-urls";
-import { retextureCacheKey } from "@/lib/hf-retexture";
+import { parseQualityReward } from "@/lib/scene/quality-reward";
+import { readGenerationBody, GenerationBodyError } from "@/lib/security/generation-body";
+import { generationCacheKey } from "@/lib/assets/cache-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,9 +25,10 @@ function encodeEvent(event: unknown) {
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {
-    body = await request.json();
-  } catch {
-    return new Response(encodeEvent({ type: "error", message: "Invalid JSON" }), { status: 400, headers: streamHeaders });
+    body = await readGenerationBody(request);
+  } catch (error) {
+    return new Response(encodeEvent({ type: "error", message: error instanceof GenerationBodyError ? error.message : "Invalid JSON" }),
+      { status: error instanceof GenerationBodyError ? error.status : 400, headers: streamHeaders });
   }
 
   const hasImage = isInterpretRequest(body) && Boolean(body.referenceImage?.base64);
@@ -43,13 +46,18 @@ export async function POST(request: NextRequest) {
   const guardBody = hasTranscript ? body : { ...body, transcript: "Photo-to-3D generation" };
   const guard = await guardRequest(request, guardBody);
   if (!guard.ok) {
+    const headers = new Headers(guard.response.headers);
+    for (const [name, value] of Object.entries(streamHeaders)) headers.set(name, value);
     return new Response(
       encodeEvent({ type: "error", message: guard.message }),
-      { status: guard.response.status, headers: streamHeaders }
+      { status: guard.response.status, headers }
     );
   }
 
   const userId = guard.identity.userId;
+  // Use the firewall-approved transcript for generation, cache lookup and saves.
+  const pipelineBody = { ...body, transcript: guard.body.transcript };
+  const requestCacheKey = generationCacheKey(pipelineBody);
 
   // Surface the daily free-generation quota to the client so the UI can show a
   // "N/M left today" meter (headers are readable the moment the response starts,
@@ -63,14 +71,8 @@ export async function POST(request: NextRequest) {
       : {};
   const respHeaders = { ...streamHeaders, ...quotaHeaders };
 
-  // Restyles are cached under a mesh-scoped key: "make it walnut" only hits
-  // when it was said about the SAME source mesh.
-  const isRestyle = body.editMode === "restyle" && Boolean(body.activeAssetGlbUrl);
-  if (userId && !body.referenceImage && (isRestyle || !body.forceGenerate)) {
-    const cacheKeys = isRestyle
-      ? [retextureCacheKey(body.transcript, body.activeAssetGlbUrl as string)]
-      : [body.transcript.trim()];
-    const cached = await findCachedAsset(userId, cacheKeys);
+  if (userId && requestCacheKey && !pipelineBody.referenceImage && (!pipelineBody.forceGenerate || pipelineBody.editMode === "restyle")) {
+    const cached = await findCachedAsset(userId, pipelineBody.transcript.trim(), requestCacheKey);
     if (cached) {
       const asset: GeneratedAsset = {
         id: `asset-${Date.now()}-cache`,
@@ -83,6 +85,7 @@ export async function POST(request: NextRequest) {
           baseColor: "#b0b3ba", metalness: 0.1, roughness: 0.6, textureStyle: "unknown"
         }) as PBRMaterialBrief,
         textureUrls: (cached.brief_json?.textureUrls ?? undefined) as GeneratedAsset["textureUrls"],
+        qualityReward: parseQualityReward(cached.brief_json?.qualityReward),
         exportUrls: buildExportUrls(cached.glb_url, { usdzConfigured: Boolean(process.env.USDZ_CONVERTER_URL) }),
         scaleMeters: cached.scale_meters ?? 1,
         // Not verified for cached rows either; watertightness needs a
@@ -90,9 +93,9 @@ export async function POST(request: NextRequest) {
         isWatertight: undefined
       };
       const events = [
-        { type: "generating", log: `[CACHE] You already generated "${cached.object_name}" with this exact prompt — returning it instantly ($0). Reword the prompt slightly for a fresh roll.`, progress: 0.9 },
+        { type: "generating", log: `[CACHE] Reusing "${cached.object_name}" from your library for this matching request.`, progress: 0.9 },
         { type: "asset_ready", asset, log: `[READY] "${asset.name}" — from your library, no generation spent.` },
-        { type: "done", assets: [asset], brief: null, qa_log: ["[QA] Served from prompt cache — zero cost."] }
+        { type: "done", assets: [asset], brief: null, qa_log: ["[QA] Served from request cache; no new model generation."] }
       ];
       return new Response(events.map(encodeEvent).join(""), { headers: respHeaders });
     }
@@ -114,14 +117,9 @@ export async function POST(request: NextRequest) {
       const heartbeat = setInterval(() => safeEnqueue({ type: "heartbeat", t: Date.now() }), 10_000);
 
       try {
-        for await (const event of runInterpretPipeline(body as Parameters<typeof runInterpretPipeline>[0])) {
+        for await (const event of runInterpretPipeline(pipelineBody)) {
           if (event.type === "asset_ready" && userId) {
-            // Restyles save under a mesh-scoped key so the cache never serves
-            // them for the same phrase on a different model.
-            const promptKey = event.asset.sourceGlbUrl
-              ? retextureCacheKey(body.transcript, event.asset.sourceGlbUrl)
-              : body.transcript;
-            const dbId = await saveGeneratedAsset(userId, promptKey, null, event.asset).catch(
+            const dbId = await saveGeneratedAsset(userId, pipelineBody.transcript.trim(), null, event.asset, requestCacheKey).catch(
               () => null
             );
             if (dbId) {

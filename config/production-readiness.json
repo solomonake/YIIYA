@@ -81,12 +81,18 @@
       {
         "name": "TRIPO_API_KEY",
         "label": "Tripo API key",
-        "reason": "The reliable text/image-to-3D provider cascade needs a configured commercial provider."
+        "reason": "The reliable text/image-to-3D provider cascade needs a configured commercial provider.",
+        "generationModes": [
+          "mixed"
+        ]
       },
       {
         "name": "FAL_KEY",
         "label": "Fal API key",
-        "reason": "Managed 3D and scan fallback providers need Fal credentials."
+        "reason": "Managed 3D and scan fallback providers need Fal credentials.",
+        "generationModes": [
+          "mixed"
+        ]
       },
       {
         "name": "UNSPLASH_ACCESS_KEY",
@@ -101,27 +107,42 @@
       {
         "name": "SCAN_RECONSTRUCTION_ENDPOINT",
         "label": "Scan reconstruction worker endpoint",
-        "reason": "Scan-to-asset reconstruction needs a deployed worker endpoint."
+        "reason": "Scan-to-asset reconstruction needs a deployed worker endpoint.",
+        "generationModes": [
+          "mixed"
+        ]
       },
       {
         "name": "SCAN_RECONSTRUCTION_API_KEY",
         "label": "Scan reconstruction worker key",
-        "reason": "The reconstruction worker should reject unauthenticated calls."
+        "reason": "The reconstruction worker should reject unauthenticated calls.",
+        "generationModes": [
+          "mixed"
+        ]
       },
       {
         "name": "SCAN_RECONSTRUCTION_WEBHOOK_SECRET",
         "label": "Scan reconstruction webhook secret",
-        "reason": "Worker callbacks need signed webhook verification."
+        "reason": "Worker callbacks need signed webhook verification.",
+        "generationModes": [
+          "mixed"
+        ]
       },
       {
         "name": "SCAN_RECONSTRUCTION_APP_URL",
         "label": "Scan reconstruction app URL",
-        "reason": "Workers need the production callback origin for artifact upload."
+        "reason": "Workers need the production callback origin for artifact upload.",
+        "generationModes": [
+          "mixed"
+        ]
       },
       {
         "name": "SCAN_FAL_WEBHOOK_SECRET",
         "label": "Fal scan webhook secret",
-        "reason": "Fal callbacks need signed webhook verification."
+        "reason": "Fal callbacks need signed webhook verification.",
+        "generationModes": [
+          "mixed"
+        ]
       },
       {
         "name": "CAD_WORKER_ENDPOINT",

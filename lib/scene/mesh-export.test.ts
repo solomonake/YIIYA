@@ -49,6 +49,44 @@ async function makeTriangleGlb(withNormalsAndUvs = true): Promise<Uint8Array> {
 }
 
 describe("glbToObj", () => {
+  async function mixedObjects() {
+    const doc = await new NodeIO().readBinary(await makeTriangleGlb());
+    const scene = doc.getRoot().listScenes()[0];
+    const original = scene.listChildren()[0];
+    const prim = original.getMesh()!.listPrimitives()[0];
+    scene.removeChild(original);
+    for (const [name, normals, uvs] of [
+      ["plain", false, false], ["both", true, true],
+      ["uv-only", false, true], ["normal-only", true, false]
+    ] as const) {
+      const next = doc.createPrimitive().setAttribute("POSITION", prim.getAttribute("POSITION")!);
+      if (normals) next.setAttribute("NORMAL", prim.getAttribute("NORMAL")!);
+      if (uvs) next.setAttribute("TEXCOORD_0", prim.getAttribute("TEXCOORD_0")!);
+      scene.addChild(doc.createNode(name).setMesh(doc.createMesh(name).addPrimitive(next)));
+    }
+    return new NodeIO().writeBinary(doc);
+  }
+
+  it("keeps UV and normal indices independent across mixed primitives", async () => {
+    const { obj, triangles } = await glbToObj(await mixedObjects());
+    expect(triangles).toBe(4);
+    expect(obj.split("\n").filter(line => line.startsWith("f "))).toEqual([
+      "f 1 2 3", "f 4/1/1 5/2/2 6/3/3",
+      "f 7/4 8/5 9/6", "f 10//4 11//5 12//6"
+    ]);
+  });
+
+  it("keeps faces under their owning objects", async () => {
+    const { obj } = await glbToObj(await mixedObjects());
+    let current = "";
+    const faceOwners: string[] = [];
+    for (const line of obj.split("\n")) {
+      if (line.startsWith("o ")) current = line.slice(2);
+      if (line.startsWith("f ")) faceOwners.push(current);
+    }
+    expect(faceOwners).toEqual(["plain", "both", "uv-only", "normal-only"]);
+  });
+
   it("produces a real OBJ with world-transformed vertices and faces", async () => {
     const glb = await makeTriangleGlb();
     const { obj, triangles } = await glbToObj(glb);

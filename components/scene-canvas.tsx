@@ -1,5 +1,7 @@
 "use client";
 
+import { useArtifactSource } from "@/lib/use-artifact-source";
+
 import {
   Environment,
   Float,
@@ -375,7 +377,13 @@ function MaterializingGroup({
 }
 
 function GeneratedMesh({ object }: { object: SceneObject }) {
-  const gltf = useGLTF(object.modelUrl);
+  const { src, failed } = useArtifactSource(object.modelUrl, useGLTF.clear);
+  if (failed) throw new Error("The model download failed.");
+  return src ? <LoadedGeneratedMesh object={object} src={src} /> : null;
+}
+
+function LoadedGeneratedMesh({ object, src }: { object: SceneObject; src: string }) {
+  const gltf = useGLTF(src);
   const clone = useMemo(() => gltf.scene.clone(), [gltf.scene]);
   const { actions } = useAnimations(gltf.animations, clone);
 
@@ -594,17 +602,20 @@ function CursorRaycaster() {
   return null;
 }
 
-function ActiveGlbViewer({
-  url,
-  posterAssetId,
-  posterLocalId,
-  materialOverride
-}: {
+type ActiveGlbProps = {
   url: string;
   posterAssetId?: string;
   posterLocalId?: string;
   materialOverride?: MaterialOverride;
-}) {
+};
+
+function ActiveGlbViewer(props: ActiveGlbProps) {
+  const { src, failed } = useArtifactSource(props.url, useGLTF.clear);
+  if (failed) throw new Error("The model download failed.");
+  return src ? <LoadedActiveGlb {...props} url={src} /> : null;
+}
+
+function LoadedActiveGlb({ url, posterAssetId, posterLocalId, materialOverride }: ActiveGlbProps) {
   const gltf = useGLTF(url);
   const clone = useMemo(() => gltf.scene.clone(), [gltf.scene]);
   const { actions } = useAnimations(gltf.animations, clone);
