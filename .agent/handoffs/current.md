@@ -6,7 +6,7 @@ The Photo Studio cutout was rebuilt in `features/photo-studio/isolation.mjs` and
 
 The mug builder imports `isolation-classic.mjs` and its bundle is byte-identical to a build of main. Typecheck exit 0, 176 tests pass, the studio rebuilt the example (25,068 triangles) and two whole-frame drill photos (17,688 triangles, 0.09 s) in a local browser. `next build` did not complete in the worktree: it has no `node_modules` of its own and the disk filled up, so the production build is unverified.
 
-Settings were chosen on the same 15 photographs. Next exact action: fetch three or more YCB objects this round never saw, freeze the settings, and run `node scripts/evaluate-foreground.mjs` on them before any merge. Merge and deploy need Solo's approval.
+Blind run on four unseen YCB objects (plan locked first, run once): mesh at unseen angles 0.728 to 0.749 framed on the object and 0.638 to 0.733 on whole photos. The pass line of +0.03 on both was met only on whole photos. No object fell by more than 0.003. A perfect cutout gives 0.756, so on framed photos the carve is now the limit, not the cutout. Evidence: `outputs/delivery-round-025-foreground/blind/`. Next exact action: Solo decides whether to merge with this mixed result; the next gain on framed photos is in the carve (Kori's lane) and in people and white-on-white subjects (cutout).
 
 # Current agent checkpoint
 

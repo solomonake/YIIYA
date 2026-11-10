@@ -40,6 +40,33 @@ cutout overlap with mask choice went from 0.8435 to 0.8506. Twelve scenes
 improved by more than 0.05 and one got worse (challenge-063, 0.80 to 0.15,
 where the mask-choice model no longer switches to the lower threshold).
 
+## Blind run
+
+Four YCB objects the cutout was never tuned on (mustard bottle, banana,
+bleach cleanser, pitcher base), with the plan, crop rule and pass line written
+before any of their photos were fetched. Run once.
+
+| Photo | Measure | Shipped | New cutout, closer look | Perfect cutout |
+|---|---|---:|---:|---:|
+| Framed on the object | Unseen angles | 0.728 | 0.749 | 0.756 |
+| Framed on the object | Cutout | 0.690 | 0.792 | 1 |
+| Whole photo | Unseen angles | 0.638 | 0.733 | 0.756 |
+| Whole photo | Cutout | 0.704 | 0.783 | 1 |
+
+The pass line was a gain of 0.03 at unseen angles on both framings. Whole
+photos passed (+0.096). Photos framed on the object did not (+0.022). No
+object fell by more than 0.003.
+
+- Framed on the object, the shipped cutout was already within 0.03 of a
+  perfect cutout, so the tuning set above overstated the gain (+0.186 there).
+- The whole-photo gain comes mostly from the bleach bottle, where the shipped
+  cutout lost the object (0.340 to 0.659).
+- A white bottle on a white backdrop is still mostly missed.
+- The banana's whole-photo cutout got worse (0.839 to 0.654) while its mesh
+  score held.
+- With a perfect cutout the two-photo carve stops near 0.72 to 0.76. More gain
+  on framed photos has to come from the carve or more views.
+
 ## What changed
 
 `features/photo-studio/isolation.mjs` still learns the backdrop from the frame
@@ -74,9 +101,8 @@ unchanged.
 
 ## Limits
 
-- Stage settings were chosen while looking at these 15 photographs. The
-  generated scenes are an independent check on regressions, not on the gain.
-  A blind confirmation needs YCB objects this round never saw.
+- Stage settings were chosen while looking at the first 15 photographs. The
+  blind run above is the unbiased estimate, on four objects.
 - One studio, one backdrop. No outdoor, handheld or patterned-backdrop photos.
 - People are not covered. A person cropped by the frame edge has their
   clothing learned as backdrop, as before.
@@ -93,6 +119,8 @@ Fetch the photographs and masks as round 16 did (its `fetch.py` and
 ```sh
 node scripts/evaluate-foreground.mjs /tmp/yiiya-r16-ycb --out report.json --sheet cutouts.png
 ```
+
+For other objects, pass `--objects crops.json` with a square crop per object.
 
 The script reads the shipped cutout and its weights from `origin/main` with
 git, so the comparison does not depend on files kept beside it.
