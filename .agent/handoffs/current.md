@@ -1,3 +1,13 @@
+## Round 25 · Cutouts on cluttered backdrops (Claude, 2026-11-09)
+
+Branch `claude/foreground-isolation-r25`, worktree `.claude/worktrees/foreground-r25`, based on `origin/main` 6be1cd0. Not merged, not deployed. The main checkout holds Kori's uncommitted rounds 4 to 24; this section does not replace that handoff.
+
+The Photo Studio cutout was rebuilt in `features/photo-studio/isolation.mjs` and the studio now takes a closer second look at small subjects (`frame.mjs`). On 15 YCB photographs the cutout's overlap with the publisher masks rose from 0.779 to 0.888 framed on the object and 0.685 to 0.881 on the whole photo. The two-photo mesh at unseen angles rose from 0.525 to 0.711 and 0.603 to 0.766. The mug lost two points framed on the object. On SRL Labs 001's 280 held-back generated scenes the mean went from 0.8435 to 0.8506 with one large loss. Results, ablation and limits: `docs/PHOTO_CUTOUT_BENCHMARK.md`. Evidence: `outputs/delivery-round-025-foreground/` in the main checkout.
+
+The mug builder imports `isolation-classic.mjs` and its bundle is byte-identical to a build of main. Typecheck exit 0, 176 tests pass, the studio rebuilt the example (25,068 triangles) and two whole-frame drill photos (17,688 triangles, 0.09 s) in a local browser. `next build` did not complete in the worktree: it has no `node_modules` of its own and the disk filled up, so the production build is unverified.
+
+Blind run on four unseen YCB objects (plan locked first, run once): mesh at unseen angles 0.728 to 0.749 framed on the object and 0.638 to 0.733 on whole photos. The pass line of +0.03 on both was met only on whole photos. No object fell by more than 0.003. A perfect cutout gives 0.756, so on framed photos the carve is now the limit, not the cutout. Evidence: `outputs/delivery-round-025-foreground/blind/`. Next exact action: Solo decides whether to merge with this mixed result; the next gain on framed photos is in the carve (Kori's lane) and in people and white-on-white subjects (cutout).
+
 # Current agent checkpoint
 
 Generated: 2026-07-21 (Claude session — **phone-companion orbit (a) built on

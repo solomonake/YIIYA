@@ -8,6 +8,7 @@ import {previewCutout, editCutout} from "./cutout.mjs";
 import {chooseMask} from "./support/select.mjs";
 import model from "./support/model.json";
 import {refineMesh} from "./refine.mjs";
+import {subjectFrame, plausible} from "./frame.mjs";
 
 const views=["front","right","angle"];
 const inputs={front:null,right:null,angle:null};
@@ -46,12 +47,21 @@ function clearMesh(){
 }
 async function imageData(source){
   const img=new Image();img.src=source;await img.decode();
-  const scale=Math.min(1,224/Math.max(img.width,img.height));
-  const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));
-  const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(img,0,0,canvas.width,canvas.height);
-  const image=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const mask=example?isolateSubject(image):chooseMask(image,isolateSubject,model).mask;
-  return {image,mask};
+  const canvas=document.createElement("canvas"),ctx=canvas.getContext("2d",{willReadFrequently:true});
+  // Draw a region of the photo no larger than 224 pixels on a side and cut the subject out of it.
+  const cut=(x,y,w,h)=>{
+    const scale=Math.min(1,224/Math.max(w,h));
+    canvas.width=Math.max(1,Math.round(w*scale));canvas.height=Math.max(1,Math.round(h*scale));
+    ctx.drawImage(img,x,y,w,h,0,0,canvas.width,canvas.height);
+    const image=ctx.getImageData(0,0,canvas.width,canvas.height);
+    return {image,mask:example?isolateSubject(image):chooseMask(image,isolateSubject,model).mask};
+  };
+  const whole=cut(0,0,img.width,img.height);
+  // A small subject gets a second, closer look so its outline has more pixels.
+  const frame=!example&&subjectFrame(whole.mask,whole.image.width,whole.image.height);
+  if(!frame)return whole;
+  const closer=cut(frame.x*img.width,frame.y*img.height,Math.max(1,frame.width*img.width),Math.max(1,frame.height*img.height));
+  return plausible(closer.mask)?closer:whole;
 
 }
 async function load(view,src,epoch){
