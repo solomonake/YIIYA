@@ -6,7 +6,7 @@ import { GET as convert } from "@/app/api/3d/convert/route";
 
 const source = "https://stabilityai-stable-fast-3d.hf.space/gradio_api/file=model.glb";
 const proxyUrl = "/api/3d/proxy?src=" + encodeURIComponent(source);
-const model = readFileSync(process.env.YIIYA_TEST_GLB_PATH || "public/models/dinoring-reconstructed.glb");
+const model = readFileSync(process.env.YIIYA_TEST_GLB_PATH || "public/photo-lab/mug/baseline.glb");
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 it.each(["proxy", "glb", "stl", "obj"])("delivers the generating visitor's private artifact as %s", async format => {

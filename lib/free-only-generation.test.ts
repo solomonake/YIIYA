@@ -38,7 +38,7 @@ describe("free-only runtime boundaries", () => {
     vi.mocked(fetch).mockClear();
     const events = [];
     for await (const event of runInterpretPipeline({ transcript: "a lamp" })) events.push(event);
-    expect(events).toEqual([{ type: "error", message: expect.stringContaining("Hugging Face token") }]);
+    expect(events).toEqual([{ type: "error", code: "no_mesh", message: expect.stringContaining("Hugging Face token") }]);
     expect(fetch).not.toHaveBeenCalled();
     expect(Client.connect).not.toHaveBeenCalled();
   });
@@ -50,7 +50,7 @@ describe("free-only runtime boundaries", () => {
     vi.mocked(fetch).mockClear();
     const events = [];
     for await (const event of runInterpretPipeline({ transcript: "a lamp" })) events.push(event);
-    expect(events).toEqual([{ type: "error", message: expect.stringContaining("no allowed Hugging Face providers") }]);
+    expect(events).toEqual([{ type: "error", code: "no_mesh", message: expect.stringContaining("no allowed Hugging Face providers") }]);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -71,11 +71,9 @@ describe("free-only runtime boundaries", () => {
       expect(new URL(String(url)).hostname.endsWith(".hf.space")).toBe(true);
     }
     expect(events.some(event => event.type === "generating" && event.log.includes("first photo"))).toBe(true);
-    const result = events.find(event => event.type === "asset_ready");
-    expect(result).toMatchObject({ asset: { tier: "fallback", exportUrls: {} } });
-    expect(events.find(event => event.type === "qa")).toMatchObject({
-      qa_log: expect.arrayContaining(["[QA] 0 usable asset(s) generated; 1 failed."])
-    });
+    // A failed generation ends with an error the studio can act on, not a placeholder asset.
+    expect(events.some(event => event.type === "asset_ready" || event.type === "done")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "error", code: "no_mesh" });
   });
 
   it("retains scan uploads without submitting to a configured external worker or fal", async () => {
@@ -159,7 +157,8 @@ describe("free-only runtime boundaries", () => {
       expect(Client.connect).toHaveBeenCalledTimes(1);
       expect(submit).toHaveBeenCalledTimes(1);
       expect(cancel).toHaveBeenCalledTimes(1);
-      expect(events).toContainEqual(expect.objectContaining({ type: "asset_ready", asset: expect.objectContaining({ tier: "fallback" }) }));
+      expect(events).not.toContainEqual(expect.objectContaining({ type: "asset_ready" }));
+      expect(events.at(-1)).toMatchObject({ type: "error", code: "no_mesh" });
       expect(JSON.stringify(events)).toContain("remote completion is unknown");
     } finally { vi.useRealTimers(); }
   });

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@vercel/blob", () => ({ put: vi.fn() }));
 import { readFileSync } from "node:fs";
-const model = readFileSync(process.env.YIIYA_TEST_GLB_PATH || "public/models/dinoring-reconstructed.glb");
+const model = readFileSync(process.env.YIIYA_TEST_GLB_PATH || "public/photo-lab/mug/baseline.glb");
 import { put } from "@vercel/blob";
 import { mirrorGlbToBlob } from "./vercel-blob";
 

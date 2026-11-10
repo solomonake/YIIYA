@@ -1624,11 +1624,11 @@ export async function* runInterpretPipeline(
   try {
     const freeOnly = generationMode() === "free-only";
     if (freeOnly && !resolveHfToken(body.userHfToken, process.env.HUGGINGFACE_TOKEN)) {
-      yield { type: "error", message: "Free-only 3D needs a correctly formatted Hugging Face token. Add yours in Settings or configure HUGGINGFACE_TOKEN on the server. Paid 3D providers are disabled." };
+      yield { type: "error", code: "no_mesh", message: "Free-only 3D needs a correctly formatted Hugging Face token. Add yours in Settings or configure HUGGINGFACE_TOKEN on the server. Paid 3D providers are disabled." };
       return;
     }
     if (freeOnly && providerOrder(false).length === 0) {
-      yield { type: "error", message: "Free-only 3D has no allowed Hugging Face providers in YIIYA_PROVIDER_ORDER. Remove the override or choose HF providers. Paid providers are disabled." };
+      yield { type: "error", code: "no_mesh", message: "Free-only 3D has no allowed Hugging Face providers in YIIYA_PROVIDER_ORDER. Remove the override or choose HF providers. Paid providers are disabled." };
       return;
     }
     if (freeOnly) {

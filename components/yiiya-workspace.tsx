@@ -1,13 +1,12 @@
 "use client";
 
-import { ArtifactDownload } from "@/components/artifact-download";
-
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useYiiyaStore, type ReferenceImage } from "@/lib/store";
 import { useSpeechInterpreter } from "@/lib/use-speech-interpreter";
 import { PhoneCompanionOrbit } from "@/components/phone-companion-orbit";
+import { ArtifactDownload } from "@/components/artifact-download";
 import { AssetQualitySummary } from "@/components/asset-quality-summary";
 import type { GeneratedAsset } from "@/lib/interpret-pipeline";
 import { useSupabaseSession } from "@/lib/auth/use-session";
