@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { trackProductEvent } from "@/lib/analytics/browser";
 import { useYiiyaStore } from "@/lib/store";
 import type { GeneratedAsset, PipelineEvent } from "@/lib/interpret-pipeline";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
@@ -178,6 +179,7 @@ export function useSpeechInterpreter() {
       const client = getSupabaseBrowserClient();
       const accessToken = client ? (await client.auth.getSession()).data.session?.access_token : null;
 
+      trackProductEvent("studio_generation_requested");
       const res = await fetch("/api/interpret/stream", {
         method: "POST",
         headers: {

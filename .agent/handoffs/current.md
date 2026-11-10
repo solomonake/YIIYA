@@ -1,6 +1,22 @@
+## Round 26 · Kori's release branch split into three (Claude, 2026-11-09)
+
+Solo asked for `fix/hf-artifact-delivery-r10` (c32bf4a, Kori) to be split. That branch and Kori's checkout are untouched. Three branches replay it on `origin/main` 1af8a74, each a draft PR, none merged:
+
+| PR | Branch | Holds | Blocked on |
+|---|---|---|---|
+| 23 | `claude/r10-analytics` | Consent-gated PostHog analytics (17f0446, 527aba4), unchanged | Solo's OK. PostHog settings are already in Vercel production, so it goes live on deploy. It removes the Vercel `<Analytics />` component. |
+| 24 | `claude/r10-security-delivery` | Ownership checks, limits, free-only policy, protected model delivery, cutout preview | Upstash is not configured in Vercel: production would answer 503. Solo's call on free-only as the default. Migration 0006 is prepare-only. |
+| 25 | `claude/r10-landing` | Landing character cast, DinoRing model, favicon, site description | Solo's call on naming Luffy and on the DinoRing redistribution terms. |
+
+Changes from Kori's originals, all in PR 24 except the last: conflicts with a3f2a87 resolved in favour of main's no-placeholder failure handling; the free-only preflight errors carry `no_mesh` so main's `lib/no-mesh.test.ts` passes; two free-only tests expect the error instead of a placeholder; two delivery tests use `public/photo-lab/mug/baseline.glb` as their fixture. In PR 25 the two-photo link points at `/photo-studio`.
+
+Proof: typecheck exit 0 on each branch; tests 197 (analytics), 458 (security and delivery), 176 (landing). The three merge together without conflicts and the combined tree passes 479 tests. `next build` was not run locally. Consent analytics is not live in production today: it was deployed from a branch that never merged.
+
+Next exact action: Solo decides on PR 23 first. Kori should continue from these branches, not from r10.
+
 ## Round 25 · Cutouts on cluttered backdrops (Claude, 2026-11-09)
 
-Branch `claude/foreground-isolation-r25`, worktree `.claude/worktrees/foreground-r25`, based on `origin/main` 6be1cd0. Not merged, not deployed. The main checkout holds Kori's uncommitted rounds 4 to 24; this section does not replace that handoff.
+Merged as PR 22 (`main` 1af8a74) and deployed on 2026-11-09 with Solo's approval; the production `photo-lab/studio.js` matches the local build. The main checkout holds Kori's uncommitted rounds 4 to 24; this section does not replace that handoff.
 
 The Photo Studio cutout was rebuilt in `features/photo-studio/isolation.mjs` and the studio now takes a closer second look at small subjects (`frame.mjs`). On 15 YCB photographs the cutout's overlap with the publisher masks rose from 0.779 to 0.888 framed on the object and 0.685 to 0.881 on the whole photo. The two-photo mesh at unseen angles rose from 0.525 to 0.711 and 0.603 to 0.766. The mug lost two points framed on the object. On SRL Labs 001's 280 held-back generated scenes the mean went from 0.8435 to 0.8506 with one large loss. Results, ablation and limits: `docs/PHOTO_CUTOUT_BENCHMARK.md`. Evidence: `outputs/delivery-round-025-foreground/` in the main checkout.
 

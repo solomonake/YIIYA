@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Analytics } from "@vercel/analytics/next";
+import { AnalyticsConsent } from "@/components/analytics-consent";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
 import "../styles/editorial.css";
@@ -34,7 +34,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         {children}
-        <Analytics />
+        <AnalyticsConsent />
       </body>
     </html>
   );
