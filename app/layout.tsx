@@ -7,7 +7,7 @@ import "../styles/editorial.css";
 export const metadata: Metadata = {
   title: "YIIYA — Voice-First 3D Asset Studio",
   description:
-    "Say something. Get a production-ready 3D asset. Voice and photo input, multi-format export (GLB/OBJ/USD/STL).",
+    "An experimental 3D creation studio with voice, text and reference images. Review generated meshes and export GLB, OBJ or STL when available.",
   icons: {
     icon: "/favicon.svg",
   },
