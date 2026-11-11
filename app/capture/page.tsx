@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { siteUrl } from "@/lib/seo/site";
 import { useYiiyaStore } from "@/lib/store";
 import { segmentAtPoint, type SegmentResult } from "@/lib/vision/segment";
 import { recordClip, clipToMultiViewFrames } from "@/lib/vision/video-frames";
@@ -420,7 +421,7 @@ export default function CapturePage() {
             {cutouts.length === 1 && !isMobile && (
               <div className="text-[9px] font-mono text-zinc-600 text-center px-2 py-1.5 border border-zinc-900 rounded-sm">
                 Want real geometry (not a guessed backside)? Open{" "}
-                <span className="text-zinc-400">yiiya.app/capture</span> on your phone and Orbit.
+                <span className="text-zinc-400">{new URL(siteUrl()).host}/capture</span> on your phone and Orbit.
               </div>
             )}
             <div className="flex gap-2">

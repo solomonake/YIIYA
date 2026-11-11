@@ -61,6 +61,19 @@ Record accepted tradeoffs here. Keep entries short, dated, and evidence-backed.
   deployment look healthy.
 - Value: risk_reduced, engineering_leverage.
 
+## 2026-11-11: Public URLs default to the live deployment
+
+- Decision: `NEXT_PUBLIC_SITE_URL` is the only public origin. When it is unset,
+  sitemap, robots, canonical, and Open Graph URLs use `https://yiiya.vercel.app`.
+  robots.txt does not emit a `Host` line. The sitemap lists `/`, `/app`,
+  `/photo-studio`, `/photo-studio/mug`, and `/research/mug`. `/gallery` and
+  `/p/[slug]` stay out because those routes are not in the app.
+- Evidence: Live `/robots.txt` and `/sitemap.xml` advertised `https://yiiya.app`,
+  which is NXDOMAIN. `/gallery` returned 404. The Vercel project has no
+  `NEXT_PUBLIC_SITE_URL`, so the code fallback was the live value. Homepage
+  `og:url` was already `https://yiiya.vercel.app` and there was no canonical.
+- Value: revenue_enabled, risk_reduced.
+
 ## 2026-11-09: A cutout stage ships only if both benchmarks agree
 
 - Decision: A Photo Studio cutout stage is kept when it improves the YCB

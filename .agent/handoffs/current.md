@@ -1,3 +1,13 @@
+## 2026-11-11 · Search setup uses the live origin
+
+Branch `cursor/fix-search-site-url-4e57`. Not merged, not deployed.
+
+`NEXT_PUBLIC_SITE_URL` is the only public origin. Unset, it is `https://yiiya.vercel.app`. robots.txt has no `Host` line. The sitemap is `/`, `/app`, `/photo-studio`, `/photo-studio/mug`, and `/research/mug`. `/gallery` and `/p/[slug]` are not routes, so they are not listed. Homepage, `/app`, and the three photo documents have a canonical that matches `og:url`.
+
+Proof: `tsc --noEmit` exit 0; vitest 184/184; `npm run build` exit 0 with `NEXT_PUBLIC_SITE_URL` unset. Local `next start` rendered `/robots.txt` with `Sitemap: https://yiiya.vercel.app/sitemap.xml` and no `Host`. Each sitemap path returned 200 locally. `/gallery` returned 404. The Vercel project has no `NEXT_PUBLIC_SITE_URL`, so this default is what production will use after a human deploy.
+
+Next exact action: a human reviews the PR and deploys. Do not buy a domain.
+
 ## Round 25 · Cutouts on cluttered backdrops (Claude, 2026-11-09)
 
 Branch `claude/foreground-isolation-r25`, worktree `.claude/worktrees/foreground-r25`, based on `origin/main` 6be1cd0. Not merged, not deployed. The main checkout holds Kori's uncommitted rounds 4 to 24; this section does not replace that handoff.
@@ -97,7 +107,7 @@ and only uploads 3 finished PNGs; the laptop polls. Seconds, not real-time.
 
 ```
 Laptop /app  ──"Orbit with phone"──►  create session id  ──►  show QR of
-   │                                                     yiiya.app/capture?session=<id>
+   │                                                     <site>/capture?session=<id>
    │  polls GET /api/capture-session/<id> every 2s
    ▼
 Phone opens that URL  ──►  existing /capture orbit flow runs (already built!)
