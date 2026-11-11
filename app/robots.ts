@@ -5,18 +5,15 @@
  */
 import type { MetadataRoute } from "next";
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://yiiya.app";
+import { absoluteUrl } from "@/lib/seo/site";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: ["/", "/p/", "/gallery"],
-        disallow: ["/api/", "/spawn", "/scan/", "/admin"]
-      }
-    ],
-    sitemap: `${SITE}/sitemap.xml`,
-    host: SITE
+    rules: {
+      userAgent: "*",
+      allow: "/",
+      disallow: ["/api/", "/spawn", "/scan/", "/admin"]
+    },
+    sitemap: absoluteUrl("/sitemap.xml")
   };
 }

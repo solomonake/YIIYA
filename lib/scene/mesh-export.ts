@@ -11,6 +11,7 @@
  */
 import { NodeIO, type Document, type Mesh, type Node, type Primitive } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { siteUrl } from "@/lib/seo/site";
 
 type Mat4 = number[]; // column-major, length 16 (glTF convention)
 
@@ -173,7 +174,7 @@ function walkTriangles(doc: Document, sink: TriangleSink): number {
 
 export async function glbToObj(glb: Uint8Array): Promise<{ obj: string; triangles: number }> {
   const doc = await readGlb(glb);
-  const lines: string[] = ["# Exported by YIIYA — https://yiiya.app", "# Units: meters"];
+  const lines: string[] = [`# Exported by YIIYA — ${siteUrl()}`, "# Units: meters"];
   let hasNormals = false;
   let hasUvs = false;
   const faces: string[] = [];

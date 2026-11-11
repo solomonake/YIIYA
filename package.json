@@ -6,9 +6,9 @@
     "node": "20.x || 22.x"
   },
   "scripts": {
-    "predev": "node scripts/build-photo-studio.mjs",
+    "predev": "node scripts/build-photo-studio.mjs && node scripts/stamp-canonicals.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/build-typographic-font.mjs && node scripts/build-photo-studio.mjs",
+    "prebuild": "node scripts/build-typographic-font.mjs && node scripts/build-photo-studio.mjs && node scripts/stamp-canonicals.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
