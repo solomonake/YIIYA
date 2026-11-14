@@ -1,3 +1,9 @@
+## 2026-11-14: PR 25 reconciled with current main
+
+Merged main d21e608 into the existing landing PR branch. The only conflict was app/page.tsx. Kept main's server metadata wrapper byte-for-byte and moved PR 25's client UI into app/landing-page.tsx. Root metadataBase and current origin helpers remain; the experimental description from PR 25 remains. Legacy redirects and sitemap changes from main remain.
+
+Local diff whitespace check passed. CI and Vercel preview checks run after this commit; see PR 25 for current results. No production merge in this run. Character naming and DinoRing redistribution decisions still gate production. Next exact action: verify current-head CI, preview canonical/OG, cast markup and legacy routes before owner review.
+
 ## 2026-11-11 · Search setup uses the live origin
 
 Branch `cursor/fix-search-site-url-4e57`. Not merged, not deployed.
