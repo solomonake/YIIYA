@@ -1,120 +1,19 @@
-"use client";
+import type { Metadata } from "next";
 
-import { useRouter } from "next/navigation";
-import { LandingCharacterCast } from "@/components/landing-character-cast";
+import LandingPage from "./landing-page";
+import { absoluteUrl } from "@/lib/seo/site";
 
-const EXAMPLES = [
-  { text: "a ceramic coffee mug", preview: "Everyday object · clean geometry · matte glaze" },
-  { text: "a leather armchair", preview: "Furniture · soft materials · stitching detail" },
-  { text: "a vintage brass lamp", preview: "Metallic finish · warm patina · period detail" },
-  { text: "a pair of running shoes", preview: "Product mockup · mesh fabric · rubber sole" },
-  { text: "a glass perfume bottle", preview: "Transparent material · refraction · luxury feel" },
-  { text: "a wooden acoustic guitar", preview: "Organic curves · wood grain · string detail" },
-];
-
-const FEATURES = [
-  { label: "Voice or text", desc: "Describe an object; voice requires browser support" },
-  { label: "Photo to 3D · experimental", desc: "Use a reference image; hidden surfaces are estimated" },
-  { label: "Mesh exports", desc: "GLB, OBJ and STL for successful generations" },
-];
-
-export default function LandingPage() {
-  const router = useRouter();
-
-  function handleStart(prompt: string) {
-    router.push(`/app?prompt=${encodeURIComponent(prompt)}`);
+export const metadata: Metadata = {
+  alternates: { canonical: absoluteUrl("/") },
+  openGraph: {
+    title: "YIIYA",
+    description: "Voice-first 3D asset generation. Say something, get a 3D model.",
+    url: absoluteUrl("/"),
+    siteName: "YIIYA",
+    type: "website"
   }
+};
 
-  return (
-    <main className="min-h-screen bg-[#050505] text-[#ededed] flex flex-col">
-      {/* Header */}
-      <header className="px-6 pt-8 sm:px-10 sm:pt-10">
-        <span className="text-[11px] font-mono tracking-[0.4em] text-zinc-500 uppercase">
-          YIIYA
-        </span>
-      </header>
-
-      {/* Hero — split layout */}
-      <section className="flex-1 flex flex-col lg:flex-row items-center px-6 sm:px-10 py-16 sm:py-24 gap-8 lg:gap-0">
-        {/* Left: copy */}
-        <div className="flex-1 max-w-2xl">
-          <h1
-            className="font-serif font-normal leading-[1.05] mb-4"
-            style={{ fontSize: "clamp(2.2rem, 6vw, 4.5rem)" }}
-          >
-            Say something.
-            <br />
-            Get a 3D asset.
-          </h1>
-          <p className="text-zinc-500 font-mono text-sm sm:text-base max-w-lg mb-12">
-            Explore 3D creation with voice, text or a reference photo.
-            Generation is experimental and depends on provider availability.
-            Review each model before using it in a project.
-          </p>
-
-          {/* CTA */}
-          <div className="mb-14 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => router.push("/app")}
-              className="self-start px-6 py-3 text-sm font-mono tracking-wide border border-[#EF9F27] text-[#EF9F27] hover:bg-[#EF9F27] hover:text-black transition-colors duration-200"
-            >
-              Open Studio
-            </button>
-            <a href="/photo-studio" className="inline-flex items-center px-3 py-3 text-sm font-mono text-zinc-200 underline underline-offset-4 hover:text-white">
-              Build from two photos
-            </a>
-          </div>
-
-          {/* Example prompts */}
-          <div className="mb-12">
-            <p className="text-[10px] font-mono text-zinc-600 tracking-widest uppercase mb-3">
-              Try one
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {EXAMPLES.map((ex) => (
-                <button
-                  key={ex.text}
-                  type="button"
-                  onClick={() => handleStart(ex.text)}
-                  className="text-[13px] font-mono px-3 py-2 border border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 transition-colors duration-150"
-                  title={ex.preview}
-                >
-                  {ex.text}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Features */}
-          <div className="flex flex-col sm:flex-row gap-6 sm:gap-10">
-            {FEATURES.map((f) => (
-              <div key={f.label}>
-                <p className="text-[11px] font-mono text-[#EF9F27] tracking-wide mb-1">
-                  {f.label}
-                </p>
-                <p className="text-[12px] font-mono text-zinc-600">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: 3D hero */}
-        <div className="flex-1 w-full min-w-0 lg:pl-10">
-          <LandingCharacterCast />
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="px-6 pb-8 sm:px-10 sm:pb-10 flex justify-between items-center">
-        <span className="text-[10px] font-mono text-zinc-700">
-          Built by{" "}
-          <span className="text-zinc-500">SRL Studio</span>
-        </span>
-        <span className="text-[10px] font-mono text-zinc-700">
-          Powered by YIIYA
-        </span>
-      </footer>
-    </main>
-  );
+export default function Page() {
+  return <LandingPage />;
 }

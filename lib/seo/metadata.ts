@@ -9,6 +9,7 @@
  */
 import type { Metadata } from "next";
 import { sanitizePlain } from "@/lib/security/sanitize";
+import { absoluteUrl, siteUrl } from "@/lib/seo/site";
 
 export type PublishedProjectSummary = {
   slug: string;
@@ -21,19 +22,18 @@ export type PublishedProjectSummary = {
   publishedAt: string | null;
 };
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://yiiya.app";
 const DEFAULT_TITLE = "YIIYA";
 const DEFAULT_DESCRIPTION = "Made with YIIYA — 3D-first design.";
 
 export function buildPublishedMetadata(p: PublishedProjectSummary): Metadata {
   const title = sanitizePlain(p.title ?? p.companyName ?? DEFAULT_TITLE).slice(0, 70);
   const description = sanitizePlain(p.description ?? DEFAULT_DESCRIPTION).slice(0, 160);
-  const url = `${SITE}/p/${p.slug}`;
-  const ogImageUrl = `${SITE}/p/${p.slug}/opengraph-image`;
+  const url = absoluteUrl(`/p/${p.slug}`);
+  const ogImageUrl = absoluteUrl(`/p/${p.slug}/opengraph-image`);
   return {
     title,
     description,
-    metadataBase: new URL(SITE),
+    metadataBase: new URL(siteUrl()),
     alternates: { canonical: url },
     openGraph: {
       title,

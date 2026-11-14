@@ -28,7 +28,7 @@ describe("capture-session API routes", () => {
   it("create → poll(pending) → submit(views) → poll(ready)", async () => {
     // Create
     const createRes = await createSessionRoute(
-      jsonRequest("https://yiiya.app/api/capture-session")
+      jsonRequest("https://studio.example/api/capture-session")
     );
     expect(createRes.status).toBe(200);
     const { id, captureUrl } = (await createRes.json()) as {
@@ -36,10 +36,10 @@ describe("capture-session API routes", () => {
       captureUrl: string;
     };
     expect(id).toBeTruthy();
-    expect(captureUrl).toBe(`https://yiiya.app/capture?session=${id}`);
+    expect(captureUrl).toBe(`https://studio.example/capture?session=${id}`);
 
     // Poll: pending, no views yet
-    const poll1 = await getSessionRoute(new Request("https://yiiya.app/x"), {
+    const poll1 = await getSessionRoute(new Request("https://studio.example/x"), {
       params: { id }
     });
     expect(poll1.status).toBe(200);
@@ -52,21 +52,21 @@ describe("capture-session API routes", () => {
       "https://blob.example/back.png"
     ];
     const submitRes = await submitSessionRoute(
-      jsonRequest(`https://yiiya.app/api/capture-session/${id}`, { views }),
+      jsonRequest(`https://studio.example/api/capture-session/${id}`, { views }),
       { params: { id } }
     );
     expect(submitRes.status).toBe(200);
     expect(await submitRes.json()).toEqual({ status: "ready", views });
 
     // Poll: ready with views
-    const poll2 = await getSessionRoute(new Request("https://yiiya.app/x"), {
+    const poll2 = await getSessionRoute(new Request("https://studio.example/x"), {
       params: { id }
     });
     expect(await poll2.json()).toEqual({ status: "ready", views });
   });
 
   it("GET returns 404 for an unknown/expired session", async () => {
-    const res = await getSessionRoute(new Request("https://yiiya.app/x"), {
+    const res = await getSessionRoute(new Request("https://studio.example/x"), {
       params: { id: "nope" }
     });
     expect(res.status).toBe(404);
@@ -74,7 +74,7 @@ describe("capture-session API routes", () => {
 
   it("POST returns 404 when submitting to an unknown session", async () => {
     const res = await submitSessionRoute(
-      jsonRequest("https://yiiya.app/api/capture-session/nope", {
+      jsonRequest("https://studio.example/api/capture-session/nope", {
         views: ["https://blob.example/a.png"]
       }),
       { params: { id: "nope" } }
@@ -84,12 +84,12 @@ describe("capture-session API routes", () => {
 
   it("POST returns 400 on a malformed body", async () => {
     const createRes = await createSessionRoute(
-      jsonRequest("https://yiiya.app/api/capture-session")
+      jsonRequest("https://studio.example/api/capture-session")
     );
     const { id } = (await createRes.json()) as { id: string };
 
     const res = await submitSessionRoute(
-      jsonRequest(`https://yiiya.app/api/capture-session/${id}`, { junk: true }),
+      jsonRequest(`https://studio.example/api/capture-session/${id}`, { junk: true }),
       { params: { id } }
     );
     expect(res.status).toBe(400);
@@ -97,12 +97,12 @@ describe("capture-session API routes", () => {
 
   it("POST rejects non-URL view strings", async () => {
     const createRes = await createSessionRoute(
-      jsonRequest("https://yiiya.app/api/capture-session")
+      jsonRequest("https://studio.example/api/capture-session")
     );
     const { id } = (await createRes.json()) as { id: string };
 
     const res = await submitSessionRoute(
-      jsonRequest(`https://yiiya.app/api/capture-session/${id}`, {
+      jsonRequest(`https://studio.example/api/capture-session/${id}`, {
         views: ["not-a-url"]
       }),
       { params: { id } }

@@ -3,8 +3,10 @@ import { Analytics } from "@vercel/analytics/next";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
 import "../styles/editorial.css";
+import { absoluteUrl, siteUrl } from "@/lib/seo/site";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl()),
   title: "YIIYA — Voice-First 3D Asset Studio",
   description:
     "An experimental 3D creation studio with voice, text and reference images. Review generated meshes and export GLB, OBJ or STL when available.",
@@ -14,7 +16,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "YIIYA",
     description: "Voice-first 3D asset generation. Say something, get a 3D model.",
-    url: "https://yiiya.vercel.app",
+    url: absoluteUrl("/"),
     siteName: "YIIYA",
     type: "website",
   },
