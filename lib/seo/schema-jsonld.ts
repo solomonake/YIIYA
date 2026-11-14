@@ -7,11 +7,10 @@
  * Reference: https://schema.org / https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data
  */
 import type { PublishedProjectSummary } from "./metadata";
-
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://yiiya.app";
+import { absoluteUrl, siteUrl } from "@/lib/seo/site";
 
 export function projectJsonLd(p: PublishedProjectSummary): Record<string, unknown>[] {
-  const url = `${SITE}/p/${p.slug}`;
+  const url = absoluteUrl(`/p/${p.slug}`);
   const orgName = p.companyName ?? "YIIYA Project";
   return [
     {
@@ -33,7 +32,7 @@ export function projectJsonLd(p: PublishedProjectSummary): Record<string, unknow
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",
       itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: SITE },
+        { "@type": "ListItem", position: 1, name: "Home", item: siteUrl() },
         { "@type": "ListItem", position: 2, name: orgName, item: url }
       ]
     }
