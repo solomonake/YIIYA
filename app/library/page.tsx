@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useSupabaseSession } from "@/lib/auth/use-session";
+import {
+  SupabaseSessionProvider,
+  useSupabaseSession,
+} from "@/lib/auth/use-session";
 import { AuthSheet } from "@/components/auth/auth-sheet";
 import { signOut } from "@/lib/auth/actions";
 import { LibraryAssets } from "@/components/library/library-assets";
 
-export default function LibraryPage() {
-  const { user, loading, isConfigured } = useSupabaseSession();
+function LibraryContent() {
+  const { user, loading, isConfigured, error, retry } = useSupabaseSession();
   const [showAuth, setShowAuth] = useState(false);
   return (
     <div className="min-h-screen bg-black text-zinc-300">
@@ -46,6 +49,25 @@ export default function LibraryPage() {
           <div className="text-[10px] font-mono text-zinc-600 leading-6">
             Auth isn&apos;t configured on this deployment yet.
           </div>
+        ) : error ? (
+          <section className="rounded-sm border border-zinc-700 p-5">
+            <div role="alert">
+              <h2 className="text-base text-zinc-200">
+                Sign-in check unavailable
+              </h2>
+              <p className="mt-2 text-sm text-zinc-400">
+                We couldn&apos;t check your sign-in. Try again to load your
+                Library.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-4 min-h-11 rounded-sm border border-amber-500 px-5 py-2 text-sm text-amber-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-400"
+            >
+              Retry sign-in check
+            </button>
+          </section>
         ) : !user ? (
           <div className="border border-dashed border-zinc-800 rounded-sm p-8 text-center">
             <p className="text-[11px] font-mono text-zinc-400 mb-4">
@@ -68,5 +90,13 @@ export default function LibraryPage() {
 
       {showAuth ? <AuthSheet onClose={() => setShowAuth(false)} /> : null}
     </div>
+  );
+}
+
+export default function LibraryPage() {
+  return (
+    <SupabaseSessionProvider>
+      <LibraryContent />
+    </SupabaseSessionProvider>
   );
 }

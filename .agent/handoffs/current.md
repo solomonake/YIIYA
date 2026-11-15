@@ -1,3 +1,20 @@
+## SOL-54 sign-in initialization recovery
+
+Base 79b7baf, branch codex/session-recovery. User authorized next production
+improvement through merge/deploy. Plan: bound startup session reads, catch errors,
+let auth events supersede old reads, provide one shared provider per Library and
+Studio page with retry UI, test races/cleanup and SDK read, browser local fixtures,
+then full checks/PR/CI/merge/READY/live signed-out verification. Public marketing
+pages retain their existing auth-free initialization. No RLS, credentials, schema
+or telemetry changes. No paid calls or real two-account production claim.
+
+Local verification: 547 tests/70 files, typecheck/lint/build passed. Actual SDK
+signed-out session read passed; races/retry/shared state covered by 12 tests.
+Browser fixture using actual Library/provider: startup rejection, keyboard Enter
+retry, recovered signed-out view. At 390px button44px, no horizontal overflow,
+no raw backend error. Temporary static fixture removed; release chunks checked.
+Startup deadline bounds UI waiting; underlying SDK session read is not aborted.
+
 ## SOL-53 Library recovery release
 
 User explicitly requested implementation, checks, merge and production release.

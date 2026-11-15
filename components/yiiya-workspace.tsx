@@ -870,7 +870,7 @@ function Toolbar() {
   const setLeft = useYiiyaStore(s => s.setLeftPanelOpen);
   const setRight = useYiiyaStore(s => s.setRightPanelOpen);
   const assetCount = useYiiyaStore(s => s.generatedAssets.length);
-  const { user, isConfigured } = useSupabaseSession();
+  const { user, isConfigured, error, retry } = useSupabaseSession();
   const [showAuth, setShowAuth] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -921,7 +921,9 @@ function Toolbar() {
           >
             LIBRARY
           </Link>
-          {user ? (
+          {error ? (
+            <button type="button" onClick={retry} aria-label="Retry sign-in check" title="Sign-in could not be checked. Try again." className="min-h-11 px-2 py-1 text-[10px] font-mono border border-amber-500 rounded-sm bg-black/60 text-amber-400">RETRY SIGN-IN</button>
+          ) : user ? (
             <button
               onClick={() => signOut()}
               className="px-2 py-1 text-[8px] font-mono border border-zinc-800 rounded-sm bg-black/60 text-zinc-600 hover:text-zinc-300 hover:border-zinc-600 backdrop-blur-sm transition-colors"

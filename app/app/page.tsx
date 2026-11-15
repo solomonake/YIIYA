@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
+import { SupabaseSessionProvider } from "@/lib/auth/use-session";
 import { YiiyaWorkspace } from "@/components/yiiya-workspace";
 import { useSpeechInterpreter } from "@/lib/use-speech-interpreter";
 
@@ -24,11 +25,11 @@ function AutoSubmit() {
 
 export default function AppPage() {
   return (
-    <>
+    <SupabaseSessionProvider>
       <YiiyaWorkspace />
       <Suspense>
         <AutoSubmit />
       </Suspense>
-    </>
+    </SupabaseSessionProvider>
   );
 }
