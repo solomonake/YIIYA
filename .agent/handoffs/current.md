@@ -13,7 +13,9 @@ Branch codex/photo-outline-evidence exposes per-view and weakest construction
 outline overlap, explicitly excluding hidden geometry and full fidelity. Cached
 GLB bytes and local evidence JSON share SHA-256. Browser downloads matched the
 supplied bonsai hash and 25,068 triangles; desktop/mobile checked. No upload or
-paid provider call. See docs/ASSET_ACCEPTANCE.md for separate server/local scope.
+paid provider call. Final local suite: 515 tests/67 files. Typecheck, lint and
+build pass; build enforces asset runtime traces. Capped validator reports reject
+incomplete acceptance. See docs/ASSET_ACCEPTANCE.md for separate server/local scope.
 
 ## Current delivery: SOL-51 binary acceptance
 

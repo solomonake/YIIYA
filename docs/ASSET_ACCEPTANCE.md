@@ -13,7 +13,7 @@ JSON is capped at 8 MiB, accessor elements at 10 million and declared decoded
 buffers at 256 MiB. Draco dependencies remain external server packages so their
 WASM decoder ships with the runtime. Explicit tracing includes the decoder and
 the build fails if an asset route omits its decoder or validator. Validation warnings are counted, not treated
-as errors. Degenerate triangles may coexist with useful geometry.
+as errors. A truncated validator report is rejected because acceptance is incomplete. Degenerate triangles may coexist with useful geometry.
 
 The receipt at `/api/3d/convert?from=<artifact>&to=report` records contract version,
 validator version, SHA-256 of inspected input bytes, size, triangle count, warnings
