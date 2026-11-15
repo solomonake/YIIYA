@@ -29,7 +29,7 @@ type AssetRow = {
 export function useOpenAssetFromLibrary() {
   const addGeneratedAsset = useYiiyaStore((s) => s.addGeneratedAsset);
   const addLog = useYiiyaStore((s) => s.addLog);
-  const { user, loading, isConfigured } = useSupabaseSession();
+  const { user, loading, isConfigured, error } = useSupabaseSession();
   const userId = user?.id;
 
   useEffect(() => {
@@ -38,6 +38,10 @@ export function useOpenAssetFromLibrary() {
     if (!assetId || loading) return;
     if (!isConfigured) {
       addLog("[LIBRARY] Could not open this model: sign-in is unavailable on this deployment.");
+      return;
+    }
+    if (error) {
+      addLog("[LIBRARY] Could not check sign-in. Use Retry sign-in to try again.");
       return;
     }
     if (!userId) {
@@ -111,5 +115,5 @@ export function useOpenAssetFromLibrary() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [userId, loading, isConfigured, addGeneratedAsset, addLog]);
+  }, [userId, loading, isConfigured, error, addGeneratedAsset, addLog]);
 }

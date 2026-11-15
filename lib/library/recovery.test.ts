@@ -6,7 +6,14 @@ import LibraryPage from "@/app/library/page";
 import { useSupabaseSession } from "@/lib/auth/use-session";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 
-vi.mock("@/lib/auth/use-session", () => ({ useSupabaseSession: vi.fn() }));
+vi.mock("@/lib/auth/use-session", () => ({
+  useSupabaseSession: vi.fn(),
+  SupabaseSessionProvider: ({
+    children,
+  }: {
+    children: import("react").ReactNode;
+  }) => children,
+}));
 vi.mock("@/lib/supabase-client", () => ({ getSupabaseBrowserClient: vi.fn() }));
 vi.mock("@/components/auth/auth-sheet", () => ({ AuthSheet: () => null }));
 vi.mock("@/lib/auth/actions", () => ({ signOut: vi.fn() }));
