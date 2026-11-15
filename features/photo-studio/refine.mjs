@@ -29,28 +29,33 @@ function outlineFit(position,photo,height,view) {
   }
   return both/Math.max(1,either);
 }
-function scoreMesh(mesh,front,right,angle) {
+/** @param {ReturnType<typeof import("./shape.mjs").readSilhouette>|null} angle */
+export function measureOutlineFit(mesh,front,right,angle=null) {
   const {array}=mesh.geometry.attributes.position;
-  if(array.length===0 || !array.every(Number.isFinite))throw Error("The mesh could not be verified.");
+  if(array.length===0 || array.length%9!==0 || !array.every(Number.isFinite))throw Error("The mesh could not be verified.");
   const height=1.72/Math.max(1,front.aspect,right.aspect);
-  const sum=outlineFit(array,front,height,"front")+outlineFit(array,right,height,"right");
-  return angle?(sum+outlineFit(array,angle,height,"angle"))/3:sum/2;
+  const views={front:outlineFit(array,front,height,"front"),right:outlineFit(array,right,height,"right")};
+  if(angle)views.angle=outlineFit(array,angle,height,"angle");
+  const scores=Object.values(views);
+  return {evaluator:"input-outline-iou-v1",gridSize:64,views,
+    mean:scores.reduce((sum,value)=>sum+value,0)/scores.length,
+    minimum:Math.min(...scores),evidence:"construction_inputs",fidelity:"not_assessed"};
 }
 function dispose(mesh){mesh.geometry.dispose();mesh.material.dispose();}
 export function refineMesh(front,right,power=Infinity,angle=null) {
   const start=performance.now();
   const initial=reconstruct(front,right,power,56,angle);
-  const first=scoreMesh(initial,front,right,angle);
+  const first=measureOutlineFit(initial,front,right,angle).mean;
   let mesh=initial, chosen=first,passes=1;
   if(first<.965 && performance.now()-start<120){
     let candidate;
     try{
       candidate=reconstruct(front,right,power,72,angle);
-      const next=scoreMesh(candidate,front,right,angle);
+      const next=measureOutlineFit(candidate,front,right,angle).mean;
       passes++;
       if(next>first+.002){mesh=candidate;chosen=next;dispose(initial);}
       else dispose(candidate);
     }catch{if(candidate)dispose(candidate);}
   }
-  return {mesh,first,chosen,passes,seconds:(performance.now()-start)/1000};
+  return {mesh,first,chosen,passes,measurement:measureOutlineFit(mesh,front,right,angle),seconds:(performance.now()-start)/1000};
 }

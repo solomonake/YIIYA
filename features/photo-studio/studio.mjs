@@ -14,7 +14,7 @@ const views=["front","right","angle"];
 const inputs={front:null,right:null,angle:null};
 const el=id=>document.getElementById(id);
 const photos={front:null,right:null,angle:null}, revisions={front:0,right:0,angle:0};
-let example=true, mesh, renderer, controls, building=false;
+let example=true, mesh, renderer, controls, building=false, exporting=false, measurement=null, exportBundle=null;
 const scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(35,1,.02,35);
 const stage=el("viewport");
 scene.background=new THREE.Color(0x050505);
@@ -32,14 +32,15 @@ try{
 }catch{renderer=null;}
 function tell(msg){el("status").textContent=msg;}
 function sync(){
-  for(const view of views)el("edit-"+view).disabled=building||!inputs[view]||example;
-  el("remove-angle").disabled=building||(!inputs.angle&&!el("angle").files?.length);
-  el("profile").disabled=building;el("reset").disabled=building;
-  el("build").disabled=building||!photos.front||!photos.right||Boolean(el("angle").files?.length&&!photos.angle);
-  el("save").disabled=building||!mesh;el("wire").disabled=!renderer||!mesh;
+  for(const view of views){el(view).disabled=building||exporting;el("edit-"+view).disabled=building||exporting||!inputs[view]||example;}
+  el("remove-angle").disabled=building||exporting||(!inputs.angle&&!el("angle").files?.length);
+  el("profile").disabled=building||exporting;el("reset").disabled=building||exporting;
+  el("build").disabled=building||exporting||!photos.front||!photos.right||Boolean(el("angle").files?.length&&!photos.angle);
+  el("save").disabled=building||exporting||!mesh;el("receipt").disabled=building||exporting||!mesh;el("wire").disabled=!renderer||!mesh;
   el("wire").setAttribute("aria-pressed",String(Boolean(mesh?.material.wireframe)));
 }
 function clearMesh(){
+  measurement=null;exportBundle=null;el("checks").hidden=true;el("outline-values").textContent="";
   if(mesh){scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();mesh=null;}
   if(renderer)renderer.domElement.hidden=true;
   el("fallback").hidden=!example;el("fallback-label").hidden=!example;
@@ -84,7 +85,9 @@ async function build(){
     if(views.some((view,i)=>revisions[view]!==epochs[i]))return;
     const t=performance.now();
     const result=refineMesh(photos.front,photos.right,el("profile").value==="round"?2:Infinity,photos.angle);
-    mesh=result.mesh;scene.add(mesh);
+    mesh=result.mesh;measurement=result.measurement;scene.add(mesh);
+    el("outline-values").textContent=Object.entries(measurement.views).map(([view,score])=>view+": "+(score*100).toFixed(1)+"%").join(" · ")+" · weakest view: "+(measurement.minimum*100).toFixed(1)+"%";
+    el("checks").hidden=false;
     if(renderer){el("fallback").hidden=true;el("fallback-label").hidden=true;renderer.domElement.hidden=false;}
     const faces=mesh.geometry.attributes.position.count/3;
     tell(faces.toLocaleString()+" triangles · "+((performance.now()-t)/1000).toFixed(2)+" s"+(renderer?" · Drag to orbit":" · 3D preview unavailable on this device. Download the mesh."));
@@ -126,15 +129,32 @@ el("remove-angle").onclick=()=>{
 el("profile").onchange=()=>{if(photos.front&&photos.right)void build();};
 el("build").onclick=build;el("reset").onclick=restore;
 el("wire").onclick=()=>{if(mesh){mesh.material.wireframe=!mesh.material.wireframe;sync();}};
-el("save").onclick=async()=>{
-  if(!mesh)return;el("save").disabled=true;
+async function downloadArtifact(report=false){
+  if(!mesh||exporting)return;
+  exporting=true;sync();const current=mesh;
   try{
-    const data=await new GLTFExporter().parseAsync(mesh,{binary:true});
-    const url=URL.createObjectURL(new Blob([data],{type:"model/gltf-binary"}));
-    const link=document.createElement("a");link.href=url;link.download=example?"yiiya-bonsai.glb":"yiiya-photo-mesh.glb";document.body.append(link);link.click();link.remove();
+    if(!exportBundle){
+      const data=await new GLTFExporter().parseAsync(current,{binary:true});
+      if(mesh!==current)throw Error("The model changed. Download the rebuilt mesh.");
+      const header=new DataView(data);
+      if(header.byteLength<20||header.getUint32(0,true)!==0x46546c67||header.getUint32(4,true)!==2||header.getUint32(8,true)!==data.byteLength)throw Error("The exported file could not be verified.");
+      const digest=await crypto.subtle.digest("SHA-256",data);
+      if(mesh!==current)throw Error("The model changed. Download the rebuilt mesh.");
+      const sha256=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");
+      exportBundle={data,receipt:{contract:"yiiya-photo-evidence-v1",sha256,sizeBytes:data.byteLength,
+        triangles:current.geometry.attributes.position.count/3,outline:measurement,
+        fileChecks:["finite_source_positions","complete_glb_envelope"],
+        gltfValidation:"not_assessed",printability:"not_assessed",physicalScale:"not_assessed",
+        hiddenGeometry:"not_assessed",example}};
+    }
+    const payload=report?JSON.stringify(exportBundle.receipt,null,2):exportBundle.data;
+    const url=URL.createObjectURL(new Blob([payload],{type:report?"application/json":"model/gltf-binary"}));
+    const link=document.createElement("a");link.href=url;link.download=(example?"yiiya-bonsai":"yiiya-photo-mesh")+(report?"-evidence.json":".glb");document.body.append(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(url),60000);
-  }catch{tell("Download failed. Build the mesh and try again.");}finally{sync();}
-};
+  }catch(error){tell(error.message||"Download failed. Build the mesh and try again.");}finally{exporting=false;sync();}
+}
+el("save").onclick=()=>downloadArtifact();
+el("receipt").onclick=()=>downloadArtifact(true);
 async function start() {
   let handoff;
   try {

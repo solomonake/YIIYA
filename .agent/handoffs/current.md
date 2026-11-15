@@ -1,3 +1,15 @@
+## Current follow-up: SOL-52 Photo Studio outline evidence
+
+PR 31 merged as b4685b8 and production deployment dpl_HUhKmUQRq5tBecyxBHvCnEMULsFd
+is READY. Public smoke confirms non-GLB upstream pages return 502 from proxy and
+conversion; creation guide remains 200.
+
+Branch codex/photo-outline-evidence exposes per-view and weakest construction
+outline overlap, explicitly excluding hidden geometry and full fidelity. Cached
+GLB bytes and local evidence JSON share SHA-256. Browser downloads matched the
+supplied bonsai hash and 25,068 triangles; desktop/mobile checked. No upload or
+paid provider call. See docs/ASSET_ACCEPTANCE.md for separate server/local scope.
+
 ## Current delivery: SOL-51 binary acceptance
 
 Branch `codex/asset-acceptance-gate` from `90078d1` implements yiiya-glb-v1.
