@@ -1,7 +1,7 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@gradio/client", () => ({ Client: { connect: vi.fn() } }));
-vi.mock("@/lib/scene/glb-inspect", () => ({ inspectGlbUrl: vi.fn() }));
 vi.mock("@/lib/vercel-blob", () => ({ mirrorGlbToBlob: vi.fn() }));
 vi.mock("@/lib/supabase-rest", () => ({
   isSupabaseRestConfigured: () => false,
@@ -9,7 +9,6 @@ vi.mock("@/lib/supabase-rest", () => ({
 }));
 
 import { Client } from "@gradio/client";
-import { inspectGlbUrl } from "./scene/glb-inspect";
 import { mirrorGlbToBlob } from "./vercel-blob";
 import { attachScanUpload, completeScanUpload, createScanJob, getScanInfraStatus } from "./scan-job-store";
 
@@ -102,7 +101,7 @@ describe("free-only runtime boundaries", () => {
       }
     }));
     vi.mocked(Client.connect).mockResolvedValue({ submit } as never);
-    vi.mocked(inspectGlbUrl).mockResolvedValue({ ok: true, reason: null, geometry: null, sizeBytes: 100000 });
+    vi.mocked(fetch).mockImplementation(async () => new Response(readFileSync("public/photo-lab/mug/baseline.glb")));
     vi.mocked(mirrorGlbToBlob).mockResolvedValue({ url: hosted, mirrored: true, sizeBytes: 100000 });
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { runInterpretOnce } = await import("./interpret-pipeline");
@@ -128,7 +127,7 @@ describe("free-only runtime boundaries", () => {
       }
     }));
     vi.mocked(Client.connect).mockResolvedValue({submit} as never);
-    vi.mocked(inspectGlbUrl).mockResolvedValue({ok:true,reason:null,geometry:null,sizeBytes:100000});
+    vi.mocked(fetch).mockImplementation(async () => new Response(readFileSync("public/photo-lab/mug/baseline.glb")));
     vi.mocked(mirrorGlbToBlob).mockResolvedValue({url:hosted,mirrored:true,sizeBytes:100000});
     const {runInterpretOnce}=await import("./interpret-pipeline");
     const result=await runInterpretOnce({transcript:"a dinosaur",referenceImage:{base64:"aW1hZ2U=",mediaType:"image/png",name:"dino.png"}});

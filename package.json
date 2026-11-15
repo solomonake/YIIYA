@@ -60,6 +60,7 @@
     "@xyflow/react": "^12.10.2",
     "draco3dgltf": "^1.5.7",
     "framer-motion": "^12.38.0",
+    "gltf-validator": "2.0.0-dev.3.10",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "meshoptimizer": "^0.21.0",
@@ -75,12 +76,12 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "esbuild": "0.21.5",
     "@types/node": "^20.17.10",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitest/coverage-v8": "^2.1.8",
     "autoprefixer": "^10.4.20",
+    "esbuild": "0.21.5",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.24",
     "postcss": "^8.4.49",

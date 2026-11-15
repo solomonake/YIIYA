@@ -59,6 +59,8 @@ const nextConfig = {
     instrumentationHook: enableInstrumentation,
     serverComponentsExternalPackages: [
       "@gltf-transform/core",
+      "draco3dgltf",
+      "gltf-validator",
       "@gltf-transform/functions",
       "@opentelemetry/sdk-node",
       "@opentelemetry/api",

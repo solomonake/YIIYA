@@ -1,3 +1,4 @@
+import { ArtifactDownload } from "@/components/artifact-download";
 import type { QualityReward } from "@/lib/scene/quality-reward";
 import { assetStorageStatus } from "@/lib/assets/storage-status";
 
@@ -22,6 +23,11 @@ export function AssetQualitySummary({ report, glbUrl }: { report?: QualityReward
           <li key={check.name}>{check.passed ? "✓" : "—"} {labels[check.name] ?? check.name}</li>
         ))}
       </ul>
+      {report.eligible && <ArtifactDownload
+        href={`/api/3d/convert?from=${encodeURIComponent(glbUrl)}&to=report`}
+        download="model-validation.json"
+        className="mt-2 inline-block underline"
+      >Validate file and download receipt</ArtifactDownload>}
       <p className="mt-2 text-zinc-400">Photo match, unseen surfaces and printability have not been evaluated.</p>
     </details>
     )}
