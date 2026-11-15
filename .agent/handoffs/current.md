@@ -1,3 +1,7 @@
+## 2026-11-14: Consent analytics reconciled for production
+
+Merged main 8ce8dd3 into PR 23. Kept current metadata, landing cast and legacy routes. Resolved only handoff/metrics conflicts. Consent analytics replaces Vercel Analytics on React pages; static Photo Studio pages remain outside coverage. Events count attempts/clicks, not completed conversions or monthly people. See docs/ANALYTICS_SCOPE.md. Current validation and release evidence belong in PR 23 and SOL-46. No configuration or provider changes.
+
 ## 2026-11-14: PR 25 reconciled with current main
 
 Merged main d21e608 into the existing landing PR branch. The only conflict was app/page.tsx. Kept main's server metadata wrapper byte-for-byte and moved PR 25's client UI into app/landing-page.tsx. Root metadataBase and current origin helpers remain; the experimental description from PR 25 remains. Legacy redirects and sitemap changes from main remain.
