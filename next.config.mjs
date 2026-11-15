@@ -77,6 +77,12 @@ const nextConfig = {
       { protocol: "https", hostname: "*.supabase.co" }
     ]
   },
+  async redirects() {
+    return [
+      { source: "/studio", destination: "/app", permanent: true },
+      { source: "/gallery", destination: "/library", permanent: true },
+    ];
+  },
   async rewrites() {
     return [
       { source: "/photo-studio", destination: "/photo-lab/index.html" },

@@ -1,3 +1,27 @@
+## 2026-11-14: PR24 shared storage and delivery release
+
+Merged production main 874dafd. Capture and OBJ export conflicts retain both current siteUrl and PR24 delivery fixes. Added service-only atomic rolling-window RPC on the existing rate_limits ledger, used only when Upstash is unconfigured; configured backend failures stay fail-closed. Shared upload allowance migration 0006 is also required. Migration/test/release results belong in PR24 and SOL-46. Free-only remains the default; no paid provider calls or new account provisioning.
+
+## 2026-11-14: Consent analytics reconciled for production
+
+Merged main 8ce8dd3 into PR 23. Kept current metadata, landing cast and legacy routes. Resolved only handoff/metrics conflicts. Consent analytics replaces Vercel Analytics on React pages; static Photo Studio pages remain outside coverage. Events count attempts/clicks, not completed conversions or monthly people. See docs/ANALYTICS_SCOPE.md. Current validation and release evidence belong in PR 23 and SOL-46. No configuration or provider changes.
+
+## 2026-11-14: PR 25 reconciled with current main
+
+Merged main d21e608 into the existing landing PR branch. The only conflict was app/page.tsx. Kept main's server metadata wrapper byte-for-byte and moved PR 25's client UI into app/landing-page.tsx. Root metadataBase and current origin helpers remain; the experimental description from PR 25 remains. Legacy redirects and sitemap changes from main remain.
+
+Local diff whitespace check passed. CI and Vercel preview checks run after this commit; see PR 25 for current results. No production merge in this run. Character naming and DinoRing redistribution decisions still gate production. Next exact action: verify current-head CI, preview canonical/OG, cast markup and legacy routes before owner review.
+
+## 2026-11-11 · Search setup uses the live origin
+
+Branch `cursor/fix-search-site-url-4e57`. Not merged, not deployed.
+
+`NEXT_PUBLIC_SITE_URL` is the only public origin. Unset, it is `https://yiiya.vercel.app`. robots.txt has no `Host` line. The sitemap is `/`, `/app`, `/photo-studio`, `/photo-studio/mug`, and `/research/mug`. `/gallery` and `/p/[slug]` are not routes, so they are not listed. Homepage, `/app`, and the three photo documents have a canonical that matches `og:url`.
+
+Proof: `tsc --noEmit` exit 0; vitest 184/184; `npm run build` exit 0 with `NEXT_PUBLIC_SITE_URL` unset. Local `next start` rendered `/robots.txt` with `Sitemap: https://yiiya.vercel.app/sitemap.xml` and no `Host`. Each sitemap path returned 200 locally. `/gallery` returned 404. The Vercel project has no `NEXT_PUBLIC_SITE_URL`, so this default is what production will use after a human deploy.
+
+Next exact action: a human reviews the PR and deploys. Do not buy a domain.
+
 ## Round 25 · Cutouts on cluttered backdrops (Claude, 2026-11-09)
 
 Branch `claude/foreground-isolation-r25`, worktree `.claude/worktrees/foreground-r25`, based on `origin/main` 6be1cd0. Not merged, not deployed. The main checkout holds Kori's uncommitted rounds 4 to 24; this section does not replace that handoff.
@@ -97,7 +121,7 @@ and only uploads 3 finished PNGs; the laptop polls. Seconds, not real-time.
 
 ```
 Laptop /app  ──"Orbit with phone"──►  create session id  ──►  show QR of
-   │                                                     yiiya.app/capture?session=<id>
+   │                                                     <site>/capture?session=<id>
    │  polls GET /api/capture-session/<id> every 2s
    ▼
 Phone opens that URL  ──►  existing /capture orbit flow runs (already built!)

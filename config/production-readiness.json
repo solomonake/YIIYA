@@ -37,16 +37,6 @@
         "reason": "Vision fallback and moderation paths use OpenAI."
       },
       {
-        "name": "UPSTASH_REDIS_REST_URL",
-        "label": "Upstash Redis REST URL",
-        "reason": "Production rate limits need shared storage; the in-process fallback is development-only."
-      },
-      {
-        "name": "UPSTASH_REDIS_REST_TOKEN",
-        "label": "Upstash Redis REST token",
-        "reason": "Production rate limits need authenticated Upstash access."
-      },
-      {
         "name": "SENTRY_DSN",
         "label": "Sentry server DSN",
         "reason": "Production server errors should be captured with request context."
