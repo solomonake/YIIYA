@@ -58,6 +58,19 @@ describe("file acceptance contract", () => {
     expect((await assessGlb(out)).issues).toContain("External resources must be embedded");
     expect(bytes.length).toBeGreaterThan(0);
   });
+  it("rejects an incomplete validator report instead of treating capped issues as proof", async () => {
+    const source = Buffer.from(await fixture());
+    const length = source.readUInt32LE(12);
+    const json = JSON.parse(source.subarray(20,20+length).toString());
+    json.extensionsUsed = Array.from({length:64},(_,i)=>`EXT_unknown_${i}`);
+    const serialized = JSON.stringify(json);
+    const padded = Buffer.from(serialized.padEnd(Math.ceil(serialized.length/4)*4));
+    const bytes = Buffer.concat([source.subarray(0,20),padded,source.subarray(20+length)]);
+    bytes.writeUInt32LE(bytes.length,8);bytes.writeUInt32LE(padded.length,12);
+    const receipt = await assessGlb(bytes);
+    expect(receipt.status).toBe("rejected");
+    expect(receipt.issues).toContain("Validation issue limit reached; acceptance is incomplete");
+  });
   it("rejects excessive declared decoded work before geometry decoding", async () => {
     const json = JSON.stringify({asset:{version:"2.0"},accessors:[{count:10000001}]}).padEnd(92);
     const padded = json.padEnd(Math.ceil(json.length/4)*4);

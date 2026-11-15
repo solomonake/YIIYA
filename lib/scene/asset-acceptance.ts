@@ -48,6 +48,10 @@ export async function assessGlb(bytes: Uint8Array): Promise<AcceptanceReceipt> {
     const result = await validateBytes(bytes, { format: "glb", maxIssues: 32, writeTimestamp: false,
       externalResourceFunction: async () => { throw new Error("External resources are disabled"); } });
     receipt.warnings = result.issues.numWarnings;
+    if (result.issues.truncated) {
+      receipt.issues = ["Validation issue limit reached; acceptance is incomplete"];
+      return receipt;
+    }
     if (result.issues.numErrors > 0) {
       receipt.issues = result.issues.messages.filter(m => m.severity === 0).map(m => m.code);
       return receipt;

@@ -57,6 +57,10 @@ const nextConfig = {
   productionBrowserSourceMaps: true,
   experimental: {
     instrumentationHook: enableInstrumentation,
+    outputFileTracingIncludes: {
+      "/api/3d/*": ["./node_modules/draco3dgltf/draco_decoder_gltf.wasm"],
+      "/api/interpret{,/**}": ["./node_modules/draco3dgltf/draco_decoder_gltf.wasm"]
+    },
     serverComponentsExternalPackages: [
       "@gltf-transform/core",
       "draco3dgltf",
