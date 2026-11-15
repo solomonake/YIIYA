@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
-import { openGlbStream } from "@/lib/scene/glb-stream";
+import { acceptGlbResponse } from "@/lib/scene/asset-acceptance";
 
 import { HF_ARTIFACT_HEADER } from "@/lib/hf-artifact-request";
 import { normalizeHfToken } from "@/lib/huggingface-access";
@@ -63,16 +63,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Artifact too large" }, { status: 413 });
   }
 
-  let body: ReadableStream<Uint8Array>;
+  let body: Uint8Array;
+  let sha256: string;
   try {
-    body = await openGlbStream(upstream, MAX_BYTES);
+    const accepted = await acceptGlbResponse(upstream, MAX_BYTES);
+    body = accepted.bytes;
+    sha256 = accepted.receipt.sha256;
   } catch {
     return NextResponse.json({ error: "Invalid or oversized GLB artifact" }, { status: 502 });
   }
-  return new Response(body, {
+  return new Response(Buffer.from(body), {
     status: 200,
     headers: {
       "Content-Type": "model/gltf-binary",
+      "X-Yiiya-Acceptance": "yiiya-glb-v1",
+      "X-Yiiya-SHA256": sha256,
+      "X-Yiiya-Fidelity": "not-assessed",
       "X-Content-Type-Options": "nosniff",
       // A private download must never populate a shared cache.
       "Cache-Control": headers.Authorization ? "private, no-store" : "public, max-age=31536000, immutable",

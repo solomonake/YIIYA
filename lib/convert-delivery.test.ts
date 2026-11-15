@@ -48,6 +48,13 @@ describe("download delivery through the actual conversion route", () => {
     expect((await GET(request(source, "zip"))).status).toBe(400);
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it("returns an auditable file receipt without claiming reference fidelity", async () => {
+    fetcher.mockResolvedValue(new Response(new Uint8Array(artifact)));
+    const response = await GET(request(source, "report"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({status:"accepted", contract:"yiiya-glb-v1", fidelity:"not_assessed"});
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
   it("preserves every byte of the valid GLB artifact", async () => {
     fetcher.mockResolvedValue(new Response(new Uint8Array(artifact)));
     const response = await GET(request());

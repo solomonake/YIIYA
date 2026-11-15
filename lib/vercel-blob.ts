@@ -1,5 +1,5 @@
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
-import { openGlbStream } from "@/lib/scene/glb-stream";
+import { acceptGlbResponse } from "@/lib/scene/asset-acceptance";
 
 export function isVercelBlobConfigured() {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
@@ -75,8 +75,8 @@ export async function mirrorGlbToBlob(
       await res.body?.cancel();
       return { url: sourceUrl, mirrored: false, sizeBytes: 0, error: `Source HTTP ${res.status}` };
     }
-    const stream = await openGlbStream(res, 100 * 1024 * 1024);
-    const buf = Buffer.from(await new Response(stream).arrayBuffer());
+    const { bytes } = await acceptGlbResponse(res);
+    const buf = Buffer.from(bytes);
 
     const { put } = await import("@vercel/blob");
     const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);

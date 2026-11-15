@@ -1,3 +1,17 @@
+## Current delivery: SOL-51 binary acceptance
+
+Branch `codex/asset-acceptance-gate` from `90078d1` implements yiiya-glb-v1.
+See docs/ASSET_ACCEPTANCE.md. Full binary validation precedes hosted generation,
+restyle acceptance, mirroring, proxy delivery and conversion. Private receipts
+bind checks to input SHA-256. Photo fidelity, printability and animation readiness
+remain not assessed. On-device Photo Studio exports are outside this gate.
+Verification: 511 tests passed, typecheck/lint/build passed with existing warnings.
+Production-bundle HTTP fixtures accept uncompressed and Draco mug geometry with
+24,420 triangles and reject invalid content before delivery. Dev scan smoke passed
+with expected free-only worker-unavailable result. Production-mode local scan
+admission fails closed without database rate-limit configuration, as designed.
+No paid provider calls or customer asset publication used for verification.
+
 ## 2026-11-14: How it works visitor guide
 
 Added public /how-it-works under SOL-25 with separate on-device/hosted paths, supported exports and honest shape/scale/AR limits. Homepage footer links to it. Sitemap, canonical/OG/Twitter and consented pageview allowlist include the route. No asset visibility/public gallery changes. Targeted SEO and analytics tests pass; CI and live route/visual verification follow. Existing issue remains open for gallery/OG model sharing scope.

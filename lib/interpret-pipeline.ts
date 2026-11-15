@@ -11,7 +11,8 @@ import { mirrorGlbToBlob } from "@/lib/vercel-blob";
 import { classifyPromptSubject, objectGenerationPrompt } from "@/lib/scene/prompt-intent";
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
 import { buildExportUrls } from "@/lib/scene/export-urls";
-import { inspectGlbUrl, type GlbGeometry } from "@/lib/scene/glb-inspect";
+import { acceptGlbResponse } from "@/lib/scene/asset-acceptance";
+import { inspectGlbBuffer, inspectGlbUrl, type GlbGeometry } from "@/lib/scene/glb-inspect";
 import { evaluateQualityReward, type QualityReward } from "@/lib/scene/quality-reward";
 import {
   destinationForTargetPlatform,
@@ -647,7 +648,11 @@ async function validateGlbUrl(url: string, userHfToken?: string): Promise<GlbVal
   if (!isAllowedProviderUrl(url)) {
     return { ok: false, reason: "Source host not allowed", sizeBytes: 0 };
   }
-  const inspection = await inspectGlbUrl(url, { headers: providerAuthHeaders(url, userHfToken) });
+  const response = await fetch(url, { headers: providerAuthHeaders(url, userHfToken),
+    cache: "no-store", redirect: "error", signal: AbortSignal.timeout(60_000) });
+  if (!response.ok) { await response.body?.cancel(); return { ok: false, reason: "Artifact fetch failed", sizeBytes: 0 }; }
+  const { bytes } = await acceptGlbResponse(response);
+  const inspection = inspectGlbBuffer(bytes);
 
   return {
     ok: inspection.ok,

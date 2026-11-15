@@ -2,9 +2,9 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { providerAuthHeaders } from "@/lib/provider-hosts";
 import { glbToObj, glbToStl } from "@/lib/scene/mesh-export";
-import { readBoundedResponse } from "@/lib/bounded-response";
+import { acceptGlbResponse, type AcceptanceReceipt } from "@/lib/scene/asset-acceptance";
 import { resolveArtifactUpstream } from "@/lib/scene/viewer-source";
-import { openGlbStream } from "@/lib/scene/glb-stream";
+
 
 import { HF_ARTIFACT_HEADER } from "@/lib/hf-artifact-request";
 import { normalizeHfToken } from "@/lib/huggingface-access";
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing ?from= parameter" }, { status: 400 });
   }
 
-  if (!["glb", "gltf", "obj", "stl", "usd", "usdz"].includes(to)) {
+  if (!["glb", "gltf", "obj", "stl", "usd", "usdz", "report"].includes(to)) {
     return NextResponse.json({ error: `Unsupported format: ${to}` }, { status: 400 });
   }
 
@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
   }
   const headers = providerAuthHeaders(sourceUrl, personalKey);
   let glb: Buffer;
+  let receipt: AcceptanceReceipt;
   try {
     const res = await fetch(sourceUrl, {
       headers,
@@ -71,14 +72,16 @@ export async function GET(request: NextRequest) {
     }
     // Complete validation before returning an attachment; HTTP 200 from an
     // upstream does not establish GLB identity or transport completeness.
-    const validated = new Response(await openGlbStream(res, MAX_BYTES));
-    glb = Buffer.from(await readBoundedResponse(validated, MAX_BYTES));
+    const accepted = await acceptGlbResponse(res, MAX_BYTES);
+    glb = Buffer.from(accepted.bytes);
+    receipt = accepted.receipt;
   } catch {
     return NextResponse.json({ error: "Model download failed or the GLB was incomplete. Try generating it again." }, { status: 502 });
   }
 
   const cache = headers.Authorization ? "private, no-store" : "public, max-age=3600";
   try {
+    if (to === "report") return NextResponse.json(receipt, { headers: { "Cache-Control": "private, no-store" } });
     if (to === "obj") {
       const { obj, triangles } = await glbToObj(new Uint8Array(glb));
       return fileResponse(Buffer.from(obj, "utf-8"), "model.obj", "model/obj", cache, {
@@ -94,7 +97,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (to === "glb" || to === "gltf") {
-      return fileResponse(glb, "model.glb", "model/gltf-binary", cache);
+      return fileResponse(glb, "model.glb", "model/gltf-binary", cache, { "X-Yiiya-Acceptance": receipt.contract, "X-Yiiya-SHA256": receipt.sha256, "X-Yiiya-Fidelity": "not-assessed" });
     }
 
     if (to === "usdz" || to === "usd") {
