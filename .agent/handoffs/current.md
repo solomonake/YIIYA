@@ -1,3 +1,24 @@
+## SOL-53 Library recovery release
+
+User explicitly requested implementation, checks, merge and production release.
+Isolated branch codex/library-recovery starts at b406c7e. Scope is the Library
+page, session-keyed LibraryAssets component and recovery tests. Plan: replace
+independent error/assets state with loading/error/ready, add retry, abort stale
+queries and bound loads, verify using SDK transport stubs and browser fixtures,
+then final suite/typecheck/lint/build, PR/CI, merge, READY and live signed-out UI.
+No schema/RLS/credential or telemetry changes. Queries filter existing owner_id;
+RLS remains the authorization boundary. Personal downloads/asset tiles retained.
+Real authenticated two-account production verification is not claimed.
+Local production fixture used the actual Supabase browser client against a
+same-origin temporary REST route: initial query error, Enter on retry, recovered
+asset list, account-keyed results swapped. At 390 px retry measured 44 px high,
+page width 390, no raw backend error shown. Fixtures removed before final build.
+Session key uses user ID and last_sign_in_at to reset fresh same-user logins.
+Tests cover rejection, timeout, stale completions, logout/relogin and SDK query.
+Final local gates: 535 tests across 69 files; typecheck, lint and build passed.
+Release manifest/chunks contain no test fixture route or local stub configuration.
+
+
 ## Recovery pages release
 
 Direct Solo instruction: push/merge this recovery work, get it live, then identify
