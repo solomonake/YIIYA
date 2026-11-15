@@ -15,6 +15,8 @@ asset list, account-keyed results swapped. At 390 px retry measured 44 px high,
 page width 390, no raw backend error shown. Fixtures removed before final build.
 Session key uses user ID and last_sign_in_at to reset fresh same-user logins.
 Tests cover rejection, timeout, stale completions, logout/relogin and SDK query.
+Final local gates: 535 tests across 69 files; typecheck, lint and build passed.
+Release manifest/chunks contain no test fixture route or local stub configuration.
 
 
 ## Recovery pages release
