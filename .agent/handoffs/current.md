@@ -1,3 +1,7 @@
+## 2026-11-14: Persist scan IDs as UUIDs
+
+Live PR24 validation passed shared admission but scan creation failed: randomId produced scan-/job-prefixed strings for UUID database columns. Use node:crypto randomUUID for every persisted scan/session/job/upload/asset/export identifier. Added a REST stub that rejects non-UUID inserts and checks session/job linkage, including when browser crypto is absent. No provider calls. Follow-up production smoke must create one fixture, verify 401/403/200 access behavior and clean it.
+
 ## 2026-11-14: PR24 shared storage and delivery release
 
 Merged production main 874dafd. Capture and OBJ export conflicts retain both current siteUrl and PR24 delivery fixes. Added service-only atomic rolling-window RPC on the existing rate_limits ledger, used only when Upstash is unconfigured; configured backend failures stay fail-closed. Shared upload allowance migration 0006 is also required. Migration/test/release results belong in PR24 and SOL-46. Free-only remains the default; no paid provider calls or new account provisioning.

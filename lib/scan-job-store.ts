@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { generationMode } from "@/lib/generation-policy";
 import {
   coverageConfidence,
@@ -174,14 +175,6 @@ function fallbackStore() {
   return globalStore.__yiiyaFallbackScanJobs;
 }
 
-function randomId(prefix: string) {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function nowIso() {
   return new Date().toISOString();
 }
@@ -315,7 +308,7 @@ function buildSummary(
 }
 
 function createInitialFallbackRecord(baseUrl: string, promptHint?: string, access?: ScanAccessInput) {
-  const scanId = randomId("scan");
+  const scanId = randomUUID();
   const createdAt = nowIso();
   const session: ScanSessionRow = {
     id: scanId,
@@ -333,7 +326,7 @@ function createInitialFallbackRecord(baseUrl: string, promptHint?: string, acces
     updated_at: createdAt
   };
   const job: ScanJobRow = {
-    id: randomId("job"),
+    id: randomUUID(),
     session_id: scanId,
     state: "queued",
     stage: "capture",
@@ -550,7 +543,7 @@ async function addUploadRow(
   upload: Omit<ScanUploadRow, "id" | "session_id" | "created_at">
 ) {
   const row: ScanUploadRow = {
-    id: randomId("upload"),
+    id: randomUUID(),
     session_id: scanId,
     created_at: nowIso(),
     ...upload
@@ -603,7 +596,7 @@ async function addAssetRow(
   }
 
   const row: ScanAssetRow = {
-    id: randomId("asset"),
+    id: randomUUID(),
     session_id: scanId,
     job_id: jobId,
     created_at: nowIso(),
@@ -680,7 +673,7 @@ async function upsertExportRow(
   }
 
   const row: ScanExportRow = {
-    id: randomId("export"),
+    id: randomUUID(),
     session_id: scanId,
     job_id: jobId,
     created_at: now,
@@ -705,7 +698,7 @@ async function upsertExportRow(
 }
 
 async function createSupabaseRecord(baseUrl: string, promptHint?: string, access?: ScanAccessInput) {
-  const scanId = randomId("scan");
+  const scanId = randomUUID();
   const createdAt = nowIso();
   const sessionPayload: ScanSessionRow = {
     id: scanId,
@@ -723,7 +716,7 @@ async function createSupabaseRecord(baseUrl: string, promptHint?: string, access
     updated_at: createdAt
   };
   const jobPayload: ScanJobRow = {
-    id: randomId("job"),
+    id: randomUUID(),
     session_id: scanId,
     state: "queued",
     stage: "capture",
