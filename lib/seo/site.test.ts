@@ -55,6 +55,7 @@ describe("search documents", () => {
     expect(urls).toEqual([
       "https://yiiya.vercel.app",
       "https://yiiya.vercel.app/app",
+      "https://yiiya.vercel.app/how-it-works",
       "https://yiiya.vercel.app/photo-studio",
       "https://yiiya.vercel.app/photo-studio/mug",
       "https://yiiya.vercel.app/research/mug"

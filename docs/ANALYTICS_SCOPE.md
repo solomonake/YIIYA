@@ -6,7 +6,7 @@ Only production on yiiya.vercel.app can send events. The client accepts the exac
 
 | Event | Coverage | Interpretation |
 | --- | --- | --- |
-| $pageview | React routes /, /app, /library, /view, /capture, /scan/:id | Consented page event |
+| $pageview | React routes /, /app, /how-it-works, /library, /view, /capture, /scan/:id | Consented page event |
 | studio_generation_requested | Main studio before stream request | Attempt, not successful generation |
 | export_requested | Main workspace asset-card download link | Click, not completed download |
 

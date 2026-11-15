@@ -111,9 +111,9 @@ export default function LandingPage() {
           Built by{" "}
           <span className="text-zinc-500">SRL Studio</span>
         </span>
-        <span className="text-[10px] font-mono text-zinc-700">
-          Powered by YIIYA
-        </span>
+        <a href="/how-it-works" className="text-xs font-mono text-zinc-400 underline underline-offset-4 hover:text-[#EF9F27]">
+          How it works
+        </a>
       </footer>
     </main>
   );
