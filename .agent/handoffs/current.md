@@ -1,3 +1,24 @@
+## Recovery pages release
+
+Direct Solo instruction: push/merge this recovery work, get it live, then identify
+the next production improvement. Branch codex/recovery-release carries Claude's
+b3a1f28 onto d5f39c4 plus retry interaction checks and mobile consent layout fix.
+On recovery pages below 640 px, optional consent flows below main content.
+Telemetry configuration and capture calls are unchanged.
+
+Local production fixture checks: transient error recovered after clicking Try
+again; persistent errors retained links and hid raw messages. At 390 px consent
+position was static below main, no horizontal overflow. Retried with unset,
+denied and granted local consent; recovery links worked. Both boundary reset
+callbacks tested with React test renderer. Temporary throwing routes removed.
+
+Final local gates: 524 tests/68 files, typecheck, lint and production build passed.
+Final route manifest contains neither temporary review route.
+
+Plan: PR, CI, merge, production READY + live 404
+verification. Then record next candidate: library loading/error state lacks a
+retry and does not reset old error/assets when the signed-in user changes.
+
 ## Current follow-up: SOL-52 Photo Studio outline evidence
 
 PR 31 merged as b4685b8 and production deployment dpl_HUhKmUQRq5tBecyxBHvCnEMULsFd

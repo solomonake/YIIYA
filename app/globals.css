@@ -157,3 +157,11 @@ button:disabled {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Optional consent must not cover recovery actions on narrow screens. */
+@media (max-width: 639px) {
+  body:has([data-recovery-page]) [data-analytics-preferences] {
+    position: static;
+    margin: 12px;
+  }
+}

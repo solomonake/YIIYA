@@ -1,6 +1,7 @@
+import { act, create } from "react-test-renderer";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import RouteError from "@/app/error";
 import GlobalError from "@/app/global-error";
@@ -103,5 +104,21 @@ describe("global error boundary", () => {
     expect(html).toContain("digest-9");
     expect(html).not.toContain("layout exploded");
     expect(html).not.toContain(EM_DASH);
+  });
+});
+
+
+describe("recovery interactions", () => {
+  it.each([RouteError, GlobalError])("calls the supplied reset when the visitor retries", Component => {
+    const reset = vi.fn();
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let view: ReturnType<typeof create>;
+    try {
+      act(() => { view = create(createElement(Component, { error: failure("private detail"), reset })); });
+      expect(reset).not.toHaveBeenCalled();
+      act(() => view.root.findByType("button").props.onClick());
+      expect(reset).toHaveBeenCalledTimes(1);
+      act(() => view.unmount());
+    } finally { log.mockRestore(); }
   });
 });

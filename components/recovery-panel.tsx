@@ -22,7 +22,7 @@ export function RecoveryPanel({
   children: ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-[#050505] px-6 py-8 text-zinc-200 sm:px-10">
+    <main data-recovery-page className="min-h-screen bg-[#050505] px-6 py-8 text-zinc-200 sm:px-10">
       <div className="mx-auto max-w-3xl">
         <nav
           aria-label="Main"
