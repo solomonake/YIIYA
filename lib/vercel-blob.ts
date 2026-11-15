@@ -1,3 +1,6 @@
+import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
+import { openGlbStream } from "@/lib/scene/glb-stream";
+
 export function isVercelBlobConfigured() {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 
@@ -48,7 +51,8 @@ export async function uploadImageToBlob(
  */
 export async function mirrorGlbToBlob(
   sourceUrl: string,
-  filename: string
+  filename: string,
+  userHfToken?: string
 ): Promise<{ url: string; mirrored: boolean; sizeBytes: number; error?: string }> {
   if (!isVercelBlobConfigured()) {
     return { url: sourceUrl, mirrored: false, sizeBytes: 0, error: "BLOB_READ_WRITE_TOKEN not set" };
@@ -56,13 +60,23 @@ export async function mirrorGlbToBlob(
   if (sourceUrl.startsWith("/api/") || sourceUrl.startsWith("data:")) {
     return { url: sourceUrl, mirrored: false, sizeBytes: 0 };
   }
+  if (!isAllowedProviderUrl(sourceUrl)) {
+    return { url: sourceUrl, mirrored: false, sizeBytes: 0, error: "Source host not allowed" };
+  }
 
   try {
-    const res = await fetch(sourceUrl, { signal: AbortSignal.timeout(90_000) });
+    const res = await fetch(sourceUrl, {
+      headers: providerAuthHeaders(sourceUrl, userHfToken),
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(90_000)
+    });
     if (!res.ok) {
+      await res.body?.cancel();
       return { url: sourceUrl, mirrored: false, sizeBytes: 0, error: `Source HTTP ${res.status}` };
     }
-    const buf = Buffer.from(await res.arrayBuffer());
+    const stream = await openGlbStream(res, 100 * 1024 * 1024);
+    const buf = Buffer.from(await new Response(stream).arrayBuffer());
 
     const { put } = await import("@vercel/blob");
     const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);

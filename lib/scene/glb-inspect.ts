@@ -15,6 +15,9 @@
  * Split into a pure buffer parser (easy to unit test) and a thin URL fetcher.
  */
 
+import { readResponsePrefix } from "@/lib/bounded-response";
+import { z } from "zod";
+
 const GLB_MAGIC = 0x46546c67; // 'glTF' little-endian
 const CHUNK_JSON = 0x4e4f534a; // 'JSON' little-endian
 
@@ -99,6 +102,30 @@ type Gltf = {
 };
 
 type Mat4 = number[]; // column-major, 16 entries, per glTF spec
+
+const indexSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const finiteSchema = z.number().finite();
+const vec3Schema = z.array(finiteSchema).length(3);
+/** Reject malformed metadata before traversing provider-controlled graphs. */
+const gltfSchema = z.object({
+  scene: indexSchema.optional(),
+  scenes: z.array(z.object({ nodes: z.array(indexSchema).optional() })).optional(),
+  nodes: z.array(z.object({
+    mesh: indexSchema.optional(), children: z.array(indexSchema).optional(),
+    matrix: z.array(finiteSchema).length(16).optional(),
+    translation: vec3Schema.optional(), rotation: z.array(finiteSchema).length(4).optional(),
+    scale: vec3Schema.optional()
+  })).optional(),
+  meshes: z.array(z.object({ primitives: z.array(z.object({
+    indices: indexSchema.optional(), mode: indexSchema.max(6).optional(),
+    material: indexSchema.optional(), attributes: z.record(indexSchema).optional()
+  })).optional() })).optional(),
+  accessors: z.array(z.object({ count: indexSchema.optional(),
+    min: z.array(finiteSchema).optional(), max: z.array(finiteSchema).optional()
+  })).optional(),
+  materials: z.array(z.unknown()).optional(), textures: z.array(z.unknown()).optional(),
+  extensionsUsed: z.array(z.string()).optional()
+});
 
 const IDENTITY: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -201,6 +228,9 @@ export function inspectGlbBuffer(bytes: Uint8Array, declaredSize?: number): GlbI
   if (view.getUint32(0, true) !== GLB_MAGIC) {
     return { ok: false, reason: "Not a valid GLB (magic mismatch)", sizeBytes, geometry: null };
   }
+  if (view.getUint32(4, true) !== 2) {
+    return { ok: false, reason: "Unsupported GLB version", sizeBytes, geometry: null };
+  }
 
   if (sizeBytes < MIN_GLB_BYTES) {
     return { ok: false, reason: `File too small (${sizeBytes} bytes)`, sizeBytes, geometry: null };
@@ -229,12 +259,18 @@ export function inspectGlbBuffer(bytes: Uint8Array, declaredSize?: number): GlbI
   let gltf: Gltf;
   try {
     const json = new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength));
-    gltf = JSON.parse(json) as Gltf;
+    const parsed = gltfSchema.safeParse(JSON.parse(json));
+    if (!parsed.success) return { ok: false, reason: "Invalid glTF metadata", sizeBytes, geometry: null };
+    gltf = parsed.data;
   } catch {
     return { ok: false, reason: "Unparseable glTF JSON chunk", sizeBytes, geometry: null };
   }
 
   const geometry = readGeometry(gltf);
+
+  if (!Number.isSafeInteger(geometry.triangles) || !Number.isSafeInteger(geometry.vertices)) {
+    return { ok: false, reason: "Invalid geometry counts", sizeBytes, geometry: null };
+  }
 
   if (geometry.triangles > 0 && geometry.triangles < DEGENERATE_TRIANGLE_LIMIT) {
     return {
@@ -325,10 +361,12 @@ function computeBounds(
   const min: Vec3 = [Infinity, Infinity, Infinity];
   const max: Vec3 = [-Infinity, -Infinity, -Infinity];
   let found = false;
+  const visited = new Set<number>();
 
   const visit = (nodeIndex: number, parent: Mat4, depth: number) => {
     const node = nodes[nodeIndex];
-    if (!node || depth > 64) return; // depth guard against cyclic node graphs
+    if (!node || depth > 64 || visited.has(nodeIndex)) return;
+    visited.add(nodeIndex); // glTF nodes form a forest; cycles/shared children are not re-walked.
 
     const world = multiply(parent, localMatrix(node));
 
@@ -340,6 +378,7 @@ function computeBounds(
 
         const [ax, ay, az] = accessor.min as Vec3;
         const [bx, by, bz] = accessor.max as Vec3;
+        if (ax > bx || ay > by || az > bz) continue;
 
         // Transform all 8 corners: rotation can swing the extents outward.
         for (const corner of [
@@ -353,6 +392,7 @@ function computeBounds(
           [bx, by, bz]
         ] as Vec3[]) {
           const p = transformPoint(world, corner);
+          if (!p.every(Number.isFinite)) continue;
           for (let i = 0; i < 3; i += 1) {
             if (p[i] < min[i]) min[i] = p[i];
             if (p[i] > max[i]) max[i] = p[i];
@@ -419,6 +459,7 @@ export async function inspectGlbUrl(
   const read = async (upTo: number) => {
     const res = await doFetch(url, {
       headers: { Range: `bytes=0-${upTo - 1}`, ...extraHeaders },
+      redirect: "error",
       signal: AbortSignal.timeout(timeoutMs)
     });
     if (!res.ok && res.status !== 206) {
@@ -430,7 +471,7 @@ export async function inspectGlbUrl(
       ? Number(totalFromRange)
       : Number(res.headers.get("content-length") ?? 0);
     return {
-      bytes: new Uint8Array(await res.arrayBuffer()),
+      bytes: await readResponsePrefix(res, upTo),
       declaredSize
     };
   };

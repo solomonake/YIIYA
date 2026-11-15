@@ -5,8 +5,9 @@ vi.mock("@/lib/supabase-server", () => ({
 }));
 
 import { serviceClient } from "@/lib/supabase-server";
-import { saveGeneratedAsset, attachPosterUrl } from "./persist";
+import { saveGeneratedAsset, attachPosterUrl, findCachedAsset } from "./persist";
 import type { GeneratedAsset } from "@/lib/interpret-pipeline";
+import { evaluateQualityReward } from "@/lib/scene/quality-reward";
 
 const baseAsset: GeneratedAsset = {
   id: "asset-1",
@@ -45,12 +46,14 @@ describe("saveGeneratedAsset", () => {
     const from = vi.fn().mockReturnValue({ insert });
     vi.mocked(serviceClient).mockReturnValue({ from } as never);
 
-    const id = await saveGeneratedAsset("user-1", "a red apple", "session-1", baseAsset);
+    const qualityReward = evaluateQualityReward(null, false);
+    const id = await saveGeneratedAsset("user-1", "a red apple", "session-1", { ...baseAsset, qualityReward });
 
     expect(id).toBe("db-asset-1");
     expect(from).toHaveBeenCalledWith("assets");
     expect(insert).toHaveBeenCalledWith(
-      expect.objectContaining({ owner_id: "user-1", session_id: "session-1", tier: "trellis" })
+      expect.objectContaining({ owner_id: "user-1", session_id: "session-1", tier: "trellis",
+        brief_json: expect.objectContaining({ qualityReward }) })
     );
   });
 });
@@ -80,5 +83,28 @@ describe("attachPosterUrl", () => {
 
     const ok = await attachPosterUrl("user-1", "asset-1", "https://blob.example.com/poster.png");
     expect(ok).toBe(true);
+  });
+});
+
+describe("prompt cache durability and owner isolation", () => {
+  it.each([
+    ["https://store.public.blob.vercel-storage.com/model.glb", true],
+    ["/api/3d/proxy?src=https%3A%2F%2Fexample.hf.space%2Fmodel.glb", false],
+    ["https://example.hf.space/model.glb", false],
+    ["https://unknown.example/model.glb", false]
+  ])("checks durable storage for %s", async (glb_url, reusable) => {
+    const row = { id: "saved-id", glb_url, brief_json: { qualityReward: evaluateQualityReward(null, false) } };
+    const query = {
+      select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null })
+    };
+    vi.mocked(serviceClient).mockReturnValue({ from: vi.fn().mockReturnValue(query) } as never);
+    const result = await findCachedAsset("owner-7", "red apple", "a".repeat(64));
+    expect(query.eq).toHaveBeenCalledWith("owner_id", "owner-7");
+    expect(query.eq).toHaveBeenCalledWith("prompt", "red apple");
+    expect(query.eq).toHaveBeenCalledWith("brief_json->>requestCacheKey", "a".repeat(64));
+    expect(query.neq).toHaveBeenCalledWith("tier", "fallback");
+    expect(result).toEqual(reusable ? row : null);
   });
 });

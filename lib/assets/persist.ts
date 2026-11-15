@@ -1,5 +1,6 @@
 import { serviceClient } from "@/lib/supabase-server";
 import type { GeneratedAsset } from "@/lib/interpret-pipeline";
+import { assetStorageStatus } from "./storage-status";
 
 /**
  * Saves a successful generation to `public.assets` so the signed-in user can
@@ -17,7 +18,8 @@ export async function saveGeneratedAsset(
   userId: string,
   prompt: string,
   sessionId: string | null | undefined,
-  asset: GeneratedAsset
+  asset: GeneratedAsset,
+  requestCacheKey?: string | null
 ): Promise<string | null> {
   if (asset.tier === "fallback") return null;
 
@@ -36,7 +38,14 @@ export async function saveGeneratedAsset(
         glb_url: asset.glbUrl,
         triangle_count: asset.triangleCount ?? null,
         scale_meters: asset.scaleMeters,
-        brief_json: { materialBrief: asset.materialBrief, textureUrls: asset.textureUrls ?? null },
+        brief_json: {
+          materialBrief: asset.materialBrief,
+          textureUrls: asset.textureUrls ?? null,
+          qualityReward: asset.qualityReward ?? null,
+          requestCacheKey: requestCacheKey && /^[a-f0-9]{64}$/.test(requestCacheKey) ? requestCacheKey : null,
+          storageStatus: assetStorageStatus(asset.glbUrl),
+          readiness: asset.readiness ?? null
+        },
         export_formats: Object.keys(asset.exportUrls)
       })
       .select("id")
@@ -50,10 +59,10 @@ export async function saveGeneratedAsset(
 }
 
 /**
- * Prompt→asset cache: returns the most recent successful asset this user
- * already generated for the EXACT same prompt, or null. Re-running a prompt
- * you already paid for should cost nothing — the row carries everything
- * needed to rehydrate the asset (glb_url is durable: Blob or the proxy).
+ * Request→asset cache: same owner, approved prompt and versioned request digest.
+ * Legacy/photo/context-mismatched rows cannot satisfy an unrelated request.
+ * Only mirrored URLs qualify: proxy URLs still
+ * reference expiring provider files and must not be treated as durable storage.
  * Scoped to the owner; anonymous users have no history to hit.
  */
 export type CachedAssetRow = {
@@ -63,28 +72,31 @@ export type CachedAssetRow = {
   glb_url: string;
   triangle_count: number | null;
   scale_meters: number | null;
-  brief_json: { materialBrief?: unknown; textureUrls?: unknown } | null;
+  brief_json: { materialBrief?: unknown; textureUrls?: unknown; qualityReward?: unknown } | null;
 };
 
 export async function findCachedAsset(
   userId: string,
-  prompts: string[]
+  prompt: string,
+  requestCacheKey: string
 ): Promise<CachedAssetRow | null> {
+  if (!/^[a-f0-9]{64}$/.test(requestCacheKey)) return null;
   const client = serviceClient();
-  if (!client || prompts.length === 0) return null;
+  if (!client) return null;
 
   try {
     const { data, error } = await client
       .from("assets")
       .select("id, object_name, tier, glb_url, triangle_count, scale_meters, brief_json")
       .eq("owner_id", userId)
-      .in("prompt", prompts)
+      .eq("prompt", prompt)
+      .eq("brief_json->>requestCacheKey", requestCacheKey)
       .neq("tier", "fallback")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error || !data || assetStorageStatus(data.glb_url) !== "mirrored") return null;
     return data as CachedAssetRow;
   } catch {
     return null;

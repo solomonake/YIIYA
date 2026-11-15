@@ -70,10 +70,15 @@ gcloud run deploy yiiya-reconstruction \
 ```
 
 Then point the app's `SCAN_RECONSTRUCTION_ENDPOINT` at the Cloud Run URL's
-`/reconstruct` route and you're done.
+`/reconstruct` route. Before enabling dispatch, configure the same
+`SCAN_RECONSTRUCTION_API_KEY` in the app and worker through secret management.
+The worker rejects requests without its matching Bearer credential. Verify
+platform authentication separately; no deployment is established by this guide.
 
 ## Cost note
 
-A container only bills while it runs. Cloud Run GPU scales to zero between jobs,
-so you pay for GPU-seconds per orbit, not a 24/7 GPU. That's the same "pay per
-use" posture as Modal — just on Google's infrastructure.
+Do not infer a zero-cost deployment or guaranteed scale-to-zero behavior from
+this example. Verify current GPU availability, instance billing, minimum
+instances, storage/build charges and enforceable spending controls before deploy.
+The background-task wrapper is not a durable job queue; instance termination can
+interrupt work after the HTTP acknowledgement.

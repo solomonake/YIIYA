@@ -4,6 +4,8 @@ import { z } from "zod";
 import { getUserIdFromAuthHeader } from "@/lib/auth/verify-request";
 import { attachPosterUrl } from "@/lib/assets/persist";
 import { isVercelBlobConfigured } from "@/lib/vercel-blob";
+import { serviceClient } from "@/lib/supabase-server";
+import { readOwnedAsset } from "@/lib/assets/read-owned-asset";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +37,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const client = serviceClient();
+  if (!client) return NextResponse.json({ error: "library_unavailable" }, { status: 503 });
+  const { data: asset, error } = await readOwnedAsset(client, userId, body.assetId, AbortSignal.timeout(10_000));
+  if (error) return NextResponse.json({ error: "library_unavailable" }, { status: 503 });
+  if (!asset) return NextResponse.json({ error: "asset_not_found" }, { status: 404 });
+
   if (!isVercelBlobConfigured()) {
     return NextResponse.json(
       { error: "blob_not_configured", message: "Poster storage is not configured on this deployment." },
@@ -46,7 +54,7 @@ export async function POST(request: NextRequest) {
     const { put } = await import("@vercel/blob");
     const base64 = body.dataUrl.slice("data:image/png;base64,".length);
     const buffer = Buffer.from(base64, "base64");
-    const blob = await put(`posters/${body.assetId}.png`, buffer, {
+    const blob = await put(`posters/${userId}/${body.assetId}.png`, buffer, {
       access: "public",
       contentType: "image/png",
       addRandomSuffix: false

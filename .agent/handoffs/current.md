@@ -1,3 +1,7 @@
+## 2026-11-14: PR24 shared storage and delivery release
+
+Merged production main 874dafd. Capture and OBJ export conflicts retain both current siteUrl and PR24 delivery fixes. Added service-only atomic rolling-window RPC on the existing rate_limits ledger, used only when Upstash is unconfigured; configured backend failures stay fail-closed. Shared upload allowance migration 0006 is also required. Migration/test/release results belong in PR24 and SOL-46. Free-only remains the default; no paid provider calls or new account provisioning.
+
 ## 2026-11-14: Consent analytics reconciled for production
 
 Merged main 8ce8dd3 into PR 23. Kept current metadata, landing cast and legacy routes. Resolved only handoff/metrics conflicts. Consent analytics replaces Vercel Analytics on React pages; static Photo Studio pages remain outside coverage. Events count attempts/clicks, not completed conversions or monthly people. See docs/ANALYTICS_SCOPE.md. Current validation and release evidence belong in PR 23 and SOL-46. No configuration or provider changes.

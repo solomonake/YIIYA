@@ -36,7 +36,11 @@ function hasUsableEnvValue(value) {
 }
 
 function missing(group) {
-  return manifest.required[group].filter((requirement) => !hasUsableEnvValue(process.env[requirement.name]));
+  const mode = process.env.YIIYA_3D_MODE === "mixed" ? "mixed" : "free-only";
+  return manifest.required[group].filter((requirement) =>
+    (!requirement.generationModes || requirement.generationModes.includes(mode)) &&
+    !hasUsableEnvValue(process.env[requirement.name])
+  );
 }
 
 function printGroup(title, items) {

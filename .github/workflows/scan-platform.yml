@@ -35,8 +35,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The production server refuses scan requests without a shared rate
+      # limiter and scan storage, and CI has neither. The build above proves
+      # the production bundle; the smoke test runs the scan flow on the
+      # development server, where the in-process fallbacks are allowed.
       - name: Start app
-        run: npm run start > /tmp/yiiya-scan-platform.log 2>&1 &
+        run: npm run dev > /tmp/yiiya-scan-platform.log 2>&1 &
 
       - name: Wait for app
         run: |

@@ -1,6 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { isAllowedProviderUrl, providerAuthHeaders } from "@/lib/provider-hosts";
+import { openGlbStream } from "@/lib/scene/glb-stream";
+
+import { HF_ARTIFACT_HEADER } from "@/lib/hf-artifact-request";
+import { normalizeHfToken } from "@/lib/huggingface-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,18 +31,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Source host not allowed" }, { status: 400 });
   }
 
+  const supplied = request.headers.get(HF_ARTIFACT_HEADER);
+  const personalKey = normalizeHfToken(supplied);
+  if (supplied !== null && !personalKey) {
+    return NextResponse.json({ error: "Invalid Hugging Face credential" }, { status: 400 });
+  }
+  const headers = providerAuthHeaders(src, personalKey);
   let upstream: Response;
   try {
     upstream = await fetch(src, {
-      headers: providerAuthHeaders(src),
+      headers,
+      cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(90_000)
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "fetch failed";
-    return NextResponse.json({ error: `Upstream fetch failed: ${msg}` }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: "Upstream fetch failed" }, { status: 502 });
   }
 
   if (!upstream.ok) {
+    await upstream.body?.cancel();
     return NextResponse.json(
       { error: `Upstream responded ${upstream.status}` },
       { status: 502 }
@@ -47,16 +59,24 @@ export async function GET(request: NextRequest) {
 
   const declared = Number(upstream.headers.get("content-length") ?? 0);
   if (declared > MAX_BYTES) {
+    await upstream.body?.cancel();
     return NextResponse.json({ error: "Artifact too large" }, { status: 413 });
   }
 
-  const contentType = upstream.headers.get("content-type") ?? "model/gltf-binary";
-  return new Response(upstream.body, {
+  let body: ReadableStream<Uint8Array>;
+  try {
+    body = await openGlbStream(upstream, MAX_BYTES);
+  } catch {
+    return NextResponse.json({ error: "Invalid or oversized GLB artifact" }, { status: 502 });
+  }
+  return new Response(body, {
     status: 200,
     headers: {
-      "Content-Type": contentType.includes("text/html") ? "model/gltf-binary" : contentType,
-      // Provider temp URLs are unique per generation, so aggressive caching is safe.
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Content-Type": "model/gltf-binary",
+      "X-Content-Type-Options": "nosniff",
+      // A private download must never populate a shared cache.
+      "Cache-Control": headers.Authorization ? "private, no-store" : "public, max-age=31536000, immutable",
+      Vary: HF_ARTIFACT_HEADER,
       "Access-Control-Allow-Origin": "*"
     }
   });

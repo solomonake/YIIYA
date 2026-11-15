@@ -19,7 +19,7 @@ export function generateMetadata({
   const name = (typeof raw === "string" ? raw : "3D asset").slice(0, 80);
   const title = `${name} · YIIYA`;
   const description =
-    "Spin it, drop it into your space in AR — a 3D asset made just by saying it. Make your own with YIIYA.";
+    "Explore a 3D asset in your browser. AR is available on supported devices and browsers. Create with YIIYA.";
   return {
     title,
     description,

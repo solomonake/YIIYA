@@ -1,3 +1,4 @@
+import { generationMode, type GenerationMode } from "@/lib/generation-policy";
 import manifest from "@/config/production-readiness.json";
 
 export type ProductionReadinessGroup = keyof typeof manifest.required;
@@ -6,6 +7,7 @@ export type ProductionReadinessRequirement = {
   name: string;
   label: string;
   reason: string;
+  generationModes?: GenerationMode[];
 };
 
 export type ProductionReadinessIssue = ProductionReadinessRequirement & {
@@ -53,7 +55,8 @@ export function missingProductionRequirements(
   env: Environment = process.env
 ) {
   return productionReadinessManifest.required[group].filter(
-    (requirement) => !hasUsableEnvValue(env[requirement.name])
+    (requirement) => (!requirement.generationModes || requirement.generationModes.includes(generationMode(env)))
+      && !hasUsableEnvValue(env[requirement.name])
   );
 }
 

@@ -1,3 +1,4 @@
+import { authorizeScanWorker } from "@/lib/security/scan-worker-auth";
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { isVercelBlobConfigured } from "@/lib/vercel-blob";
@@ -11,15 +12,6 @@ function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "-");
 }
 
-function isAuthorized(request: Request) {
-  const secret = process.env.SCAN_RECONSTRUCTION_WEBHOOK_SECRET;
-
-  if (!secret) {
-    return true;
-  }
-
-  return request.headers.get("x-yiiya-worker-secret") === secret;
-}
 
 function parseMetadata(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || !value.trim()) {
@@ -37,9 +29,8 @@ export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  const denied = authorizeScanWorker(request, "SCAN_RECONSTRUCTION_WEBHOOK_SECRET", "x-yiiya-worker-secret");
+  if (denied) return denied;
 
   const job = await getScanJob(params.id, false);
 

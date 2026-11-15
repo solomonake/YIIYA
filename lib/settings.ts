@@ -1,7 +1,7 @@
 "use client";
 
 // Local-only user preferences — never sent anywhere except as part of the
-// user's own generation requests (the HF token). Nothing here touches the
+// user's own generation, verification and protected model requests (the HF token). Nothing here touches the
 // server's own env-configured credentials.
 
 const STORAGE_KEY = "yiiya_settings_v1";

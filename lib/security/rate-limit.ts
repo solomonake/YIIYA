@@ -1,5 +1,5 @@
 /**
- * Rate limiting via Upstash Redis (sliding window).
+ * Shared rolling-window limits via Upstash, or the existing Supabase ledger.
  *
  * Free tier: https://upstash.com  (10k commands/day on free plan)
  * Docs:      https://upstash.com/docs/redis/sdks/ratelimit-ts/overview
@@ -10,15 +10,17 @@
  *   - generate3d : the daily FREE-GENERATION quota per identity. This is the
  *                  "how many 3D models can I make today" cap the user actually
  *                  feels. Tunable via YIIYA_FREE_GENERATIONS_PER_DAY (default
- *                  10) — raise it without a deploy; each generation costs us
- *                  ~$0.02–0.31 depending on provider, so it also bounds spend.
+ *                  10). This counts admitted requests, not provider attempts,
+ *                  generated scene slots or dollars; it is not a cost cap.
  *   - publish    : 20 req / 1h   per identity (writes a public artifact)
  *
- * Falls back to an in-process token bucket if Upstash isn't configured —
- * fine for dev, NOT safe for production multi-instance deploys.
+ * In-process fallback is restricted to development/tests. Production denies
+ * requests when shared storage is absent, fails, or times out. Supabase is chosen
+ * only when Upstash is unconfigured; backend failure never switches ledgers.
  */
 import { Redis } from "@upstash/redis";
 import { Ratelimit } from "@upstash/ratelimit";
+import { isSupabaseRestConfigured, supabaseRestFetch } from "@/lib/supabase-rest";
 
 export type LimiterName = "interpret" | "generate3d" | "publish";
 
@@ -26,7 +28,7 @@ type LimiterConfig = { tokens: number; window: `${number} ${"s" | "m" | "h"}` };
 
 const FREE_GENERATIONS_PER_DAY = Math.max(
   1,
-  Number.parseInt(process.env.YIIYA_FREE_GENERATIONS_PER_DAY ?? "10", 10) || 10
+  Math.min(1000, Number.parseInt(process.env.YIIYA_FREE_GENERATIONS_PER_DAY ?? "10", 10) || 10)
 );
 
 const CONFIG: Record<LimiterName, LimiterConfig> = {
@@ -93,15 +95,49 @@ function parseWindowMs(w: `${number} ${"s" | "m" | "h"}`): number {
  * Identity is typically `${userId}` if authed, otherwise `ip:${hashedIp}`.
  */
 export async function checkLimit(name: LimiterName, identity: string) {
-  const l = limiter(name);
-  if (!l) return fallbackCheck(name, identity);
-  const res = await l.limit(identity);
-  return {
-    success: res.success,
-    remaining: res.remaining,
-    limit: res.limit,
-    reset: res.reset
-  };
+  const unavailable = () => ({ success: false, remaining: 0, limit: CONFIG[name].tokens,
+    reset: Date.now() + 60_000, unavailable: true });
+  try {
+    const l = limiter(name);
+    if (!l) {
+      if (isSupabaseRestConfigured("service")) {
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
+        const identityHash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+        const response = await supabaseRestFetch("rpc/consume_rate_limit", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(5000),
+          body: JSON.stringify({ p_name: name, p_identity_hash: identityHash,
+            p_tokens: CONFIG[name].tokens, p_window_ms: parseWindowMs(CONFIG[name].window) })
+        }, "service");
+        if (!response.ok) return unavailable();
+        const value: unknown = await response.json();
+        if (!value || typeof value !== "object") return unavailable();
+        const result = value as Record<string, unknown>;
+        if (typeof result.success !== "boolean" || result.limit !== CONFIG[name].tokens ||
+            !Number.isSafeInteger(result.remaining) || Number(result.remaining) < 0 ||
+            Number(result.remaining) > CONFIG[name].tokens ||
+            !Number.isSafeInteger(result.reset) || Number(result.reset) <= Date.now() ||
+            (!result.success && result.remaining !== 0) ||
+            (result.success && Number(result.remaining) >= CONFIG[name].tokens)) return unavailable();
+        return { success: result.success, remaining: Number(result.remaining), limit: CONFIG[name].tokens,
+          reset: Number(result.reset), unavailable: false };
+      }
+      if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") return unavailable();
+      return { ...fallbackCheck(name, identity), unavailable: false };
+    }
+    const res = await l.limit(identity);
+    // The SDK can return success=true on timeout. Never treat that as a grant.
+    if (res.reason === "timeout") return unavailable();
+    return {
+      success: res.success,
+      remaining: res.remaining,
+      limit: res.limit,
+      reset: res.reset,
+      unavailable: false
+    };
+  } catch {
+    return unavailable();
+  }
 }
 
 /**

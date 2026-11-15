@@ -1,3 +1,4 @@
+import { generationMode } from "@/lib/generation-policy";
 import {
   coverageConfidence,
   emptyCoverage,
@@ -25,6 +26,7 @@ import { supabaseRestFetch, isSupabaseRestConfigured } from "@/lib/supabase-rest
 
 type ScanSessionRow = {
   id: string;
+  owner_id?: string | null;
   prompt_hint?: string | null;
   object_hint?: string | null;
   desktop_url: string;
@@ -312,11 +314,12 @@ function buildSummary(
   };
 }
 
-function createInitialFallbackRecord(baseUrl: string, promptHint?: string) {
+function createInitialFallbackRecord(baseUrl: string, promptHint?: string, access?: ScanAccessInput) {
   const scanId = randomId("scan");
   const createdAt = nowIso();
   const session: ScanSessionRow = {
     id: scanId,
+    owner_id: access?.ownerId ?? null,
     prompt_hint: promptHint ?? null,
     object_hint: null,
     desktop_url: `${baseUrl}/app?scanJob=${scanId}`,
@@ -325,7 +328,7 @@ function createInitialFallbackRecord(baseUrl: string, promptHint?: string) {
     coverage_json: emptyCoverage(),
     latest_frame_json: null,
     warning_json: [],
-    metadata_json: {},
+    metadata_json: access ? { accessTokenHash: access.tokenHash, accessExpiresAt: access.expiresAt } : {},
     created_at: createdAt,
     updated_at: createdAt
   };
@@ -421,7 +424,7 @@ async function patchRows<T extends object>(path: string, payload: Partial<T>) {
 async function loadSupabaseRecord(scanId: string) {
   const sessionParams = new URLSearchParams({
     select:
-      "id,prompt_hint,object_hint,desktop_url,mobile_url,capture_status,coverage_json,latest_frame_json,warning_json,metadata_json,created_at,updated_at",
+      "id,owner_id,prompt_hint,object_hint,desktop_url,mobile_url,capture_status,coverage_json,latest_frame_json,warning_json,metadata_json,created_at,updated_at",
     id: `eq.${scanId}`,
     limit: "1"
   });
@@ -502,7 +505,7 @@ async function updateSessionRow(
   const params = new URLSearchParams({
     id: `eq.${scanId}`,
     select:
-      "id,prompt_hint,object_hint,desktop_url,mobile_url,capture_status,coverage_json,latest_frame_json,warning_json,metadata_json,created_at,updated_at"
+      "id,owner_id,prompt_hint,object_hint,desktop_url,mobile_url,capture_status,coverage_json,latest_frame_json,warning_json,metadata_json,created_at,updated_at"
   });
   const rows = await patchRows<ScanSessionRow>(`scan_sessions?${params}`, {
     ...updates,
@@ -701,11 +704,12 @@ async function upsertExportRow(
   return rows[0] ?? null;
 }
 
-async function createSupabaseRecord(baseUrl: string, promptHint?: string) {
+async function createSupabaseRecord(baseUrl: string, promptHint?: string, access?: ScanAccessInput) {
   const scanId = randomId("scan");
   const createdAt = nowIso();
   const sessionPayload: ScanSessionRow = {
     id: scanId,
+    owner_id: access?.ownerId ?? null,
     prompt_hint: promptHint ?? null,
     object_hint: null,
     desktop_url: `${baseUrl}/app?scanJob=${scanId}`,
@@ -714,7 +718,7 @@ async function createSupabaseRecord(baseUrl: string, promptHint?: string) {
     coverage_json: emptyCoverage(),
     latest_frame_json: null,
     warning_json: [],
-    metadata_json: {},
+    metadata_json: access ? { accessTokenHash: access.tokenHash, accessExpiresAt: access.expiresAt } : {},
     created_at: createdAt,
     updated_at: createdAt
   };
@@ -1018,10 +1022,12 @@ async function triggerExternalReconstruction(summary: ScanJobSummary) {
   return true;
 }
 
-export async function createScanJob(baseUrl: string, promptHint?: string): Promise<ScanJobCreateResult> {
+export type ScanAccessInput = { ownerId: string | null; tokenHash: string; expiresAt: number };
+
+export async function createScanJob(baseUrl: string, promptHint?: string, access?: ScanAccessInput): Promise<ScanJobCreateResult> {
   const record = isSupabaseRestConfigured("service")
-    ? await createSupabaseRecord(baseUrl, promptHint)
-    : await persistFallbackCompatibleRecord(createInitialFallbackRecord(baseUrl, promptHint));
+    ? await createSupabaseRecord(baseUrl, promptHint, access)
+    : await persistFallbackCompatibleRecord(createInitialFallbackRecord(baseUrl, promptHint, access));
   const summary = buildSummary(
     record.session,
     record.job,
@@ -1167,7 +1173,7 @@ export async function updateScanCapture(
   });
   const coverageLevel = coverageConfidence(nextCoverage);
   await updateJobRow(scanId, {
-    stage: "capture",
+    // Capture packets must never restore dispatch eligibility after a claim.
     progress: Math.max(current.progress, Math.min(0.82, coverageLevel * 0.8))
   });
 
@@ -1237,6 +1243,26 @@ export async function attachScanUpload(
   return getScanJob(scanId, false);
 }
 
+/** Claim once before any external dispatch. Never reset a previously claimed job. */
+async function claimScanUpload(scanId: string) {
+  const updates: Partial<ScanJobRow> = {
+    state: "ingesting", stage: "ingest", progress: 0.05, last_error: null, updated_at: nowIso()
+  };
+  if (!isSupabaseRestConfigured("service")) {
+    const current = loadFallbackRecord(scanId);
+    if (!current || current.job.state !== "queued" || current.job.stage !== "capture") return false;
+    // No await between the check and mutation in the local fallback.
+    current.job = { ...current.job, ...updates };
+    fallbackStore().set(scanId, current);
+    return true;
+  }
+  const params = new URLSearchParams({
+    session_id: `eq.${scanId}`, state: "eq.queued", stage: "eq.capture", select: "id"
+  });
+  const rows = await patchRows<ScanJobRow>(`scan_jobs?${params}`, updates);
+  return rows.length === 1;
+}
+
 export async function completeScanUpload(
   scanId: string,
   payload: {
@@ -1251,24 +1277,33 @@ export async function completeScanUpload(
     return null;
   }
 
+  if (!await claimScanUpload(scanId)) return getScanJob(scanId, false);
+
+  const accessRecord = isSupabaseRestConfigured("service")
+    ? await loadSupabaseRecord(scanId) : loadFallbackRecord(scanId);
   await updateSessionRow(scanId, {
     object_hint: payload.objectHint ?? current.objectHint ?? null,
     capture_status: "uploaded",
     metadata_json: {
+      ...accessRecord?.session.metadata_json,
       durationMs: payload.durationMs ?? null,
       keyframeCount: payload.keyframeCount ?? null
     }
-  });
-  await updateJobRow(scanId, {
-    state: "queued",
-    stage: "ingest",
-    progress: Math.max(current.progress, 0.05),
-    last_error: null
   });
   const refreshed = await getScanJob(scanId, false);
 
   if (!refreshed) {
     return null;
+  }
+
+  if (generationMode() === "free-only") {
+    const message = "Scan reconstruction is unavailable in free-only mode. Uploaded files are retained; use a single reference photo in the studio for Hugging Face generation. No external worker or paid fallback was started.";
+    await updateWarnings(scanId, [
+      ...refreshed.warnings.filter(warning => warning.code !== "free-only-reconstruction"),
+      { code: "free-only-reconstruction", label: message, severity: "warning" }
+    ]);
+    await updateJobRow(scanId, { state: "failed", stage: "ingest", last_error: message });
+    return getScanJob(scanId, false);
   }
 
   const record = isSupabaseRestConfigured("service")
@@ -1556,7 +1591,19 @@ export function getScanInfraStatus() {
     blobConfigured:
       Boolean(process.env.BLOB_READ_WRITE_TOKEN) &&
       !process.env.BLOB_READ_WRITE_TOKEN?.includes("your_"),
-    modalConfigured: Boolean(process.env.SCAN_RECONSTRUCTION_ENDPOINT),
-    falConfigured: Boolean(process.env.FAL_KEY)
+    modalConfigured: generationMode() === "mixed" && Boolean(process.env.SCAN_RECONSTRUCTION_ENDPOINT),
+    falConfigured: generationMode() === "mixed" && Boolean(process.env.FAL_KEY)
   };
+}
+
+/** Internal access metadata only; never include capability hashes in public summaries. */
+export async function getScanAccess(scanId: string) {
+  const session = isSupabaseRestConfigured("service")
+    ? await readSingleRow<ScanSessionRow>(`scan_sessions?${new URLSearchParams({
+        id: `eq.${scanId}`, select: "id,owner_id,metadata_json", limit: "1"
+      })}`)
+    : loadFallbackRecord(scanId)?.session;
+  if (!session) return null;
+  return { ownerId: session.owner_id ?? null, tokenHash: session.metadata_json?.accessTokenHash,
+    expiresAt: session.metadata_json?.accessExpiresAt };
 }

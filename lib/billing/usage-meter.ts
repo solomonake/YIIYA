@@ -1,11 +1,11 @@
 /**
  * Usage meter.
- * Records every metered call (LLM, 3D generation, image moderation) to
- * supabase.usage_events and enforces per-user / global daily USD budgets.
+ * Provides usage recording and a read-only per-user/global spending screen.
+ * Callers must explicitly record actual usage; this module cannot observe
+ * provider calls automatically. It is not an atomic spending reservation.
  *
- * When Supabase is not configured, an in-memory tracker provides budget
- * enforcement (resets on cold start, but still prevents runaway spend within
- * a single serverless instance lifetime).
+ * Production checks fail closed without a readable shared ledger. Development
+ * may use an in-memory estimate, which resets on restart.
  */
 import { createClient } from "@supabase/supabase-js";
 
@@ -43,15 +43,16 @@ export type UsageEvent = {
   metadata?: Record<string, unknown>;
 };
 
-export function estimateCostUsd(event: UsageEvent): number {
-  if (event.model && PRICES[event.model]) {
-    const p = PRICES[event.model];
-    return (
-      ((event.promptTokens ?? 0) * p.in) / 1_000_000 +
-      ((event.completionTokens ?? 0) * p.out) / 1_000_000
-    );
+/** Legacy rate estimates only; unknown cost is never zero or proof of free usage. */
+export function estimateCostUsd(event: UsageEvent): number | null {
+  if (event.model) {
+    if (!Object.hasOwn(PRICES, event.model)) return null;
+    if (![event.promptTokens, event.completionTokens].every(n => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) return null;
+    const price = PRICES[event.model];
+    const cost = (event.promptTokens! * price.in + event.completionTokens! * price.out) / 1_000_000;
+    return Number.isFinite(cost) && cost >= 0 ? cost : null;
   }
-  return FIXED_USD[event.provider] ?? 0;
+  return Object.hasOwn(FIXED_USD, event.provider) ? FIXED_USD[event.provider] : null;
 }
 
 let _serviceClient: ReturnType<typeof createClient> | null = null;
@@ -66,10 +67,8 @@ function serviceClient() {
 }
 
 // ─── In-memory budget tracker ────────────────────────────────────────────────
-// Provides budget enforcement even without Supabase. Resets per cold start,
-// but on Vercel serverless that still prevents a single instance from burning
-// through credits unchecked. Always updated alongside Supabase writes so it
-// provides immediate protection.
+// Local estimate only, reset on cold start. It observes explicit recording calls,
+// not actual provider activity, and cannot enforce a cross-instance budget.
 
 const _memSpend = new Map<string, { usd: number; date: string }>();
 
@@ -122,17 +121,21 @@ function memCheckBudget(userId: string | null | undefined): BudgetCheck | null {
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-export async function recordUsage(event: UsageEvent): Promise<void> {
+export type UsageRecordResult = { recorded: true; estimatedCostUsd: number } |
+  { recorded: false; reason: "unknown_cost" | "ledger_unavailable" | "ledger_write_failed" };
+
+export async function recordUsage(event: UsageEvent): Promise<UsageRecordResult> {
   const cost = estimateCostUsd(event);
+  if (cost === null) return { recorded: false, reason: "unknown_cost" };
 
   // Always update in-memory tracker
   memRecord(event.userId, cost);
 
-  const client = serviceClient();
-  if (!client) return;
   try {
-    await (client.from("usage_events") as unknown as {
-      insert: (row: Record<string, unknown>) => Promise<unknown>;
+    const client = serviceClient();
+    if (!client) return { recorded: false, reason: "ledger_unavailable" };
+    const result = await (client.from("usage_events") as unknown as {
+      insert: (row: Record<string, unknown>) => Promise<{ error: unknown }>;
     }).insert({
       user_id: event.userId ?? null,
       session_id: event.sessionId ?? null,
@@ -148,51 +151,70 @@ export async function recordUsage(event: UsageEvent): Promise<void> {
       error_code: event.errorCode ?? null,
       metadata: event.metadata ?? {}
     });
+    if (!result || result.error !== null) return { recorded: false, reason: "ledger_write_failed" };
+    return { recorded: true, estimatedCostUsd: cost };
   } catch {
-    // Best-effort; never block the request on metering.
+    return { recorded: false, reason: "ledger_write_failed" };
   }
 }
 
-export type BudgetCheck = { allow: boolean; spentUsd: number; capUsd: number; scope: "user" | "global" };
+export type BudgetCheck = {
+  allow: boolean; spentUsd: number; capUsd: number; scope: "user" | "global";
+  unavailable?: boolean;
+};
 
+/** Read-only spending screen, NOT an atomic reservation or complete cost guarantee. */
 export async function checkBudget(userId?: string | null): Promise<BudgetCheck> {
-  const userCap = parseFloat(process.env.USAGE_DAILY_BUDGET_USD_PER_USER ?? "1.00");
-  const globalCap = parseFloat(process.env.USAGE_DAILY_BUDGET_USD_GLOBAL ?? "10.00");
+  const userCap = Number(process.env.USAGE_DAILY_BUDGET_USD_PER_USER ?? "1.00");
+  const globalCap = Number(process.env.USAGE_DAILY_BUDGET_USD_GLOBAL ?? "10.00");
+  const unavailable = (): BudgetCheck => ({ allow: false, spentUsd: 0,
+    capUsd: Number.isFinite(globalCap) && globalCap >= 0 ? globalCap : 0,
+    scope: "global", unavailable: true });
+  if (![userCap, globalCap].every(n => Number.isFinite(n) && n >= 0)) return unavailable();
+  if (globalCap === 0) return { allow: false, spentUsd: 0, capUsd: 0, scope: "global" };
+  if (userId && userCap === 0) return { allow: false, spentUsd: 0, capUsd: 0, scope: "user" };
 
-  // In-memory check first (immediate, always available)
   const memResult = memCheckBudget(userId);
   if (memResult) return memResult;
 
-  const client = serviceClient();
-  if (!client) {
-    // No Supabase — in-memory tracker is the only enforcement.
-    const g = _memSpend.get("global");
-    const today = todayUTC();
-    const spent = g && g.date === today ? g.usd : 0;
-    return { allow: true, spentUsd: spent, capUsd: globalCap, scope: "global" };
+  try {
+    const client = serviceClient();
+    if (!client) {
+      if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") return unavailable();
+      const g = _memSpend.get("global");
+      const spent = g && g.date === todayUTC() ? g.usd : 0;
+      return { allow: true, spentUsd: spent, capUsd: globalCap, scope: "global" };
+    }
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+    // Exact counts detect PostgREST row truncation. Never interpret partial
+    // data, a failed query or malformed costs as a complete zero-dollar ledger.
+    const sum = (data: unknown, count: number | null): number | null => {
+      if (!Array.isArray(data) || count !== data.length) return null;
+      let total = 0;
+      for (const row of data) {
+        const raw = row?.cost_usd;
+        if (typeof raw !== "number" && (typeof raw !== "string" || !raw.trim())) return null;
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value < 0) return null;
+        total += value;
+      }
+      return Number.isFinite(total) ? total : null;
+    };
+    if (userId) {
+      const { data, error, count } = await client.from("usage_events")
+        .select("cost_usd", { count: "exact" }).eq("user_id", userId)
+        .gte("occurred_at", since.toISOString());
+      const spent = sum(data, count);
+      if (error || spent === null) return unavailable();
+      if (spent >= userCap) return { allow: false, spentUsd: spent, capUsd: userCap, scope: "user" };
+    }
+    const { data, error, count } = await client.from("usage_events")
+      .select("cost_usd", { count: "exact" }).gte("occurred_at", since.toISOString());
+    const globalSpent = sum(data, count);
+    if (error || globalSpent === null) return unavailable();
+    return { allow: globalSpent < globalCap, spentUsd: globalSpent, capUsd: globalCap, scope: "global" };
+  } catch {
+    return unavailable();
   }
-
-  // Supabase check for cross-instance accuracy
-  const since = new Date();
-  since.setUTCHours(0, 0, 0, 0);
-
-  if (userId) {
-    const { data } = await client
-      .from("usage_events")
-      .select("cost_usd")
-      .eq("user_id", userId)
-      .gte("occurred_at", since.toISOString());
-    const spent = (data ?? []).reduce((s, r) => s + Number((r as { cost_usd: number }).cost_usd ?? 0), 0);
-    if (spent >= userCap) return { allow: false, spentUsd: spent, capUsd: userCap, scope: "user" };
-  }
-
-  const { data: g } = await client
-    .from("usage_events")
-    .select("cost_usd")
-    .gte("occurred_at", since.toISOString());
-  const globalSpent = (g ?? []).reduce((s, r) => s + Number((r as { cost_usd: number }).cost_usd ?? 0), 0);
-  if (globalSpent >= globalCap) {
-    return { allow: false, spentUsd: globalSpent, capUsd: globalCap, scope: "global" };
-  }
-  return { allow: true, spentUsd: globalSpent, capUsd: globalCap, scope: "global" };
 }

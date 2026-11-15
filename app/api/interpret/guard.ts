@@ -16,15 +16,17 @@ import { checkA11y, adjustForContrast } from "@/lib/critic/a11y-guard";
 import { extractBrand } from "@/lib/brief/company-extractor";
 import { pickStakeFromVibe, type Stake } from "@/lib/brief/stake-matrix";
 import { resolveGenerationIdentity, type GenerationIdentity } from "@/lib/security/generation-identity";
+import { ReferenceInputSchema } from "@/lib/scene/reference-input";
 
 /**
- * Minimal schema — only fields the guard itself reads. `.passthrough()` keeps
+ * Validate prompt and reference photos before consuming attempts. `.passthrough()` keeps
  * the rest of the route's wider body shape (referenceImage, cursorTarget,
  * image_mode, scanJobId, …) intact so the pipeline still sees everything.
  */
 const InputSchema = z
   .object({
     transcript: z.string().min(1).max(8000),
+    referenceImage: ReferenceInputSchema.nullable().optional(),
     userId: z.string().uuid().optional(),
     sessionId: z.string().optional()
   })
@@ -61,12 +63,15 @@ export async function guardRequest(
   try {
     parsed = InputSchema.parse(rawBody) as GuardedBody;
   } catch (err) {
+    const message = err instanceof z.ZodError
+      ? Array.from(new Set(err.issues.map(issue => issue.message))).slice(0, 3).join(" ")
+      : "Invalid generation input.";
     return {
       ok: false,
       error: "invalid_input",
-      message: err instanceof Error ? err.message : "bad input",
+      message,
       response: jsonResponse(
-        { error: "invalid_input", message: err instanceof Error ? err.message : "bad input" },
+        { error: "invalid_input", message },
         400,
         { traceId }
       )
@@ -83,6 +88,7 @@ export async function guardRequest(
   if (!identity.isExempt) {
     // 3) Rate limit.
     const rl = await checkLimit("interpret", identity.identityKey);
+    if (rl.unavailable) return unavailableLimits(traceId);
     if (!rl.success) {
       const retryAfter = Math.ceil(Math.max(0, (rl.reset ?? Date.now()) - Date.now()) / 1000);
       return {
@@ -102,6 +108,7 @@ export async function guardRequest(
     // ("N models a day"). Predictable and bounded-cost for us; tunable via
     // YIIYA_FREE_GENERATIONS_PER_DAY without a deploy.
     const gen = await checkLimit("generate3d", identity.identityKey);
+    if (gen.unavailable) return unavailableLimits(traceId);
     generationsRemaining = gen.remaining;
     generationsLimit = gen.limit;
     if (!gen.success) {
@@ -118,8 +125,14 @@ export async function guardRequest(
       };
     }
 
-    // 4) Daily budget (hard $ backstop behind the generation quota).
+    // 4) Recorded-spend screen. Atomic reservations/full accounting are still
+    // required for a hard dollar cap; never treat unavailable data as zero.
     const budget = await checkBudget(identity.userId);
+    if (budget.unavailable) {
+      const message = "Generation is temporarily unavailable. Please try again later.";
+      return { ok: false, error: "budget_unavailable", message,
+        response: jsonResponse({ error: "budget_unavailable", message }, 503, { traceId }) };
+    }
     if (!budget.allow) {
       return {
         ok: false,
@@ -160,6 +173,13 @@ export async function guardRequest(
   const stake = pickStakeFromVibe(brand.vibeKeywords, brand.industry);
 
   return { ok: true, body: parsed, identity, stake, traceId, generationsRemaining, generationsLimit };
+}
+
+function unavailableLimits(traceId: string): GuardFail {
+  const message = "Generation is temporarily unavailable. Please try again later.";
+  return { ok: false, error: "rate_limit_unavailable", message, retryAfter: 60,
+    response: jsonResponse({ error: "rate_limit_unavailable", message }, 503,
+      { traceId, extra: { "Retry-After": "60" } }) };
 }
 
 export type ArchitectAction = Record<string, unknown> & { type?: string };

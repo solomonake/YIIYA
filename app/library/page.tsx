@@ -1,5 +1,7 @@
 "use client";
 
+import { ArtifactDownload } from "@/components/artifact-download";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 // useState is used by AssetTile's share-copied state below.
@@ -77,14 +79,14 @@ function AssetTile({ asset }: { asset: AssetRow }) {
       <div className="flex flex-wrap gap-1 mb-2">
         {Object.entries(urls).map(([fmt, url]) =>
           url ? (
-            <a
+            <ArtifactDownload
               key={fmt}
               href={url}
               download={`${asset.object_name}.${fmt}`}
               className="text-[8px] font-mono px-1.5 py-0.5 border border-zinc-700 rounded-sm text-zinc-400 hover:text-zinc-100 hover:border-zinc-500 transition-colors"
             >
               .{fmt.toUpperCase()}
-            </a>
+            </ArtifactDownload>
           ) : null
         )}
       </div>

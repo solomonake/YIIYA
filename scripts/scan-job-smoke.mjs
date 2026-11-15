@@ -6,8 +6,13 @@ function assert(condition, message) {
   }
 }
 
-async function request(path, init) {
-  const response = await fetch(`${baseUrl}${path}`, init);
+// The capability token returned when the scan is created. Every later call
+// must carry it: a scan id alone is a locator, not a credential.
+let scanToken = null;
+
+async function request(path, init = {}) {
+  const headers = { ...init.headers, ...(scanToken ? { "x-yiiya-scan-token": scanToken } : {}) };
+  const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -53,8 +58,18 @@ async function main() {
   assert(created?.scanId, "scanId missing from create response");
   assert(created?.job?.id === created.scanId, "job payload missing or mismatched");
 
+  assert(/^[A-Za-z0-9_-]{43}$/.test(created?.accessToken ?? ""), "accessToken missing from create response");
+
   const scanId = created.scanId;
   console.log(`[smoke] created ${scanId}`);
+
+  const anonymous = await fetch(`${baseUrl}/api/scan/jobs/${scanId}`);
+  assert(anonymous.status === 401, `lookup without a token returned ${anonymous.status}, expected 401`);
+  const stranger = await fetch(`${baseUrl}/api/scan/jobs/${scanId}`, {
+    headers: { "x-yiiya-scan-token": "A".repeat(43) },
+  });
+  assert(stranger.status === 403, `lookup with another token returned ${stranger.status}, expected 403`);
+  scanToken = created.accessToken;
 
   const initial = await request(`/api/scan/jobs/${scanId}`);
   assert(initial.id === scanId, "initial job lookup failed");
@@ -89,7 +104,15 @@ async function main() {
   });
   assert(completed.captureStatus === "uploaded", "complete-upload did not mark uploaded");
   assert(Array.isArray(completed.exports), "exports missing from completed job");
-  assert(completed.exports.length >= 6, "pending export tiers were not created");
+  // Free-only is the default 3D mode: uploads are kept, and no reconstruction
+  // or export is promised. Mixed mode queues the export tiers.
+  const freeOnly = completed.warnings?.some((warning) => warning.code === "free-only-reconstruction");
+  if (freeOnly) {
+    assert(completed.state === "failed", "free-only scan should end as failed, not queued for a worker");
+    assert(completed.exports.length === 0, "free-only scan should not promise exports");
+  } else {
+    assert(completed.exports.length >= 6, "pending export tiers were not created");
+  }
 
   const reloaded = await request(`/api/scan/jobs/${scanId}`);
   assert(reloaded.id === scanId, "reloaded job missing");
