@@ -36,7 +36,7 @@ export function AnalyticsConsent() {
     setConsent(value); setError(""); setOpen(false);
   }
   if (!ready) return null;
-  return <aside aria-label="Analytics preferences" className="fixed bottom-3 right-3 z-[100] max-w-[calc(100vw-24px)] text-sm">
+  return <aside data-analytics-preferences aria-label="Analytics preferences" className="fixed bottom-3 right-3 z-[100] max-w-[calc(100vw-24px)] text-sm">
     {open ? <section aria-labelledby="analytics-title" className="w-80 max-w-full rounded-lg border border-zinc-600 bg-zinc-950 p-4 text-zinc-100 shadow-lg">
       <h2 id="analytics-title" className="font-semibold">Optional usage analytics</h2>
       <p className="mt-2 text-zinc-300">Allow anonymous page, Studio request and export counts through PostHog? We exclude your prompts, photos, voice, email and link tokens.</p>
