@@ -1,3 +1,7 @@
+## 2026-11-14: How it works visitor guide
+
+Added public /how-it-works under SOL-25 with separate on-device/hosted paths, supported exports and honest shape/scale/AR limits. Homepage footer links to it. Sitemap, canonical/OG/Twitter and consented pageview allowlist include the route. No asset visibility/public gallery changes. Targeted SEO and analytics tests pass; CI and live route/visual verification follow. Existing issue remains open for gallery/OG model sharing scope.
+
 ## 2026-11-14: Persist scan IDs as UUIDs
 
 Live PR24 validation passed shared admission but scan creation failed: randomId produced scan-/job-prefixed strings for UUID database columns. Use node:crypto randomUUID for every persisted scan/session/job/upload/asset/export identifier. Added a REST stub that rejects non-UUID inserts and checks session/job linkage, including when browser crypto is absent. No provider calls. Follow-up production smoke must create one fixture, verify 401/403/200 access behavior and clean it.

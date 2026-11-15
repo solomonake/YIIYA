@@ -5,7 +5,7 @@ export type AnalyticsEvent = "$pageview" | "studio_generation_requested" | "expo
 const FORMATS = new Set(["glb", "obj", "usd", "usdz", "stl", "fbx"]);
 export function allowedRoute(path: string): string | null {
   const clean = path.split(/[?#]/, 1)[0];
-  if (["/", "/app", "/library", "/view", "/capture"].includes(clean)) return clean;
+  if (["/", "/app", "/how-it-works", "/library", "/view", "/capture"].includes(clean)) return clean;
   if (/^\/scan\/[^/]+$/.test(clean)) return "/scan/:id";
   return null;
 }
