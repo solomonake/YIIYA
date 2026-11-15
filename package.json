@@ -9,7 +9,7 @@
     "predev": "node scripts/build-photo-studio.mjs && node scripts/stamp-canonicals.mjs",
     "dev": "next dev",
     "prebuild": "node scripts/build-typographic-font.mjs && node scripts/build-photo-studio.mjs && node scripts/stamp-canonicals.mjs",
-    "build": "next build",
+    "build": "next build && node scripts/check-asset-runtime.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "node scripts/check-no-ts-nocheck.mjs && tsc --noEmit",

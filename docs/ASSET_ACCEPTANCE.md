@@ -11,7 +11,8 @@ finite positions and world transforms, triangle indices, and at least one
 non-degenerate triangle after world transforms. Triangle primitives are required.
 JSON is capped at 8 MiB, accessor elements at 10 million and declared decoded
 buffers at 256 MiB. Draco dependencies remain external server packages so their
-WASM decoder ships with the runtime. Validation warnings are counted, not treated
+WASM decoder ships with the runtime. Explicit tracing includes the decoder and
+the build fails if an asset route omits its decoder or validator. Validation warnings are counted, not treated
 as errors. Degenerate triangles may coexist with useful geometry.
 
 The receipt at `/api/3d/convert?from=<artifact>&to=report` records contract version,

@@ -4,6 +4,11 @@ PR 31 merged as b4685b8 and production deployment dpl_HUhKmUQRq5tBecyxBHvCnEMULs
 is READY. Public smoke confirms non-GLB upstream pages return 502 from proxy and
 conversion; creation guide remains 200.
 
+Deployment-trace follow-up: externalizing Draco alone did not trace its WASM.
+Explicit trace includes plus scripts/check-asset-runtime.mjs now enforce decoder
+and validator presence in all four asset/interpret routes. Negative omission
+check fails; an isolated copy of traced decoder files initializes successfully.
+
 Branch codex/photo-outline-evidence exposes per-view and weakest construction
 outline overlap, explicitly excluding hidden geometry and full fidelity. Cached
 GLB bytes and local evidence JSON share SHA-256. Browser downloads matched the
