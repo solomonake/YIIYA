@@ -1,6 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/security/scan-access", () => ({ authorizeScanAccess: vi.fn() }));
 import type { AssetJob } from "@/lib/asset-jobs";
+import { authorizeScanAccess } from "@/lib/security/scan-access";
 import { GET } from "@/app/api/asset-jobs/[id]/artifacts/[artifactId]/route";
+import { GET as getJob } from "@/app/api/asset-jobs/[id]/route";
 
 function makeJob(overrides: Partial<AssetJob> = {}): AssetJob {
   const now = new Date().toISOString();
@@ -78,7 +81,7 @@ function makeJob(overrides: Partial<AssetJob> = {}): AssetJob {
       prompt: "Design a compact desk lamp",
       sourceKind: "text",
       referenceImage: false,
-      scanId: null
+      scanId: "scan-owned"
     },
     artifacts: [],
     validation: [],
@@ -97,8 +100,55 @@ function makeJob(overrides: Partial<AssetJob> = {}): AssetJob {
 
 describe("asset artifact route", () => {
   beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(authorizeScanAccess).mockResolvedValue(null);
     (globalThis as typeof globalThis & { __yiiyaAssetJobs?: Map<string, AssetJob> }).__yiiyaAssetJobs =
       new Map();
+  });
+
+  function store(job: AssetJob) {
+    (globalThis as typeof globalThis & { __yiiyaAssetJobs?: Map<string, AssetJob> }).__yiiyaAssetJobs?.set(
+      job.id,
+      job
+    );
+  }
+
+  it("refuses a caller who is not the scan's owner on both job routes", async () => {
+    const job = makeJob({
+      artifacts: [
+        {
+          id: "print-stl",
+          label: "Print STL",
+          kind: "stl",
+          format: "stl",
+          mimeType: "model/stl",
+          status: "ready",
+          inlineBase64: Buffer.from("solid x\nendsolid x\n").toString("base64"),
+          fileName: "model.stl"
+        }
+      ]
+    });
+    store(job);
+    vi.mocked(authorizeScanAccess).mockResolvedValue(new Response("denied", { status: 403 }));
+
+    const artifact = await GET(new Request("http://localhost/test"), {
+      params: { id: job.id, artifactId: "print-stl" }
+    });
+    const detail = await getJob(new Request("http://localhost/test"), { params: { id: job.id } });
+
+    expect(artifact.status).toBe(403);
+    expect(detail.status).toBe(403);
+    expect(vi.mocked(authorizeScanAccess)).toHaveBeenCalledWith(expect.any(Request), "scan-owned");
+  });
+
+  it("treats a job with no scan behind it as not found", async () => {
+    const job = makeJob({ inputs: { ...makeJob().inputs, scanId: null } });
+    store(job);
+
+    const detail = await getJob(new Request("http://localhost/test"), { params: { id: job.id } });
+
+    expect(detail.status).toBe(404);
+    expect(vi.mocked(authorizeScanAccess)).not.toHaveBeenCalled();
   });
 
   it("serves inline glb bytes without attachment headers", async () => {
