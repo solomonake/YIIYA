@@ -50,46 +50,92 @@ function rowToPublishedProject(row: SupabaseProjectRow): PublishedProject {
 }
 
 export function canUseSupabasePublish() {
-  return Boolean(getSupabaseConfig("service"));
+  return Boolean(getSupabaseConfig("anon"));
 }
 
-async function upsertProject(project: PublishedProject, draft: boolean) {
-  const config = getSupabaseConfig("service");
+/** The slug belongs to another account, so this caller may not write it. */
+export class PublishOwnershipError extends Error {
+  constructor() {
+    super("This project link belongs to another account.");
+    this.name = "PublishOwnershipError";
+  }
+}
+
+export type PublishOwner = { userId: string; accessToken: string };
+
+function projectRowBody(project: PublishedProject, ownerId: string) {
+  return {
+    slug: project.slug,
+    user_id: ownerId,
+    canvas_json: {
+      sections: project.sceneState.sections,
+      sceneObjects: project.sceneState.sceneObjects,
+      layers: project.sceneState.layers
+    },
+    html_snapshot: project.htmlSnapshot,
+    scene_json: project.sceneState,
+    theme_json: project.sceneState.themeState ?? {},
+    react_export: project.reactCode ?? "",
+    created_at: project.createdAt
+  };
+}
+
+/**
+ * Writes a published project as the signed-in owner. The request carries the
+ * owner's own access token with the anon key, so the "users own published" RLS
+ * policy decides what may be written; the service role is never used here.
+ * user_id always comes from the verified token, never from the request body.
+ *
+ * Update first (RLS limits it to rows this user owns), then insert. An insert
+ * that conflicts means the slug is taken by someone else.
+ */
+async function saveOwnedProject(project: PublishedProject, owner: PublishOwner) {
+  const config = getSupabaseConfig("anon");
 
   if (!config) {
-    throw new Error("Supabase service role is not configured");
+    throw new Error("Supabase publish is not configured");
   }
 
-  const response = await fetch(`${config.url}/rest/v1/published_projects?on_conflict=slug`, {
-    method: "POST",
-    headers: {
-      apikey: config.key,
-      Authorization: `Bearer ${config.key}`,
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=representation"
-    },
-    body: JSON.stringify({
-      slug: project.slug,
-      user_id: project.userId ?? null,
-      canvas_json: {
-        sections: project.sceneState.sections,
-        sceneObjects: project.sceneState.sceneObjects,
-        layers: project.sceneState.layers
-      },
-      html_snapshot: project.htmlSnapshot,
-      scene_json: project.sceneState,
-      theme_json: project.sceneState.themeState ?? {},
-      react_export: project.reactCode ?? "",
-      created_at: project.createdAt
-    })
+  const headers = {
+    apikey: config.key,
+    Authorization: `Bearer ${owner.accessToken}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation"
+  };
+  const body = JSON.stringify(projectRowBody(project, owner.userId));
+  const slugFilter = new URLSearchParams({ slug: `eq.${project.slug}` });
+
+  const updated = await fetch(`${config.url}/rest/v1/published_projects?${slugFilter}`, {
+    method: "PATCH",
+    headers,
+    body
   });
 
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Supabase publish failed: ${message}`);
+  if (!updated.ok) {
+    throw new Error(`Supabase publish update failed with status ${updated.status}`);
   }
 
-  const rows = (await response.json()) as SupabaseProjectRow[];
+  const updatedRows = (await updated.json()) as SupabaseProjectRow[];
+
+  if (updatedRows[0]) {
+    return rowToPublishedProject(updatedRows[0]);
+  }
+
+  const inserted = await fetch(`${config.url}/rest/v1/published_projects`, {
+    method: "POST",
+    headers,
+    body
+  });
+
+  if (inserted.status === 409 || inserted.status === 401 || inserted.status === 403) {
+    throw new PublishOwnershipError();
+  }
+
+  if (!inserted.ok) {
+    throw new Error(`Supabase publish insert failed with status ${inserted.status}`);
+  }
+
+  const rows = (await inserted.json()) as SupabaseProjectRow[];
   const row = rows[0];
 
   if (!row) {
@@ -99,12 +145,12 @@ async function upsertProject(project: PublishedProject, draft: boolean) {
   return rowToPublishedProject(row);
 }
 
-export async function insertPublishedProject(project: PublishedProject) {
-  return upsertProject(project, false);
+export async function insertPublishedProject(project: PublishedProject, owner: PublishOwner) {
+  return saveOwnedProject(project, owner);
 }
 
-export async function autosaveProjectDraft(project: PublishedProject) {
-  return upsertProject(project, true);
+export async function autosaveProjectDraft(project: PublishedProject, owner: PublishOwner) {
+  return saveOwnedProject(project, owner);
 }
 
 export async function readPublishedProjectFromSupabase(slug: string) {

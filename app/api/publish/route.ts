@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import type { PublishedProject } from "@/lib/published-project-types";
 import {
   canUseSupabasePublish,
-  insertPublishedProject
+  insertPublishedProject,
+  PublishOwnershipError
 } from "@/lib/supabase-projects";
+import { admitPublishWrite } from "@/lib/security/publish-guard";
 
 function isPublishedProject(value: unknown): value is PublishedProject {
   if (!value || typeof value !== "object") {
@@ -34,7 +36,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const body: unknown = await request.json();
+  const owner = await admitPublishWrite(request);
+
+  if (owner instanceof Response) {
+    return owner;
+  }
+
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    body = null;
+  }
 
   if (!isPublishedProject(body)) {
     return NextResponse.json(
@@ -44,13 +58,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const project = await insertPublishedProject(body);
+    const project = await insertPublishedProject(body, owner);
 
     return NextResponse.json(project);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Supabase publish failed";
+    if (error instanceof PublishOwnershipError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Publishing failed. Try again later." }, { status: 500 });
   }
 }

@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { getAssetJob } from "@/lib/asset-jobs";
+import { authorizeAssetJobAccess } from "@/lib/security/asset-job-access";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string; artifactId: string } }
 ) {
   const job = getAssetJob(params.id);
+  const denied = await authorizeAssetJobAccess(request, job);
 
-  if (!job) {
-    return NextResponse.json({ error: "Asset job not found." }, { status: 404 });
+  if (denied || !job) {
+    return denied ?? NextResponse.json({ error: "Asset job not found." }, { status: 404 });
   }
 
   const artifact = job.artifacts.find((item) => item.id === params.artifactId);

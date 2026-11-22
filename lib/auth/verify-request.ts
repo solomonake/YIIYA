@@ -7,6 +7,16 @@ import { userScopedClient } from "@/lib/supabase-server";
  * never throws, since auth is optional on the generation path.
  */
 export async function getUserIdFromAuthHeader(req: Request): Promise<string | null> {
+  return (await getVerifiedUser(req))?.userId ?? null;
+}
+
+export type VerifiedUser = { userId: string; accessToken: string };
+
+/**
+ * Like getUserIdFromAuthHeader, but also returns the verified access token so
+ * a route can write through a user-scoped client and let RLS decide ownership.
+ */
+export async function getVerifiedUser(req: Request): Promise<VerifiedUser | null> {
   const header = req.headers.get("authorization");
   if (!header?.startsWith("Bearer ")) return null;
   const token = header.slice(7).trim();
@@ -18,7 +28,7 @@ export async function getUserIdFromAuthHeader(req: Request): Promise<string | nu
   try {
     const { data, error } = await client.auth.getUser(token);
     if (error || !data.user) return null;
-    return data.user.id;
+    return { userId: data.user.id, accessToken: token };
   } catch {
     return null;
   }
