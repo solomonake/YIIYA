@@ -89,15 +89,10 @@ export function GET(req: Request) {
         model: process.env.ANTHROPIC_CRITIC_MODEL ?? "claude-3-5-haiku-20241022",
         configured: env.ANTHROPIC_API_KEY
       },
-      alchemist: {
-        model: process.env.OPENAI_VISION_MODEL ?? "gpt-4o",
-        configured: env.OPENAI_API_KEY
-      },
       trellis: {
         model: process.env.FAL_TRELLIS_MODEL ?? "fal-ai/trellis-2",
         configured: generationMode() === "mixed" && env.FAL_KEY
-      },
-      unsplashConfigured: env.UNSPLASH_ACCESS_KEY
+      }
     },
     supabase: {
       publishConfigured: canUseSupabasePublish(),
