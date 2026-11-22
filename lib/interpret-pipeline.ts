@@ -22,6 +22,11 @@ import {
 import type { MaterialOverride } from "@/lib/scene/local-edit";
 import { resolveSourceMeshUrl, retextureViaHuggingFace, buildRetexturePrompt, geometryKept } from "@/lib/hf-retexture";
 
+/** Generator tracing, off unless YIIYA_DEBUG_GENERATOR=1. */
+function debugLog(message: string) {
+  if (process.env.YIIYA_DEBUG_GENERATOR === "1") console.info(message);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ThreeDIntentType =
@@ -1379,7 +1384,7 @@ async function runSpatialGenerator(
     const remaining = deadline - Date.now();
     if (remaining < 8_000) break;
 
-    console.log(`[GENERATOR] Trying ${entry.name}…`);
+    debugLog(`[GENERATOR] Trying ${entry.name}…`);
     let out: { url: string | null; error: string | null };
     try {
       out = await withProviderDeadline(entry.run, Math.min(entry.timeoutMs, remaining), entry.name);
@@ -1396,7 +1401,7 @@ async function runSpatialGenerator(
     if (!out.url) {
       recordCircuit(key, false);
       attempts.push({ provider: entry.name, ok: false, error: out.error ?? undefined });
-      console.log(`[GENERATOR] ${entry.name} failed: ${out.error ?? "unknown"}`);
+      debugLog(`[GENERATOR] ${entry.name} failed: ${out.error ?? "unknown"}`);
       continue;
     }
 
@@ -1422,7 +1427,7 @@ async function runSpatialGenerator(
       return { glbUrl, tier: entry.tier, attempts, geometry: v.geometry, notes };
     } else {
       recordCircuit(key, false);
-      console.log(`[GENERATOR] ${entry.name} GLB invalid: ${v.reason}`);
+      debugLog(`[GENERATOR] ${entry.name} GLB invalid: ${v.reason}`);
     }
   }
 

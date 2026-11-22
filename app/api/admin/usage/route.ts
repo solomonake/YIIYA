@@ -13,11 +13,19 @@
  *     recent_errors: [{ stage, provider, error_code, occurred_at }]
  *   }
  */
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { serviceClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Constant-time compare; hashing first keeps the lengths equal. */
+function tokenMatches(given: string, expected: string): boolean {
+  const a = createHash("sha256").update(given).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
 
 export async function GET(req: NextRequest) {
   const adminToken = process.env.YIIYA_ADMIN_TOKEN;
@@ -25,7 +33,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "admin_disabled" }, { status: 503 });
   }
   const auth = req.headers.get("authorization") ?? "";
-  if (auth !== `Bearer ${adminToken}`) {
+  if (!tokenMatches(auth, `Bearer ${adminToken}`)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

@@ -24,8 +24,13 @@ pnpm-debug.log*
 # system
 .DS_Store
 
-# local env
-.env*.local
+# local env: never commit real values (this repo is public)
+.env
+.env.*
+!.env.example
+
+# logs and test output
+*.log
 
 # typescript
 *.tsbuildinfo
