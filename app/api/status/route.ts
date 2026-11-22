@@ -1,4 +1,5 @@
 import { generationMode, providerOrder } from "@/lib/generation-policy";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   evaluateProductionReadiness,
@@ -7,7 +8,16 @@ import {
 import { canUseSupabasePublish } from "@/lib/supabase-projects";
 import { getScanInfraStatus } from "@/lib/scan-job-store";
 
-export function GET() {
+/** True when the caller sends `Authorization: Bearer <YIIYA_ADMIN_TOKEN>`. */
+function isAdmin(req: Request): boolean {
+  const token = process.env.YIIYA_ADMIN_TOKEN;
+  if (!token) return false;
+  const given = createHash("sha256").update(req.headers.get("authorization") ?? "").digest();
+  const expected = createHash("sha256").update(`Bearer ${token}`).digest();
+  return timingSafeEqual(given, expected);
+}
+
+export function GET(req: Request) {
   const scanInfra = getScanInfraStatus();
   const readiness = evaluateProductionReadiness(process.env, {
     supabasePublishConfigured: canUseSupabasePublish()
@@ -17,6 +27,19 @@ export function GET() {
   const missingLab = readiness.missingLab.map((item) => item.name);
   const missingDeploy = readiness.missingDeploy.map((item) => item.name);
   const status = readiness.productionMode && !readiness.coreOk ? 503 : 200;
+
+  // Anonymous callers get the health verdict only. Which providers, keys and
+  // workers are configured is reserved for the admin token.
+  if (!isAdmin(req)) {
+    return NextResponse.json({
+      ok: readiness.coreOk,
+      productionMode: readiness.productionMode,
+      productionReady: readiness.coreOk,
+      coreOk: readiness.coreOk,
+      labOk: readiness.labOk,
+      deployOk: readiness.deployOk
+    }, { status });
+  }
 
   return NextResponse.json({
     ok: readiness.coreOk,

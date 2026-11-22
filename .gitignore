@@ -29,8 +29,8 @@ pnpm-debug.log*
 .env.*
 !.env.example
 
-# test output
-test-output.log
+# logs and test output
+*.log
 
 # typescript
 *.tsbuildinfo
