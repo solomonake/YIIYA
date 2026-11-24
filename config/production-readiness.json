@@ -32,11 +32,6 @@
         "reason": "Architecture and critique fallback paths use Anthropic."
       },
       {
-        "name": "OPENAI_API_KEY",
-        "label": "OpenAI API key",
-        "reason": "Vision fallback and moderation paths use OpenAI."
-      },
-      {
         "name": "SENTRY_DSN",
         "label": "Sentry server DSN",
         "reason": "Production server errors should be captured with request context."
@@ -83,11 +78,6 @@
         "generationModes": [
           "mixed"
         ]
-      },
-      {
-        "name": "UNSPLASH_ACCESS_KEY",
-        "label": "Unsplash access key",
-        "reason": "Reference image search should use authenticated provider access."
       },
       {
         "name": "BLOB_READ_WRITE_TOKEN",
